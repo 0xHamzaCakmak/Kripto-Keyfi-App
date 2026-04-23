@@ -1,0 +1,7 @@
+{
+  "name": "Kripto Keyfi",
+  "description": "A comprehensive crypto portfolio tracker, ecosystem explorer, and community chat platform with real-time market insights.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

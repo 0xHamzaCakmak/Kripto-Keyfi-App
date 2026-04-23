@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline: "Manrope", sans-serif;
+
+  --color-background: #060e20;
+  --color-surface: #091328;
+  --color-surface-high: #141f38;
+  --color-surface-highest: #192540;
+  
+  --color-primary: #8dacff;
+  --color-primary-dim: #296cf0;
+  
+  --color-secondary: #00ffa3;
+  --color-secondary-dim: #00ef99;
+  
+  --color-tertiary: #ac89ff;
+  --color-tertiary-dim: #874cff;
+  
+  --color-error: #ff716c;
+  --color-outline: #6d758c;
+  --color-on-surface: #dee5ff;
+  --color-on-surface-variant: #a3aac4;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface font-sans;
+  }
+}
+
+.glass-panel {
+  background: rgba(25, 37, 64, 0.6);
+  backdrop-filter: blur(20px);
+}
+
+.hero-gradient {
+  background: linear-gradient(135deg, #8dacff 0%, #296cf0 100%);
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  display: flex;
+  width: fit-content;
+  animation: marquee 30s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
