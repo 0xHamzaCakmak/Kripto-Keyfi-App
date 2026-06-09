@@ -121,11 +121,11 @@ export default function Navbar() {
 
         <aside
           className={cn(
-            "absolute left-0 top-0 h-full w-[min(88vw,360px)] border-r border-outline/10 bg-surface px-5 pt-24 pb-8 shadow-2xl transition-transform duration-300",
+            "absolute left-2 top-2 bottom-2 w-[min(88vw,360px)] overflow-y-auto rounded-[32px] border border-yellow-400/70 bg-surface px-5 pt-24 pb-8 shadow-2xl shadow-yellow-500/10 transition-transform duration-300",
             isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <div className="mb-6 rounded-[28px] border border-outline/10 bg-surface-high p-4">
+          <div className="mb-6 rounded-[28px] border border-yellow-400/30 bg-surface-high p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-on-surface-variant">Wallet</p>
             <div className="mt-3 flex items-center justify-between gap-3">
               <div>
