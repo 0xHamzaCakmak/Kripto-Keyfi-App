@@ -1,115 +1,237 @@
-import React from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Share2, CheckCircle, MessageSquare, Edit } from 'lucide-react';
-import { ARTICLES } from '../constants';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Bookmark, Copy, Eye, Linkedin, MessageCircle, Send, Share2, ThumbsUp, Twitter } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { getLatestNews, getNewsBySlug } from '../services/newsService';
+import { NewsArticle } from '../types';
 
-export default function ArticleDetail() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const article = ARTICLES.find(a => a.id === id) || ARTICLES[0];
+function useSavedNews() {
+  const key = 'kripto-keyfi-saved-news';
+  const [items, setItems] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  function toggle(slug: string) {
+    setItems((current) => {
+      const next = current.includes(slug) ? current.filter((item) => item !== slug) : [...current, slug];
+      localStorage.setItem(key, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  return { toggle, has: (slug: string) => items.includes(slug) };
+}
+
+function ReadingProgressBar() {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    function onScroll() {
+      const height = document.documentElement.scrollHeight - window.innerHeight;
+      setProgress(height > 0 ? Math.min(100, Math.round((window.scrollY / height) * 100)) : 0);
+    }
+
+    onScroll();
+    window.addEventListener('scroll', onScroll);
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  return <div className="fixed left-0 top-0 z-[60] h-1 bg-secondary transition-all" style={{ width: `${progress}%` }} />;
+}
+
+function ShareButtons({ article }: { article: NewsArticle }) {
+  const url = `${window.location.origin}/blog/${article.slug}`;
+  const buttons = [
+    { label: 'LinkedIn', icon: Linkedin },
+    { label: 'X', icon: Twitter },
+    { label: 'WhatsApp', icon: Send },
+    { label: 'Telegram', icon: Send },
+    { label: 'Link', icon: Copy, copy: true }
+  ];
 
   return (
-    <div className="max-w-3xl mx-auto pb-32">
-      <button 
+    <div className="flex flex-wrap gap-2">
+      {buttons.map((button) => (
+        <button
+          key={button.label}
+          type="button"
+          onClick={() => button.copy && navigator.clipboard?.writeText(url)}
+          className="inline-flex items-center gap-2 rounded-xl bg-surface-high px-3 py-2 text-xs font-bold text-on-surface-variant hover:bg-surface-highest hover:text-white"
+        >
+          <button.icon size={14} />
+          {button.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CommentSection({ article }: { article: NewsArticle }) {
+  const isLoggedIn = false;
+
+  return (
+    <section className="rounded-[24px] border border-outline/5 bg-surface p-6">
+      <div className="mb-6 flex items-center gap-3">
+        <MessageCircle className="text-primary" size={20} />
+        <h2 className="font-headline text-xl font-bold text-white">Yorumlar</h2>
+      </div>
+      {!isLoggedIn && (
+        <div className="mb-5 rounded-2xl border border-primary/15 bg-primary/5 p-4 text-sm text-on-surface-variant">
+          Yorum yapmak için giriş yapmalısınız.
+        </div>
+      )}
+      <textarea
+        disabled={!isLoggedIn}
+        className="mb-6 h-28 w-full resize-none rounded-2xl border-none bg-surface-high p-4 text-sm text-on-surface placeholder:text-outline/70 disabled:cursor-not-allowed disabled:opacity-60"
+        placeholder="Yorumunuzu yazın..."
+      />
+      <div className="space-y-5">
+        {article.comments.length === 0 ? (
+          <div className="rounded-2xl bg-surface-high/40 p-6 text-center text-sm text-on-surface-variant">
+            Henüz yorum yok. İlk yorumu giriş yaptıktan sonra siz bırakabilirsiniz.
+          </div>
+        ) : (
+          article.comments.map((comment) => (
+            <article key={comment.id} className="flex gap-4 rounded-2xl bg-surface-high/40 p-4">
+              <img src={comment.avatar} alt={comment.username} className="h-10 w-10 rounded-xl" />
+              <div className="flex-1">
+                <div className="mb-1 flex items-center gap-2">
+                  <p className="text-sm font-bold text-white">{comment.username}</p>
+                  <span className="text-[10px] text-on-surface-variant">{comment.date}</span>
+                </div>
+                <p className="text-sm leading-6 text-on-surface/90">{comment.content}</p>
+                <div className="mt-3 flex items-center gap-4 text-xs font-bold text-on-surface-variant">
+                  <button type="button" className="flex items-center gap-1 hover:text-primary"><ThumbsUp size={14} /> {comment.likes}</button>
+                  <button type="button" className="hover:text-primary">Yanıtla</button>
+                </div>
+              </div>
+            </article>
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function RelatedNews({ article }: { article: NewsArticle }) {
+  const related = getLatestNews().filter((item) => item.slug !== article.slug && (item.category === article.category || item.tags.some((tag) => article.tags.includes(tag)))).slice(0, 5);
+
+  return (
+    <aside className="space-y-5 xl:sticky xl:top-32 xl:self-start">
+      <section className="rounded-[24px] border border-outline/5 bg-surface p-5">
+        <h2 className="font-headline text-xl font-bold text-white">İlgili Haberler</h2>
+        <div className="mt-5 space-y-4">
+          {related.map((item) => (
+            <Link key={item.slug} to={`/blog/${item.slug}`} className="group flex gap-3 rounded-2xl bg-surface-high/40 p-3 hover:bg-surface-high">
+              <img src={item.coverImage} alt={item.title} className="h-20 w-24 rounded-xl object-cover" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-primary">{item.category}</p>
+                <h3 className="mt-1 line-clamp-2 text-sm font-bold text-white group-hover:text-primary">{item.title}</h3>
+                <p className="mt-2 text-xs text-on-surface-variant">{item.readingTime} / {item.viewCount}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+    </aside>
+  );
+}
+
+export default function ArticleDetail() {
+  const { slug, id } = useParams();
+  const navigate = useNavigate();
+  const saved = useSavedNews();
+  const article = getNewsBySlug(slug || id || '');
+
+  if (!article) {
+    return (
+      <div className="rounded-[24px] bg-surface p-10 text-center">
+        <p className="font-headline text-xl font-bold text-white">Haber bulunamadı</p>
+        <Link to="/blog" className="mt-4 inline-flex text-primary hover:underline">Haber merkezine dön</Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <ReadingProgressBar />
+      <button
+        type="button"
         onClick={() => navigate(-1)}
-        className="flex items-center gap-2 text-primary font-bold mb-8 hover:opacity-80 transition-opacity"
+        className="inline-flex items-center gap-2 rounded-xl bg-surface-high px-4 py-3 text-sm font-bold text-on-surface hover:bg-surface-highest"
       >
-        <ArrowLeft size={18} />
-        Back to Insights
+        <ArrowLeft size={16} />
+        Geri dön
       </button>
 
-      {/* Hero Image */}
-      <div className="relative w-full aspect-video rounded-[32px] overflow-hidden mb-10">
-        <img src={article.image} alt={article.title} className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent"></div>
-      </div>
-
-      {/* Meta */}
-      <div className="inline-flex items-center px-3 py-1 bg-secondary/10 text-secondary text-xs font-bold uppercase tracking-widest rounded-md mb-6">
-        {article.category}
-      </div>
-      <h1 className="font-headline text-4xl font-extrabold text-white leading-tight tracking-tight mb-8">
-        {article.title}
-      </h1>
-
-      {/* Author Card */}
-      <div className="flex items-center justify-between mb-12 p-6 bg-surface-high rounded-2xl border border-outline/5">
-        <div className="flex items-center gap-4">
-          <img src={article.author.avatar} alt={article.author.name} className="w-12 h-12 rounded-full border-2 border-primary/20" />
-          <div>
-            <p className="text-white font-bold text-base">{article.author.name}</p>
-            <p className="text-on-surface-variant text-[10px] uppercase tracking-wider font-bold">{article.author.role}</p>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="text-on-surface-variant text-[10px] uppercase tracking-wider font-bold">Published</p>
-          <p className="text-white font-medium text-sm">{article.date}</p>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="prose prose-invert max-w-none space-y-6 text-on-surface-variant leading-relaxed text-lg">
-        <p className="first-letter:text-5xl first-letter:font-headline first-letter:font-black first-letter:text-primary first-letter:mr-3 first-letter:float-left">
-          {article.excerpt}
-        </p>
-        <p>
-          As the decentralized finance ecosystem continues to mature, we are witnessing a fundamental shift in how capital flows through secondary markets. The traditional barriers between institutional vaults and retail liquidity pools are dissolving into a unified, high-frequency environment.
-        </p>
-        <div className="bg-surface-high p-8 rounded-2xl border-l-4 border-primary my-10">
-          <p className="text-white font-headline font-bold italic text-xl leading-snug">
-            "Financial fluidity is not just about the speed of transactions, but the permanence of the architecture that supports them."
-          </p>
-        </div>
-        <p>
-          The recent uptick in trading volume across layer-2 solutions suggests that the "Digital Vault" philosophy is being adopted by a broader demographic. Security is no longer a luxury; it is the prerequisite for participation.
-        </p>
-        <h3 className="font-headline text-2xl font-bold text-white pt-6">Key Performance Indicators</h3>
-        <ul className="space-y-4">
-          <li className="flex items-start gap-3">
-            <CheckCircle className="text-secondary mt-1" size={18} />
-            <span>Institutional TVL (Total Value Locked) has seen a 14% month-over-month increase.</span>
-          </li>
-          <li className="flex items-start gap-3">
-            <CheckCircle className="text-secondary mt-1" size={18} />
-            <span>Gas fee optimization on Ethereum mainnet reached a 6-month efficiency peak.</span>
-          </li>
-        </ul>
-      </div>
-
-      {/* Action Bar */}
-      <div className="mt-16 flex flex-col gap-6">
-        <button className="w-full hero-gradient text-background font-bold py-4 rounded-full flex items-center justify-center gap-2 shadow-[0px_20px_40px_rgba(0,0,0,0.4)] hover:opacity-90 transition-opacity">
-          <Share2 size={18} />
-          SHARE THIS INSIGHT
-        </button>
-      </div>
-
-      {/* Article Chat */}
-      <section className="mt-20 bg-surface-high/30 rounded-[32px] p-8 border border-outline/5">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-3">
-            <MessageSquare className="text-primary" size={24} />
-            <h4 className="font-headline font-bold text-xl text-white uppercase tracking-tight">Article Chat</h4>
-          </div>
-          <span className="bg-primary/20 px-3 py-1 rounded-full text-xs font-bold text-primary">12 Active</span>
-        </div>
-        
-        <div className="space-y-4">
-          <div className="bg-surface-high p-6 rounded-2xl">
-            <div className="flex gap-3 items-center mb-3">
-              <div className="w-8 h-8 rounded-full bg-tertiary flex items-center justify-center text-xs font-bold text-white">JD</div>
-              <span className="text-sm font-bold text-white">JamesDillon.eth</span>
-              <span className="text-[10px] text-on-surface-variant font-medium ml-auto">2m ago</span>
+      <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
+        <article className="space-y-6">
+          <section className="overflow-hidden rounded-[32px] border border-outline/5 bg-surface">
+            <img src={article.coverImage} alt={article.title} className="aspect-[16/8] w-full object-cover" />
+            <div className="space-y-5 p-6 md:p-8">
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-lg bg-primary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-primary">{article.category}</span>
+                {article.isBreaking && <span className="rounded-lg bg-error/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-error">Son Dakika</span>}
+              </div>
+              <h1 className="font-headline text-3xl font-extrabold leading-tight text-white md:text-5xl">{article.title}</h1>
+              <p className="text-lg leading-8 text-on-surface-variant">{article.excerpt}</p>
+              <div className="flex flex-col gap-5 border-y border-outline/5 py-5 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-3">
+                  <img src={article.authorAvatar} alt={article.authorName} className="h-12 w-12 rounded-2xl" />
+                  <div>
+                    <p className="font-bold text-white">{article.authorName}</p>
+                    <p className="text-xs text-on-surface-variant">{article.sourceName} / {article.publishedAt}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-4 text-sm text-on-surface-variant">
+                  <span>{article.readingTime}</span>
+                  <span className="inline-flex items-center gap-1"><Eye size={14} /> {article.viewCount}</span>
+                  <span>Güncellendi: {article.updatedAt}</span>
+                </div>
+              </div>
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <ShareButtons article={article} />
+                <button
+                  type="button"
+                  onClick={() => saved.toggle(article.slug)}
+                  className={cn(
+                    'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold',
+                    saved.has(article.slug) ? 'bg-primary text-background' : 'bg-surface-high text-primary hover:bg-surface-highest'
+                  )}
+                >
+                  <Bookmark size={16} fill={saved.has(article.slug) ? 'currentColor' : 'none'} />
+                  {saved.has(article.slug) ? 'Kaydedildi' : 'Haberi Kaydet'}
+                </button>
+              </div>
             </div>
-            <p className="text-sm text-on-surface-variant leading-relaxed">The point about Layer-2 liquidity is spot on. Arbitrum is eating the volume lately.</p>
-          </div>
-        </div>
+          </section>
 
-        <button className="w-full mt-8 bg-surface-highest p-4 rounded-xl flex items-center gap-3 text-on-surface-variant hover:text-white transition-colors">
-          <Edit size={18} />
-          <span className="text-sm font-medium">Join the discussion...</span>
-        </button>
-      </section>
+          <section className="space-y-8 rounded-[24px] border border-outline/5 bg-surface p-6 md:p-8">
+            {article.content.map((block) => (
+              <div key={block.id} className="space-y-3">
+                <h2 className="font-headline text-2xl font-bold text-white">{block.heading}</h2>
+                <p className="text-base leading-8 text-on-surface-variant">{block.body}</p>
+              </div>
+            ))}
+          </section>
+
+          <div className="flex flex-wrap gap-2">
+            {article.tags.map((tag) => (
+              <Link key={tag} to={`/blog/tag/${encodeURIComponent(tag)}`} className="rounded-lg bg-surface-high px-3 py-2 text-xs font-bold text-primary">
+                #{tag}
+              </Link>
+            ))}
+          </div>
+
+          <CommentSection article={article} />
+        </article>
+
+        <RelatedNews article={article} />
+      </div>
     </div>
   );
 }
