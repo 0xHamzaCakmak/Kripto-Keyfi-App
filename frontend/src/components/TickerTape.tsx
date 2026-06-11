@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ASSETS } from '../constants';
 import { cn } from '../lib/utils';
 import { Asset } from '../types';
+import { COINGECKO_IDS_BY_ASSET_ID, getLiveMarketPrices, LiveMarketPrices } from '../services/priceService';
 
 const TICKER_ASSETS: Asset[] = [
   ASSETS.find((asset) => asset.id === 'btc') ?? {
@@ -126,26 +127,6 @@ const TICKER_ASSETS: Asset[] = [
   },
 ];
 
-const COINGECKO_IDS_BY_ASSET_ID: Record<string, string> = {
-  btc: 'bitcoin',
-  eth: 'ethereum',
-  bnb: 'binancecoin',
-  xrp: 'ripple',
-  sol: 'solana',
-  tron: 'tron',
-  doge: 'dogecoin',
-  ada: 'cardano',
-  ton: 'the-open-network',
-  avax: 'avalanche-2',
-  xaut: 'tether-gold',
-  arb: 'arbitrum',
-};
-
-type CoinGeckoPriceResponse = Record<string, {
-  usd?: number;
-  usd_24h_change?: number;
-}>;
-
 function formatPrice(price: number) {
   return price.toLocaleString('en-US', {
     minimumFractionDigits: price >= 1000 ? 0 : 2,
@@ -169,16 +150,7 @@ export default function TickerTape() {
     let isMounted = true;
 
     async function fetchLivePrices() {
-      const ids = Object.values(COINGECKO_IDS_BY_ASSET_ID).join(',');
-      const response = await fetch(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
-      );
-
-      if (!response.ok) {
-        throw new Error(`CoinGecko price request failed: ${response.status}`);
-      }
-
-      const livePrices = await response.json() as CoinGeckoPriceResponse;
+      const livePrices = await getLiveMarketPrices(TICKER_ASSETS.map((asset) => asset.id)) as LiveMarketPrices;
 
       if (!isMounted) {
         return;

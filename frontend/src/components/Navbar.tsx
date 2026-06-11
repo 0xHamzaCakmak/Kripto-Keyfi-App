@@ -19,12 +19,13 @@ export default function Navbar() {
   const user = getCurrentUser();
 
   const navLinks = [
-    { name: 'Home', path: '/' },
-    { name: 'Ecosystem', path: '/ecosystem' },
-    { name: 'Chat', path: '/chat' },
-    { name: 'Blog', path: '/blog' },
-    { name: 'Videos', path: '/videos' },
-    { name: 'Academy', path: '/academy' },
+    { name: 'Anasayfa', path: '/' },
+    { name: 'Ekosistem', path: '/ecosystem' },
+    { name: 'Keyfi Oyunlar', path: '/games' },
+    { name: 'Sohbet', path: '/chat' },
+    { name: 'Haberler', path: '/blog' },
+    { name: 'Videolar', path: '/videos' },
+    { name: 'Akademik', path: '/academy' },
   ];
 
   useEffect(() => {
@@ -52,6 +53,8 @@ export default function Navbar() {
   function isActivePath(path: string) {
     return path === '/ecosystem'
       ? location.pathname.startsWith('/ecosystem')
+      : path === '/games'
+        ? location.pathname.startsWith('/games')
       : path === '/blog'
         ? location.pathname.startsWith('/blog') || location.pathname.startsWith('/insights')
       : location.pathname === path;

@@ -9,7 +9,8 @@ import {
   Users,
   Wallet
 } from 'lucide-react';
-import { ARTICLES, ASSETS, MESSAGES, PROJECTS } from '../constants';
+import { ARTICLES, MESSAGES, PROJECTS } from '../constants';
+import { HomeUpDownWidget } from './Games';
 import { cn } from '../lib/utils';
 
 const stats = [
@@ -22,7 +23,6 @@ const stats = [
 export default function Home() {
   const featuredProjects = PROJECTS.slice(0, 3);
   const latestArticles = ARTICLES.slice(0, 2);
-  const topAssets = ASSETS.slice(0, 3);
 
   return (
     <div className="grid grid-cols-12 gap-6">
@@ -133,33 +133,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="rounded-[24px] bg-surface border border-outline/5 p-6">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="font-headline text-xl font-bold text-white">My Assets Preview</h2>
-              <Link to="/assets" className="text-sm font-bold text-primary hover:underline">Open</Link>
-            </div>
-            <div className="space-y-3">
-              {topAssets.map((asset) => (
-                <div key={asset.id} className="flex items-center justify-between rounded-2xl bg-surface-high/40 p-4">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-highest">
-                      <img src={asset.icon} alt={asset.name} className="h-6 w-6" />
-                    </span>
-                    <div>
-                      <p className="font-headline text-sm font-bold text-white">{asset.name}</p>
-                      <p className="text-xs text-on-surface-variant">{asset.balance} {asset.symbol}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-headline text-sm font-bold text-white">${asset.value.toLocaleString()}</p>
-                    <p className={cn("text-xs font-bold", asset.change24h >= 0 ? 'text-secondary' : 'text-error')}>
-                      {asset.change24h >= 0 ? '+' : ''}{asset.change24h}%
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <HomeUpDownWidget />
         </section>
       </div>
 
