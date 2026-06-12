@@ -12,7 +12,13 @@ export type BtcPriceState = {
   drift: number;
 };
 
+export type PriceAssetId = 'btc' | 'eth';
+
 const INITIAL_BTC_PRICE = 62534.25;
+const INITIAL_ASSET_PRICES: Record<PriceAssetId, number> = {
+  btc: INITIAL_BTC_PRICE,
+  eth: 3421.12
+};
 const MAX_POINT_COUNT = 120;
 
 export const COINGECKO_IDS_BY_ASSET_ID: Record<string, string> = {
@@ -58,23 +64,40 @@ export function getBtcPriceMock(anchorPrice = INITIAL_BTC_PRICE) {
   return roundPrice(anchorPrice + randomBetween(-10, 10));
 }
 
-export async function getBtcPriceFromApi() {
-  const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd');
+export function getAssetPriceMock(assetId: PriceAssetId, anchorPrice = INITIAL_ASSET_PRICES[assetId]) {
+  return getBtcPriceMock(anchorPrice);
+}
+
+export async function getAssetPriceFromApi(assetId: PriceAssetId) {
+  const coinGeckoId = COINGECKO_IDS_BY_ASSET_ID[assetId];
+  const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`);
   if (!response.ok) throw new Error('CoinGecko price request failed');
 
   const data = await response.json();
-  const price = Number(data?.bitcoin?.usd);
+  const price = Number(data?.[coinGeckoId]?.usd);
   if (!Number.isFinite(price)) throw new Error('CoinGecko price response is invalid');
 
   return roundPrice(price);
 }
 
+export async function getBtcPriceFromApi() {
+  return getAssetPriceFromApi('btc');
+}
+
+export async function getLiveAssetPrice(assetId: PriceAssetId) {
+  return getAssetPriceFromApi(assetId);
+}
+
 export async function getLiveBtcPrice() {
-  return getBtcPriceFromApi();
+  return getLiveAssetPrice('btc');
+}
+
+export function getFallbackAssetPrice(assetId: PriceAssetId) {
+  return getAssetPriceMock(assetId, INITIAL_ASSET_PRICES[assetId]);
 }
 
 export function getFallbackBtcPrice() {
-  return getBtcPriceMock(INITIAL_BTC_PRICE);
+  return getFallbackAssetPrice('btc');
 }
 
 export async function getCurrentBtcAnchorPrice({ preferApi = false } = {}) {
@@ -120,6 +143,10 @@ export function createInitialBtcPriceState(initialPrice = INITIAL_BTC_PRICE, poi
   };
 }
 
+export function createInitialAssetPriceState(assetId: PriceAssetId, initialPrice = INITIAL_ASSET_PRICES[assetId], pointCount = 72): BtcPriceState {
+  return createInitialBtcPriceState(initialPrice, pointCount);
+}
+
 export function createNextAnchorPrice(anchorPrice: number) {
   return roundPrice(anchorPrice + randomBetween(-70, 70));
 }
@@ -150,11 +177,19 @@ export function getNextBtcPriceState(state: BtcPriceState, frameIntensity = 1): 
   };
 }
 
+export function getNextAssetPriceState(state: BtcPriceState, frameIntensity = 1): BtcPriceState {
+  return getNextBtcPriceState(state, frameIntensity);
+}
+
 export function retargetBtcPriceState(state: BtcPriceState, targetAnchorPrice = createNextAnchorPrice(state.anchorPrice)): BtcPriceState {
   return {
     ...state,
     targetAnchorPrice
   };
+}
+
+export function retargetAssetPriceState(state: BtcPriceState, targetAnchorPrice = createNextAnchorPrice(state.anchorPrice)): BtcPriceState {
+  return retargetBtcPriceState(state, targetAnchorPrice);
 }
 
 export function subscribeToBtcPriceMock(onPrice: (price: number) => void) {

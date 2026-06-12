@@ -14,24 +14,28 @@ export type PredictionHistoryItem = {
 const HISTORY_KEY = 'kripto-keyfi-up-down-history';
 const HISTORY_LIMIT = 20;
 
+function getHistoryKey(scope = 'btc') {
+  return scope === 'btc' ? HISTORY_KEY : `${HISTORY_KEY}-${scope}`;
+}
+
 export function resolvePrediction(direction: PredictionDirection, entryPrice: number, resultPrice: number): PredictionResult {
   if (resultPrice === entryPrice) return 'Berabere';
   if (direction === 'UP') return resultPrice > entryPrice ? 'Başarılı' : 'Başarısız';
   return resultPrice < entryPrice ? 'Başarılı' : 'Başarısız';
 }
 
-export function loadPredictionHistory(): PredictionHistoryItem[] {
+export function loadPredictionHistory(scope = 'btc'): PredictionHistoryItem[] {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = localStorage.getItem(getHistoryKey(scope));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-export function savePredictionHistory(item: PredictionHistoryItem) {
-  const nextHistory = [item, ...loadPredictionHistory()].slice(0, HISTORY_LIMIT);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(nextHistory));
+export function savePredictionHistory(item: PredictionHistoryItem, scope = 'btc') {
+  const nextHistory = [item, ...loadPredictionHistory(scope)].slice(0, HISTORY_LIMIT);
+  localStorage.setItem(getHistoryKey(scope), JSON.stringify(nextHistory));
   return nextHistory;
 }
 

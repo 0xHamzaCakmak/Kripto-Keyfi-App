@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Activity, ArrowRight, Brain, Clock3, Filter, Gamepad2, Gauge, History, LockKeyhole, RadioTower, ShieldAlert, ShieldCheck, TrendingDown, TrendingUp, Trophy, WalletCards } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { createInitialBtcPriceState, formatUsd, getFallbackBtcPrice, getLiveBtcPrice, getNextBtcPriceState, PricePoint, retargetBtcPriceState } from '../services/priceService';
+import { createInitialAssetPriceState, formatUsd, getFallbackAssetPrice, getLiveAssetPrice, getNextAssetPriceState, PriceAssetId, PricePoint, retargetAssetPriceState } from '../services/priceService';
 import { GameCatalogItem, GameFilter, gameCategories, gamesCatalog } from '../services/gameService';
 import { getAuthState } from '../services/authService';
 import {
@@ -23,10 +23,33 @@ type ActivePrediction = {
   startedAt: number;
 };
 
-function useBtcPriceStream() {
-  const [priceState, setPriceState] = useState(() => createInitialBtcPriceState(getFallbackBtcPrice()));
+const UP_DOWN_ASSETS: Record<PriceAssetId, {
+  symbol: 'BTC' | 'ETH';
+  name: 'Bitcoin' | 'Ethereum';
+  title: string;
+  route: string;
+  historyKey: string;
+}> = {
+  btc: {
+    symbol: 'BTC',
+    name: 'Bitcoin',
+    title: 'Bitcoin Up / Down',
+    route: '/games/up-down',
+    historyKey: 'btc'
+  },
+  eth: {
+    symbol: 'ETH',
+    name: 'Ethereum',
+    title: 'Ethereum Up / Down',
+    route: '/games/eth-up-down',
+    historyKey: 'eth'
+  }
+};
+
+function useAssetPriceStream(assetId: PriceAssetId = 'btc') {
+  const [priceState, setPriceState] = useState(() => createInitialAssetPriceState(assetId, getFallbackAssetPrice(assetId)));
   const [isLoadingLivePrice, setIsLoadingLivePrice] = useState(true);
-  const [liveBtcPrice, setLiveBtcPrice] = useState<number | null>(null);
+  const [liveAssetPrice, setLiveAssetPrice] = useState<number | null>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
   const hasLoadedLivePrice = useRef(false);
 
@@ -38,15 +61,15 @@ function useBtcPriceStream() {
 
     async function syncLiveAnchor() {
       try {
-        const livePrice = await getLiveBtcPrice();
+        const livePrice = await getLiveAssetPrice(assetId);
         if (!isMounted) return;
-        setLiveBtcPrice(livePrice);
+        setLiveAssetPrice(livePrice);
         setPriceState((current) => {
           if (!hasLoadedLivePrice.current) {
             hasLoadedLivePrice.current = true;
-            return createInitialBtcPriceState(livePrice);
+            return createInitialAssetPriceState(assetId, livePrice);
           }
-          return retargetBtcPriceState(current, livePrice);
+          return retargetAssetPriceState(current, livePrice);
         });
         setIsLoadingLivePrice(false);
       } catch (error) {
@@ -67,7 +90,7 @@ function useBtcPriceStream() {
         setPriceState((current) => {
           let next = current;
           for (let index = 0; index < stepCount; index += 1) {
-            next = getNextBtcPriceState(next, 0.55);
+            next = getNextAssetPriceState(next, 0.55);
           }
           return next;
         });
@@ -86,9 +109,13 @@ function useBtcPriceStream() {
       if (animationFrameId) window.cancelAnimationFrame(animationFrameId);
       window.clearInterval(anchorTimer);
     };
-  }, []);
+  }, [assetId]);
 
-  return { ...priceState, isLoadingLivePrice, liveBtcPrice, scrollProgress };
+  return { ...priceState, isLoadingLivePrice, liveAssetPrice, scrollProgress };
+}
+
+function useBtcPriceStream() {
+  return useAssetPriceStream('btc');
 }
 
 function getChartScale(points: PricePoint[], extraPrices: number[] = []) {
@@ -251,10 +278,10 @@ export function RiskDisclaimer({ compact = false }: { compact?: boolean }) {
 }
 
 export function HomeUpDownWidget() {
-  const { currentPrice, pricePoints, isLoadingLivePrice, liveBtcPrice, scrollProgress } = useBtcPriceStream();
+  const { currentPrice, pricePoints, isLoadingLivePrice, liveAssetPrice, scrollProgress } = useBtcPriceStream();
   const previousPrice = pricePoints[pricePoints.length - 2]?.price ?? currentPrice;
   const isUp = currentPrice >= previousPrice;
-  const displayedBtcPrice = liveBtcPrice ?? currentPrice;
+  const displayedBtcPrice = liveAssetPrice ?? currentPrice;
 
   return (
     <Link to="/games/up-down" className="group block rounded-[24px] border border-outline/5 bg-surface p-6 transition-all hover:border-primary/30 hover:shadow-[0_0_28px_rgba(141,172,255,0.12)]">
@@ -454,8 +481,10 @@ function GameCategoryFilters({
 }
 
 function ActiveGameCard({ game }: { game: GameCatalogItem }) {
-  const { currentPrice, pricePoints, isLoadingLivePrice, liveBtcPrice, scrollProgress } = useBtcPriceStream();
-  const displayedBtcPrice = liveBtcPrice ?? currentPrice;
+  const assetId = game.assetId ?? 'btc';
+  const asset = UP_DOWN_ASSETS[assetId];
+  const { currentPrice, pricePoints, isLoadingLivePrice, liveAssetPrice, scrollProgress } = useAssetPriceStream(assetId);
+  const displayedAssetPrice = liveAssetPrice ?? currentPrice;
 
   return (
     <article className="relative overflow-hidden rounded-[28px] border border-primary/25 bg-surface p-6 shadow-[0_0_40px_rgba(141,172,255,0.08)]">
@@ -475,8 +504,8 @@ function ActiveGameCard({ game }: { game: GameCatalogItem }) {
       <p className="min-h-[48px] text-sm leading-6 text-on-surface-variant">{game.description}</p>
       <div className="mt-5 flex items-end justify-between gap-4">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Anlık BTC</p>
-          <p className="font-headline text-2xl font-black text-white">{formatUsd(displayedBtcPrice)}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Anlık {asset.symbol}</p>
+          <p className="font-headline text-2xl font-black text-white">{formatUsd(displayedAssetPrice)}</p>
           {isLoadingLivePrice && <p className="mt-1 text-[11px] font-bold text-primary">Canlı fiyat yükleniyor</p>}
         </div>
         <span className="rounded-xl bg-secondary/10 px-3 py-2 text-xs font-bold text-secondary">{game.category}</span>
@@ -501,6 +530,33 @@ function CenterGameCard({
 }) {
   if (game.status === 'active' && game.hasMiniChart) {
     return <ActiveGameCard game={game} />;
+  }
+
+  if (game.status === 'active') {
+    return (
+      <Link to={game.route ?? '/games'} className="block h-full">
+        <article className="flex h-full flex-col rounded-[24px] border border-primary/20 bg-surface p-6 transition-all hover:border-primary/50 hover:shadow-[0_0_28px_rgba(141,172,255,0.10)]">
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <GameIcon game={game} />
+            <span className="rounded-lg bg-secondary/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-secondary">
+              Aktif
+            </span>
+          </div>
+          <div className="flex-1">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary">{game.category}</p>
+            <h2 className="font-headline text-xl font-bold text-white">{game.title}</h2>
+            <p className="mt-3 text-sm leading-6 text-on-surface-variant">{game.description}</p>
+            <p className="mt-4 rounded-2xl border border-outline/10 bg-surface-high/60 p-4 text-xs leading-5 text-on-surface-variant">
+              {game.longDescription}
+            </p>
+          </div>
+          <span className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-bold text-background transition-all">
+            Oyuna Git
+            <ArrowRight size={16} />
+          </span>
+        </article>
+      </Link>
+    );
   }
 
   return (
@@ -644,12 +700,13 @@ function ScoreSummary({ history }: { history: PredictionHistoryItem[] }) {
   );
 }
 
-export function UpDownGamePage() {
-  const { currentPrice, pricePoints, isLoadingLivePrice, scrollProgress } = useBtcPriceStream();
+export function UpDownGamePage({ assetId = 'btc' }: { assetId?: PriceAssetId }) {
+  const asset = UP_DOWN_ASSETS[assetId];
+  const { currentPrice, pricePoints, isLoadingLivePrice, scrollProgress } = useAssetPriceStream(assetId);
   const [activePrediction, setActivePrediction] = useState<ActivePrediction | null>(null);
   const [countdown, setCountdown] = useState(GAME_DURATION);
   const [lastResult, setLastResult] = useState<PredictionHistoryItem | null>(null);
-  const [history, setHistory] = useState<PredictionHistoryItem[]>(() => loadPredictionHistory());
+  const [history, setHistory] = useState<PredictionHistoryItem[]>(() => loadPredictionHistory(asset.historyKey));
   const authUser = getAuthState();
 
   useEffect(() => {
@@ -676,11 +733,11 @@ export function UpDownGamePage() {
       result,
       createdAt: new Date().toISOString()
     };
-    setHistory(savePredictionHistory(item));
+    setHistory(savePredictionHistory(item, asset.historyKey));
     setLastResult(item);
     setActivePrediction(null);
     setCountdown(GAME_DURATION);
-  }, [activePrediction, countdown, currentPrice]);
+  }, [activePrediction, asset.historyKey, countdown, currentPrice]);
 
   const statusText = useMemo(() => {
     if (!activePrediction) return 'Tahmin bekleniyor';
@@ -704,8 +761,8 @@ export function UpDownGamePage() {
         <div className="rounded-[32px] border border-outline/5 bg-surface p-6 md:p-8">
           <div className="mb-6 flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
             <div>
-              <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.28em] text-primary">Bitcoin Up / Down</p>
-              <h1 className="font-headline text-3xl font-extrabold text-white md:text-5xl">Bitcoin Up / Down Tahmin Oyunu</h1>
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.28em] text-primary">{asset.title}</p>
+              <h1 className="font-headline text-3xl font-extrabold text-white md:text-5xl">{asset.title} Tahmin Oyunu</h1>
               <p className="mt-4 max-w-3xl text-sm leading-7 text-on-surface-variant md:text-base">
                 30 saniye içinde fiyatın yukarı mı aşağı mı gideceğini tahmin et.
               </p>
@@ -718,7 +775,7 @@ export function UpDownGamePage() {
 
           <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded-2xl bg-surface-high/50 p-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Anlık BTC</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Anlık {asset.symbol}</p>
               <p className="mt-2 font-headline text-3xl font-black text-white">{formatUsd(currentPrice)}</p>
               {isLoadingLivePrice && <p className="mt-1 text-[11px] font-bold text-primary">Canlı fiyat yükleniyor</p>}
             </div>

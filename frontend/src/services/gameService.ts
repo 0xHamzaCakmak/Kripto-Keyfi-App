@@ -17,6 +17,7 @@ export type GameCatalogItem = {
   category: GameCategory;
   route?: string;
   icon: string;
+  assetId?: 'btc' | 'eth';
   isFeatured?: boolean;
   hasMiniChart?: boolean;
 };
@@ -43,6 +44,7 @@ export const gamesCatalog: GameCatalogItem[] = [
     category: 'Tahmin Oyunları',
     route: '/games/up-down',
     icon: 'trend',
+    assetId: 'btc',
     isFeatured: true,
     hasMiniChart: true,
     description: '30 saniyelik BTC fiyat yönü tahmin oyunu.',
@@ -52,10 +54,12 @@ export const gamesCatalog: GameCatalogItem[] = [
     id: 'ethereum-up-down',
     slug: 'eth-up-down',
     title: 'Ethereum Up / Down',
-    status: 'coming_soon',
+    status: 'active',
     category: 'Tahmin Oyunları',
     route: '/games/eth-up-down',
     icon: 'trend',
+    assetId: 'eth',
+    hasMiniChart: true,
     description: 'ETH fiyat hareketleri için eğlence amaçlı tahmin modu.',
     longDescription: 'Ethereum fiyat yönünü kısa süreli sanal puan akışıyla tahmin etmeye odaklanan mod.'
   },
@@ -63,7 +67,7 @@ export const gamesCatalog: GameCatalogItem[] = [
     id: 'whale-guess',
     slug: 'whale-guess',
     title: 'Whale Guess',
-    status: 'coming_soon',
+    status: 'active',
     category: 'On-Chain Oyunları',
     route: '/games/whale-guess',
     icon: 'wallet',
@@ -74,7 +78,7 @@ export const gamesCatalog: GameCatalogItem[] = [
     id: 'transfer-volume-guess',
     slug: 'transfer-volume-guess',
     title: 'Transfer Volume Guess',
-    status: 'coming_soon',
+    status: 'active',
     category: 'On-Chain Oyunları',
     route: '/games/transfer-volume-guess',
     icon: 'activity',
@@ -85,7 +89,7 @@ export const gamesCatalog: GameCatalogItem[] = [
     id: 'gas-fee-challenge',
     slug: 'gas-fee-challenge',
     title: 'Gas Fee Challenge',
-    status: 'coming_soon',
+    status: 'active',
     category: 'On-Chain Oyunları',
     route: '/games/gas-fee-challenge',
     icon: 'gauge',
@@ -118,7 +122,7 @@ export const gamesCatalog: GameCatalogItem[] = [
     id: 'scam-or-safe',
     slug: 'scam-or-safe',
     title: 'Scam mı Değil mi?',
-    status: 'coming_soon',
+    status: 'active',
     category: 'Güvenlik Oyunları',
     route: '/games/scam-or-safe',
     icon: 'shield',

@@ -9,6 +9,10 @@ import Chat from './components/Chat';
 import Insights, { SavedNewsPage } from './components/Insights';
 import ArticleDetail from './components/ArticleDetail';
 import GamesPage, { UpDownGamePage } from './components/Games';
+import WhaleGuessPage from './components/WhaleGuess';
+import TransferVolumeGuessPage from './components/TransferVolumeGuess';
+import ScamOrSafePage from './components/ScamOrSafe';
+import GasFeeChallengePage from './components/GasFeeChallenge';
 import Profile, { CreatorApplyPage, CreatorDashboard, CreatorVerificationPage, PlaceholderDashboard, PublicProfile } from './components/Profile';
 import VideoCenter, { ChannelProfile, SavedVideosPage, VideoDetail } from './components/Videos';
 import AcademyHome, { AcademyArticleDetail, AcademySeriesDetail, AcademySeriesList, GlossaryDetail, GlossaryPage, ReadingList } from './components/Academy';
@@ -36,6 +40,11 @@ export default function App() {
             <Route path="/my-assets" element={<ProtectedRoute feature="My Assets"><Dashboard /></ProtectedRoute>} />
             <Route path="/games" element={<GamesPage />} />
             <Route path="/games/up-down" element={<UpDownGamePage />} />
+            <Route path="/games/eth-up-down" element={<UpDownGamePage assetId="eth" />} />
+            <Route path="/games/whale-guess" element={<WhaleGuessPage />} />
+            <Route path="/games/transfer-volume-guess" element={<TransferVolumeGuessPage />} />
+            <Route path="/games/scam-or-safe" element={<ScamOrSafePage />} />
+            <Route path="/games/gas-fee-challenge" element={<GasFeeChallengePage />} />
             <Route path="/ecosystem" element={<Ecosystem />} />
             <Route path="/ecosystem/:section" element={<Ecosystem />} />
             <Route path="/ecosystem/:section/:tool" element={<Ecosystem />} />
