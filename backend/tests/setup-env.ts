@@ -1,0 +1,16 @@
+Object.assign(process.env, {
+  NODE_ENV: 'test',
+  PORT: '4000',
+  DATABASE_URL: 'mysql://root:root@127.0.0.1:3306/kriptokeyfi_test',
+  FRONTEND_URL: 'http://localhost:3000',
+  JWT_ACCESS_SECRET: 'test-access-secret-that-is-at-least-32-characters',
+  JWT_REFRESH_SECRET: 'test-refresh-secret-that-is-at-least-32-characters',
+  ACCESS_TOKEN_MINUTES: '15',
+  REFRESH_TOKEN_DAYS: '7',
+  COOKIE_SECURE: 'false',
+  COOKIE_SAME_SITE: 'lax',
+  INITIAL_ADMIN_EMAIL: 'admin@example.com',
+  INITIAL_ADMIN_PASSWORD: 'admin-password-123',
+  INITIAL_ADMIN_NAME: 'Test Admin',
+  TRADING_CREDENTIALS_MASTER_KEY: '1111111111111111111111111111111111111111111111111111111111111111',
+});

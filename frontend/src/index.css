@@ -40,6 +40,12 @@
   background: linear-gradient(135deg, #8dacff 0%, #296cf0 100%);
 }
 
+@layer components {
+  .input {
+    @apply w-full rounded-xl border border-outline/15 bg-surface-high px-4 py-3 text-sm text-on-surface outline-none transition-colors placeholder:text-outline/60 focus:border-primary/60;
+  }
+}
+
 @keyframes marquee {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }

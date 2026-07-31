@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { getAuthState, loginWithEmail, loginWithGoogleMock, loginWithWalletMock, registerWithEmail } from '../services/authService';
 import { completeOnboarding } from '../services/onboardingService';
 import { connectWalletMock, WalletProvider } from '../services/walletService';
+import { getApiErrorMessage } from '../services/apiClient';
 
 function AuthShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
@@ -34,33 +35,31 @@ function ErrorBox({ message }: { message: string }) {
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('0xhamzacakmak@gmail.com');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState('');
 
-  function submit(kind: 'email' | 'google' | 'wallet') {
+  async function submit(kind: 'email' | 'google' | 'wallet') {
     setError('');
     setLoading(kind);
-    window.setTimeout(() => {
-      try {
-        if (kind === 'email') loginWithEmail(email, password);
-        if (kind === 'google') loginWithGoogleMock();
-        if (kind === 'wallet') loginWithWalletMock();
-        navigate('/onboarding');
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Giriş yapılamadı.');
-      } finally {
-        setLoading('');
-      }
-    }, 450);
+    try {
+      const user = kind === 'email'
+        ? await loginWithEmail(email, password)
+        : kind === 'google' ? loginWithGoogleMock() : loginWithWalletMock();
+      navigate(user.backendRole === 'ADMIN' ? '/admin' : '/onboarding');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Giriş yapılamadı.'));
+    } finally {
+      setLoading('');
+    }
   }
 
   return (
     <AuthShell title="Kripto Keyfi'ne Giriş Yap" description="Haberleri takip et, akademi içeriklerini kaydet, videoları izle ve Web3 kimliğini oluştur.">
       <div className="space-y-5">
-        <button onClick={() => submit('google')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-high px-4 py-3 text-sm font-bold text-on-surface hover:bg-surface-highest"><Chrome size={18} /> {loading === 'google' ? 'Giriş yapılıyor...' : 'Google ile devam et'}</button>
+        <button onClick={() => void submit('google')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-high px-4 py-3 text-sm font-bold text-on-surface hover:bg-surface-highest"><Chrome size={18} /> {loading === 'google' ? 'Giriş yapılıyor...' : 'Google ile devam et'}</button>
         <div className="grid gap-4">
           <Input label="E-posta" value={email} onChange={setEmail} />
           <Input label="Şifre" value={password} onChange={setPassword} type="password" />
@@ -70,8 +69,8 @@ export function LoginPage() {
           <Link to="/forgot-password" className="font-bold text-primary">Şifremi unuttum</Link>
         </div>
         {error && <ErrorBox message={error} />}
-        <button onClick={() => submit('email')} className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-background">{loading === 'email' ? 'Giriş yapılıyor...' : 'Giriş Yap'}</button>
-        <button onClick={() => submit('wallet')} className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline/10 bg-surface-high/40 px-4 py-3 text-sm font-bold text-on-surface-variant hover:text-white"><Wallet size={18} /> {loading === 'wallet' ? 'Cüzdan hazırlanıyor...' : 'Cüzdan ile devam et'}</button>
+        <button onClick={() => void submit('email')} disabled={Boolean(loading)} className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-background disabled:opacity-60">{loading === 'email' ? 'Giriş yapılıyor...' : 'Giriş Yap'}</button>
+        <button onClick={() => void submit('wallet')} className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline/10 bg-surface-high/40 px-4 py-3 text-sm font-bold text-on-surface-variant hover:text-white"><Wallet size={18} /> {loading === 'wallet' ? 'Cüzdan hazırlanıyor...' : 'Cüzdan ile devam et'}</button>
         <p className="text-center text-sm text-on-surface-variant">Hesabın yok mu? <Link to="/register" className="font-bold text-primary">Ücretsiz katıl.</Link></p>
       </div>
     </AuthShell>

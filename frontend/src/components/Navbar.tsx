@@ -20,6 +20,7 @@ export default function Navbar() {
 
   const navLinks = [
     { name: 'Anasayfa', path: '/' },
+    { name: 'Airdrop Manager', path: '/token-airdrop-manager' },
     { name: 'Ekosistem', path: '/ecosystem' },
     { name: 'Keyfi Oyunlar', path: '/games' },
     { name: 'Sohbet', path: '/chat' },
@@ -254,6 +255,7 @@ function AccountCenterMenu({ authUser }: { authUser: MockAuthUser }) {
       </div>
 
       <div className="space-y-2">
+        {authUser.backendRole === 'ADMIN' && <MenuLink to="/admin" label="Admin Paneli" icon={ShieldCheck} />}
         <MenuLink to={`/u/${user.username}`} label="Public Profile'a git" icon={UserCircle2} />
         <MenuLink to="/assets" label="My Assets" icon={Award} />
         <MenuLink to="/identity" label="Identity Center" icon={ShieldCheck} />

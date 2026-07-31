@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  PASSIVE
+  SUSPENDED
+}
+
+enum ExchangeProvider {
+  BINANCE
+  BYBIT
+}
+
+enum ExchangeEnvironment {
+  TESTNET
+  DEMO
+}
+
+enum ExchangeAccountType {
+  USDT_M
+  UNIFIED
+}
+
+enum ExchangeConnectionStatus {
+  CONNECTED
+  ERROR
+  DISABLED
+}
+
+model User {
+  id                 String            @id @default(cuid())
+  email              String            @unique
+  passwordHash       String
+  name               String?
+  role               UserRole          @default(USER)
+  status             UserStatus        @default(ACTIVE)
+  mustChangePassword Boolean           @default(false)
+  lastLoginAt        DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  refreshSessions    RefreshSession[]
+  exchangeAccounts   ExchangeAccount[]
+
+  @@map("users")
+}
+
+model ExchangeAccount {
+  id                  String                   @id @default(cuid())
+  userId              String
+  name                String
+  provider            ExchangeProvider
+  environment         ExchangeEnvironment
+  accountType         ExchangeAccountType
+  apiKeyEncrypted     String                   @db.Text
+  apiSecretEncrypted  String                   @db.Text
+  passphraseEncrypted String?                  @db.Text
+  apiKeyHint          String
+  description         String?                  @db.Text
+  isActive            Boolean                  @default(true)
+  connectionStatus    ExchangeConnectionStatus @default(CONNECTED)
+  canTrade            Boolean                  @default(false)
+  withdrawalEnabled   Boolean                  @default(false)
+  lastConnectedAt     DateTime?
+  lastSyncAt          DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId, provider])
+  @@index([connectionStatus])
+  @@map("exchange_accounts")
+}
+
+model RefreshSession {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  ipAddress String?
+  userAgent String?   @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_sessions")
+}

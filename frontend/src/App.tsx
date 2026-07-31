@@ -1,4 +1,3 @@
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import TickerTape from './components/TickerTape';
@@ -13,15 +12,14 @@ import WhaleGuessPage from './components/WhaleGuess';
 import TransferVolumeGuessPage from './components/TransferVolumeGuess';
 import ScamOrSafePage from './components/ScamOrSafe';
 import GasFeeChallengePage from './components/GasFeeChallenge';
-import Profile, { CreatorApplyPage, CreatorDashboard, CreatorVerificationPage, PlaceholderDashboard, PublicProfile } from './components/Profile';
-import VideoCenter, { ChannelProfile, SavedVideosPage, VideoDetail } from './components/Videos';
+import Profile, { CreatorApplyPage, CreatorDashboard, CreatorVerificationPage, PlaceholderDashboard, PublicProfile } from './components/Profile';import TokenAirdropManager from './components/TokenAirdropManager';import VideoCenter, { ChannelProfile, SavedVideosPage, VideoDetail } from './components/Videos';
 import AcademyHome, { AcademyArticleDetail, AcademySeriesDetail, AcademySeriesList, GlossaryDetail, GlossaryPage, ReadingList } from './components/Academy';
-import { ConnectWalletPage, ForgotPasswordPage, LoginPage, LoginRequiredPage, OnboardingPage, RegisterPage } from './components/Auth';
-import { getAuthState } from './services/authService';
-
-function ProtectedRoute({ children, feature }: { children: React.ReactNode; feature: string }) {
-  return getAuthState() ? <>{children}</> : <LoginRequiredPage feature={feature} />;
-}
+import { ConnectWalletPage, ForgotPasswordPage, LoginPage, OnboardingPage, RegisterPage } from './components/Auth';
+import AdminDashboard from './components/AdminDashboard';
+import AdminLayout from './components/AdminLayout';
+import TradingBotDashboard from './components/TradingBotDashboard';
+import ExchangeAccounts from './components/ExchangeAccounts';
+import { AdminRoute, ProtectedRoute } from './auth/RouteGuards';
 
 export default function App() {
   return (
@@ -32,6 +30,11 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="trading" element={<TradingBotDashboard />} />
+              <Route path="trading/accounts" element={<ExchangeAccounts />} />
+            </Route>
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
@@ -87,6 +90,7 @@ export default function App() {
             <Route path="/academy/glossary" element={<GlossaryPage />} />
             <Route path="/academy/glossary/:slug" element={<GlossaryDetail />} />
             <Route path="/academy/reading-list" element={<ReadingList />} />
+            <Route path="/token-airdrop-manager" element={<TokenAirdropManager />} />
           </Routes>
         </main>
         <TickerTape />
