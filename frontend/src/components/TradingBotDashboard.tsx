@@ -4,8 +4,8 @@ import { Link } from 'react-router-dom';
 import { api, getApiErrorMessage } from '../services/apiClient';
 
 type TradingOverview = {
-  moduleStatus: 'PHASE_THREE_READY';
-  engineStatus: 'MANUAL_REST_READY';
+  moduleStatus: 'PHASE_FOUR_REALTIME_READY';
+  engineStatus: 'PRIVATE_STREAM_READY';
   liveTradingEnabled: false;
   globalKillSwitch: false;
   connectedExchangeCount: number;
@@ -41,6 +41,14 @@ const labels: Record<string, string> = {
   'Verify real testnet balance synchronization': 'Gerçek testnet bakiye senkronizasyonunu doğrulama',
   'Add symbol and leverage metadata synchronization': 'Sembol ve kaldıraç metadata senkronizasyonu',
   'Prepare manual order preview': 'Manuel emir önizleme hazırlığı',
+  'Durable trading event outbox': 'Kalıcı ve idempotent işlem event outbox’ı',
+  'Binance private account WebSocket': 'Binance private hesap WebSocket’i',
+  'Reconnect, heartbeat and listen-key renewal': 'Reconnect, heartbeat ve listen-key yenileme',
+  'Authenticated SSE frontend updates': 'Yetkili SSE frontend güncellemeleri',
+  'Live submitting, canceling and closing states': 'Canlı gönderiliyor, iptal ve kapanış durumları',
+  'Recover exchange state after engine restart': 'Engine restart sonrası borsa state kurtarma',
+  'Add Bybit private account WebSocket': 'Bybit private hesap WebSocket’i',
+  'Add risk engine and global kill switch': 'Risk motoru ve global kill switch',
 };
 
 export default function TradingBotDashboard() {
@@ -64,12 +72,12 @@ export default function TradingBotDashboard() {
     <header className="overflow-hidden rounded-[32px] border border-primary/15 bg-gradient-to-br from-surface via-surface to-primary/10 p-6 md:p-8">
       <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
         <div className="max-w-3xl">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1.5 text-xs font-black uppercase tracking-wider text-secondary"><ShieldCheck size={15}/> Faz 3 manuel testnet işlemleri hazır</div>
+          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-secondary/20 bg-secondary/10 px-3 py-1.5 text-xs font-black uppercase tracking-wider text-secondary"><ShieldCheck size={15}/> Faz 4 gerçek zamanlı altyapı hazır</div>
           <h1 className="font-headline text-3xl font-black text-white md:text-5xl">Trading Bot Kontrol Merkezi</h1>
           <p className="mt-4 max-w-2xl leading-7 text-on-surface-variant">Çok borsalı bot altyapısının admin kontrol noktası. İlk bağlantılar yalnızca Binance Futures testnet ve Bybit demo ortamlarında kurulacak.</p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 xl:w-[390px]">
-          <Status label="İşlem katmanı" value={data ? 'Manuel REST hazır' : 'Kontrol ediliyor'} tone="info"/>
+          <Status label="İşlem katmanı" value={data ? 'Private stream hazır' : 'Kontrol ediliyor'} tone="info"/>
           <Status label="Canlı işlem" value="Kapalı" tone="safe"/>
           <Status label="Kill switch" value="Pasif · yalnızca testnet" tone="safe"/>
           <Status label="Çalışma modu" value="Testnet / Demo" tone="info"/>

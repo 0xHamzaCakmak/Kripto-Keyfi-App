@@ -1,10 +1,9 @@
 import type { Server } from 'node:http';
-import pino from 'pino';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './database/prisma.js';
+import { logger } from './utils/logger.js';
 
-const logger = pino({ level: env.NODE_ENV === 'development' ? 'debug' : 'info' });
 let server: Server | undefined;
 let shuttingDown = false;
 

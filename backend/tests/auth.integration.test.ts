@@ -197,8 +197,8 @@ describe('authentication and admin API', () => {
       .set('Authorization', `Bearer access:ADMIN:${admin.id}:session`);
     expect(response.status).toBe(200);
     expect(response.body.data).toMatchObject({
-      moduleStatus: 'PHASE_THREE_READY',
-      engineStatus: 'MANUAL_REST_READY',
+      moduleStatus: 'PHASE_FOUR_REALTIME_READY',
+      engineStatus: 'PRIVATE_STREAM_READY',
       liveTradingEnabled: false,
       globalKillSwitch: false,
     });

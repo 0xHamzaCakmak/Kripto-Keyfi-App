@@ -1,0 +1,160 @@
+package execution
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/account"
+	tradingv1 "github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/api/v1"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange"
+)
+
+var fixedTime = time.Date(2026, 8, 1, 20, 0, 0, 0, time.UTC)
+
+func TestPlaceClaimsAndExecutesExactlyOnce(t *testing.T) {
+	store := &fakeStore{claim: ClaimAcquired, order: sampleStoredOrder()}
+	writer := &fakeWriter{placed: domain.Order{ExchangeOrderID: "exchange-1", Symbol: "BTCUSDT", Status: domain.OrderOpen}}
+	service := testService(store, writer)
+	result, replay, err := service.Place(t.Context(), samplePlaceCommand())
+	if err != nil || replay || result.ExchangeOrderID != "exchange-1" {
+		t.Fatalf("unexpected place result: %#v replay=%v err=%v", result, replay, err)
+	}
+	if writer.configureCalls != 1 || writer.placeCalls != 1 || store.completeCalls != 1 {
+		t.Fatalf("expected one execution: writer=%#v store=%#v", writer, store)
+	}
+}
+
+func TestPlaceReplayNeverWritesToExchange(t *testing.T) {
+	stored := sampleStoredOrder()
+	stored.ExchangeOrderID = "exchange-existing"
+	stored.Status = domain.OrderOpen
+	store := &fakeStore{claim: ClaimCompletedReplay, order: stored}
+	writer := &fakeWriter{}
+	result, replay, err := testService(store, writer).Place(t.Context(), samplePlaceCommand())
+	if err != nil || !replay || result.ExchangeOrderID != "exchange-existing" || writer.placeCalls != 0 {
+		t.Fatalf("replay attempted exchange write: result=%#v replay=%v calls=%d err=%v", result, replay, writer.placeCalls, err)
+	}
+}
+
+func TestPlaceRejectsStoredCommandMismatch(t *testing.T) {
+	store := &fakeStore{claim: ClaimAcquired, order: sampleStoredOrder()}
+	writer := &fakeWriter{}
+	command := samplePlaceCommand()
+	command.Quantity = "9"
+	_, _, err := testService(store, writer).Place(t.Context(), command)
+	if err == nil || writer.placeCalls != 0 || store.failCalls != 1 {
+		t.Fatalf("mismatched command was not safely rejected: calls=%d failures=%d err=%v", writer.placeCalls, store.failCalls, err)
+	}
+}
+
+func TestCancelReplayNeverWritesToExchange(t *testing.T) {
+	stored := sampleStoredOrder()
+	stored.Status = domain.OrderCanceled
+	store := &fakeStore{cancelClaim: ClaimCompletedReplay, order: stored}
+	writer := &fakeWriter{}
+	command := tradingv1.CancelOrderCommand{
+		Meta: sampleMeta("cancel-idempotency-123", "kkc_123"), Account: sampleAccount(),
+		Symbol: stored.Symbol, ExchangeOrderID: stored.ExchangeOrderID,
+	}
+	result, replay, err := testService(store, writer).Cancel(t.Context(), command)
+	if err != nil || !replay || result.Status != domain.OrderCanceled || writer.cancelCalls != 0 {
+		t.Fatalf("cancel replay attempted exchange write: %#v replay=%v err=%v", result, replay, err)
+	}
+}
+
+func TestPreviewUsesStringDecimalRules(t *testing.T) {
+	store := &fakeStore{}
+	writer := &fakeWriter{symbols: []domain.SymbolRule{{
+		Symbol: "BTCUSDT", TickSize: "0.1", StepSize: "0.001", MinQuantity: "0.001", MaxQuantity: "100", MinNotional: "5", MaxLeverage: 20,
+	}}, markPrice: "50000"}
+	service := testService(store, writer)
+	result, err := service.Preview(t.Context(), tradingv1.PreviewOrderRequest{
+		Account: sampleAccount(), Symbol: "BTCUSDT", Side: domain.SideBuy, Type: domain.OrderMarket,
+		Quantity: "0.001", Leverage: 10, MarginMode: domain.MarginIsolated,
+	})
+	if err != nil || result.EstimatedNotional != "50" {
+		t.Fatalf("unexpected preview: %#v err=%v", result, err)
+	}
+}
+
+func testService(store *fakeStore, writer *fakeWriter) *Service {
+	return NewWithFactory(store, store, func(account.Resolved) (exchange.Writer, error) { return writer, nil }, func() time.Time { return fixedTime })
+}
+
+func sampleAccount() domain.ExchangeAccountRef {
+	return domain.ExchangeAccountRef{ID: "account-1", UserID: "user-1", Provider: domain.ProviderBinance, Environment: domain.EnvironmentTestnet, AccountType: domain.AccountTypeUSDTM}
+}
+
+func sampleMeta(idempotency, clientID string) tradingv1.CommandMeta {
+	return tradingv1.CommandMeta{RequestID: "request-1", ActorUserID: "user-1", IdempotencyKey: idempotency, ClientOrderID: clientID, RequestedAt: fixedTime}
+}
+
+func samplePlaceCommand() tradingv1.PlaceOrderCommand {
+	return tradingv1.PlaceOrderCommand{
+		Meta: sampleMeta("place-idempotency-123", "kk_123"), TradingOrderID: "order-1", Account: sampleAccount(),
+		Symbol: "BTCUSDT", Side: domain.SideBuy, Type: domain.OrderMarket, Quantity: "0.01", Leverage: 10, MarginMode: domain.MarginIsolated,
+	}
+}
+
+func sampleStoredOrder() StoredOrder {
+	return StoredOrder{ID: "order-1", UserID: "user-1", ExchangeAccountID: "account-1", IdempotencyKey: "place-idempotency-123",
+		ClientOrderID: "kk_123", ExchangeOrderID: "exchange-1", Symbol: "BTCUSDT", Side: domain.SideBuy, Type: domain.OrderMarket,
+		Quantity: "0.01", Leverage: 10, MarginMode: domain.MarginIsolated, Status: domain.OrderSubmitting}
+}
+
+type fakeStore struct {
+	claim, cancelClaim       ClaimResult
+	order                    StoredOrder
+	completeCalls, failCalls int
+}
+
+func (s *fakeStore) Resolve(context.Context, string, string) (account.Resolved, error) {
+	return account.Resolved{Reference: sampleAccount(), Engine: "GO"}, nil
+}
+func (s *fakeStore) Claim(context.Context, string, string, string, string, string, time.Time) (StoredOrder, ClaimResult, error) {
+	return s.order, s.claim, nil
+}
+func (s *fakeStore) Complete(context.Context, StoredOrder, domain.Order, time.Time) error {
+	s.completeCalls++
+	return nil
+}
+func (s *fakeStore) Fail(context.Context, StoredOrder, domain.ExchangeError, time.Time) error {
+	s.failCalls++
+	return nil
+}
+func (s *fakeStore) ClaimCancel(context.Context, string, string, string, string, string, time.Time) (StoredOrder, ClaimResult, error) {
+	return s.order, s.cancelClaim, nil
+}
+func (s *fakeStore) CompleteCancel(context.Context, StoredOrder, time.Time) error { return nil }
+func (s *fakeStore) FailCancel(context.Context, StoredOrder, domain.ExchangeError, time.Time) error {
+	return nil
+}
+
+type fakeWriter struct {
+	symbols                                 []domain.SymbolRule
+	markPrice                               domain.Decimal
+	placed                                  domain.Order
+	configureCalls, placeCalls, cancelCalls int
+}
+
+func (w *fakeWriter) GetBalances(context.Context) ([]domain.Balance, error)   { return nil, nil }
+func (w *fakeWriter) GetSymbols(context.Context) ([]domain.SymbolRule, error) { return w.symbols, nil }
+func (w *fakeWriter) GetOpenOrders(context.Context) ([]domain.Order, error)   { return nil, nil }
+func (w *fakeWriter) GetPositions(context.Context) ([]domain.Position, error) { return nil, nil }
+func (w *fakeWriter) GetMarkPrice(context.Context, string) (domain.Decimal, error) {
+	return w.markPrice, nil
+}
+func (w *fakeWriter) ConfigurePosition(context.Context, string, int, domain.MarginMode) error {
+	w.configureCalls++
+	return nil
+}
+func (w *fakeWriter) PlaceOrder(context.Context, exchange.PlaceOrderInput) (domain.Order, error) {
+	w.placeCalls++
+	return w.placed, nil
+}
+func (w *fakeWriter) CancelOrder(context.Context, string, string) (domain.Order, error) {
+	w.cancelCalls++
+	return domain.Order{Status: domain.OrderCanceled}, nil
+}

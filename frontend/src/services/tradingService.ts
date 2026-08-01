@@ -3,6 +3,7 @@ import { api } from './apiClient';
 export type TradingAccount = {
   id: string; name: string; provider: 'BINANCE' | 'BYBIT'; environment: 'TESTNET' | 'DEMO';
   isActive: boolean; canTrade: boolean; connectionStatus: 'CONNECTED' | 'ERROR' | 'DISABLED';
+  executionEngine: 'TYPESCRIPT' | 'GO';
 };
 export type TradingSymbol = {
   symbol: string; baseAsset: string; quoteAsset: string; tickSize: string; stepSize: string;
@@ -20,10 +21,12 @@ export type OrderPreview = {
 export type OpenOrder = {
   exchangeOrderId: string; clientOrderId: string; symbol: string; side: OrderSide; type: OrderType; status: string;
   quantity: string; executedQuantity: string; price?: string; stopPrice?: string; reduceOnly: boolean; createdAt?: string;
+  localOrderId?: string; pending?: boolean;
 };
 export type OpenPosition = {
   positionKey: string; symbol: string; side: 'LONG' | 'SHORT'; quantity: string; entryPrice: string; markPrice: string;
   liquidationPrice?: string; unrealizedPnl: string; leverage: string; marginMode: MarginMode;
+  lifecycleStatus?: 'CLOSING' | 'CLOSE_FAILED';
 };
 
 export async function getTradingAccounts() {
@@ -45,7 +48,7 @@ export async function getOpenOrders(exchangeAccountId: string) {
   return (await api.get<{ data: OpenOrder[] }>('/admin/trading/orders', { params: { exchangeAccountId } })).data.data;
 }
 export async function cancelOrder(exchangeAccountId: string, order: OpenOrder) {
-  return api.post(`/admin/trading/orders/${encodeURIComponent(order.exchangeOrderId)}/cancel`, { exchangeAccountId, symbol: order.symbol });
+  return api.post(`/admin/trading/orders/${encodeURIComponent(order.exchangeOrderId)}/cancel`, { exchangeAccountId, symbol: order.symbol, idempotencyKey: crypto.randomUUID() });
 }
 export async function getOpenPositions(exchangeAccountId: string) {
   return (await api.get<{ data: OpenPosition[] }>('/admin/trading/positions', { params: { exchangeAccountId } })).data.data;

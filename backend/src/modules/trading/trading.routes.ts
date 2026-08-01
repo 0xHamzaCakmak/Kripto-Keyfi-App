@@ -5,10 +5,10 @@ import { authorize } from '../../middleware/authorize.js';
 import { overview } from './trading.controller.js';
 import { validateRequest } from '../../middleware/validate-request.js';
 import { asyncHandler } from '../../utils/async-handler.js';
-import { balances, createAccount, listAccounts, removeAccount, testAccount } from './exchange-account.controller.js';
-import { createExchangeAccountBodySchema, exchangeAccountIdParamsSchema } from './exchange-account.schema.js';
-import { cancel, close, orders, positions, preview, submit, symbols } from './manual-trading.controller.js';
-import { cancelOrderBodySchema, cancelOrderParamsSchema, closePositionBodySchema, closePositionParamsSchema, previewOrderBodySchema, submitOrderBodySchema, tradingAccountQuerySchema } from './manual-trading.schema.js';
+import { balances, changeExecutionEngine, createAccount, listAccounts, removeAccount, testAccount } from './exchange-account.controller.js';
+import { createExchangeAccountBodySchema, exchangeAccountIdParamsSchema, updateExecutionEngineBodySchema } from './exchange-account.schema.js';
+import { cancel, close, events, orders, positions, preview, submit, symbols } from './manual-trading.controller.js';
+import { cancelOrderBodySchema, cancelOrderParamsSchema, closePositionBodySchema, closePositionParamsSchema, previewOrderBodySchema, submitOrderBodySchema, tradingAccountQuerySchema, tradingEventsQuerySchema } from './manual-trading.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -16,6 +16,7 @@ tradingRouter.get('/overview', asyncHandler(overview));
 tradingRouter.get('/exchange-accounts', asyncHandler(listAccounts));
 tradingRouter.post('/exchange-accounts', validateRequest({ body: createExchangeAccountBodySchema }), asyncHandler(createAccount));
 tradingRouter.post('/exchange-accounts/:id/test', validateRequest({ params: exchangeAccountIdParamsSchema }), asyncHandler(testAccount));
+tradingRouter.post('/exchange-accounts/:id/execution-engine', validateRequest({ params: exchangeAccountIdParamsSchema, body: updateExecutionEngineBodySchema }), asyncHandler(changeExecutionEngine));
 tradingRouter.get('/exchange-accounts/:id/balances', validateRequest({ params: exchangeAccountIdParamsSchema }), asyncHandler(balances));
 tradingRouter.delete('/exchange-accounts/:id', validateRequest({ params: exchangeAccountIdParamsSchema }), asyncHandler(removeAccount));
 tradingRouter.get('/symbols', validateRequest({ query: tradingAccountQuerySchema }), asyncHandler(symbols));
@@ -24,4 +25,5 @@ tradingRouter.post('/orders', validateRequest({ body: submitOrderBodySchema }), 
 tradingRouter.get('/orders', validateRequest({ query: tradingAccountQuerySchema }), asyncHandler(orders));
 tradingRouter.post('/orders/:id/cancel', validateRequest({ params: cancelOrderParamsSchema, body: cancelOrderBodySchema }), asyncHandler(cancel));
 tradingRouter.get('/positions', validateRequest({ query: tradingAccountQuerySchema }), asyncHandler(positions));
+tradingRouter.get('/events', validateRequest({ query: tradingEventsQuerySchema }), asyncHandler(events));
 tradingRouter.post('/positions/:id/close', validateRequest({ params: closePositionParamsSchema, body: closePositionBodySchema }), asyncHandler(close));

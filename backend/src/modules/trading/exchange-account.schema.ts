@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const exchangeAccountIdParamsSchema = z.object({ id: z.string().cuid() });
+export const updateExecutionEngineBodySchema = z.object({ executionEngine: z.enum(['TYPESCRIPT', 'GO']) }).strict();
 
 export const createExchangeAccountBodySchema = z.object({
   name: z.string().trim().min(2).max(80),
@@ -19,3 +20,4 @@ export const createExchangeAccountBodySchema = z.object({
 });
 
 export type CreateExchangeAccountInput = z.infer<typeof createExchangeAccountBodySchema>;
+export type UpdateExecutionEngineInput = z.infer<typeof updateExecutionEngineBodySchema>;

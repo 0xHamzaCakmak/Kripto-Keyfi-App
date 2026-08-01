@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const decimal = z.string().trim().regex(/^\d+(?:\.\d{1,18})?$/).max(55);
 export const tradingAccountQuerySchema = z.object({ exchangeAccountId: z.string().cuid() }).strict();
+export const tradingEventsQuerySchema = tradingAccountQuerySchema.extend({ cursor: z.string().regex(/^\d+$/).optional() }).strict();
 
 export const previewOrderBodySchema = z.object({
   exchangeAccountId: z.string().cuid(),
@@ -32,6 +33,7 @@ export const cancelOrderParamsSchema = z.object({ id: z.string().trim().min(1).m
 export const cancelOrderBodySchema = z.object({
   exchangeAccountId: z.string().cuid(),
   symbol: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,40}$/),
+  idempotencyKey: z.string().trim().min(16).max(80).regex(/^[A-Za-z0-9_-]+$/),
 }).strict();
 
 export const closePositionParamsSchema = z.object({ id: z.string().trim().min(3).max(100) });

@@ -1,6 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+export const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 let accessToken: string | null = null;
 let refreshPromise: Promise<string> | null = null;
 
@@ -9,6 +9,8 @@ export const api = axios.create({ baseURL: apiUrl, withCredentials: true });
 export function setAccessToken(token: string | null) {
   accessToken = token;
 }
+
+export function getAccessToken() { return accessToken; }
 
 api.interceptors.request.use((config) => {
   if (accessToken) config.headers.Authorization = `Bearer ${accessToken}`;
@@ -51,4 +53,3 @@ export function getApiErrorMessage(error: unknown, fallback: string) {
   }
   return error instanceof Error ? error.message : fallback;
 }
-

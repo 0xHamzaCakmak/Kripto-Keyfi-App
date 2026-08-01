@@ -1,8 +1,8 @@
 import { prisma } from '../../database/prisma.js';
 
 export type TradingModuleOverview = {
-  moduleStatus: 'PHASE_THREE_READY';
-  engineStatus: 'MANUAL_REST_READY';
+  moduleStatus: 'PHASE_FOUR_REALTIME_READY';
+  engineStatus: 'PRIVATE_STREAM_READY';
   liveTradingEnabled: false;
   globalKillSwitch: false;
   connectedExchangeCount: number;
@@ -17,8 +17,8 @@ export type TradingModuleOverview = {
 export async function getTradingOverview(userId: string): Promise<TradingModuleOverview> {
   const connectedExchangeCount = await prisma.exchangeAccount.count({ where: { userId, isActive: true, connectionStatus: 'CONNECTED' } });
   return {
-    moduleStatus: 'PHASE_THREE_READY',
-    engineStatus: 'MANUAL_REST_READY',
+    moduleStatus: 'PHASE_FOUR_REALTIME_READY',
+    engineStatus: 'PRIVATE_STREAM_READY',
     liveTradingEnabled: false,
     globalKillSwitch: false,
     connectedExchangeCount,
@@ -40,12 +40,17 @@ export async function getTradingOverview(userId: string): Promise<TradingModuleO
       'Idempotent testnet order submission',
       'Open orders, positions and reduce-only close',
       'Secret-free trading audit trail',
+      'Durable trading event outbox',
+      'Binance private account WebSocket',
+      'Reconnect, heartbeat and listen-key renewal',
+      'Authenticated SSE frontend updates',
+      'Live submitting, canceling and closing states',
     ],
     nextPhaseItems: [
-      'Add market and account WebSocket streams',
-      'Add reconnect and heartbeat handling',
-      'Stream live updates to the admin frontend',
       'Reconcile uncertain and stale orders',
+      'Recover exchange state after engine restart',
+      'Add Bybit private account WebSocket',
+      'Add risk engine and global kill switch',
     ],
   };
 }

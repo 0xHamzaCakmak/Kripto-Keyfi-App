@@ -7,17 +7,26 @@ import { adapterFor, exchangeCall, ownedAccount } from './exchange-account.servi
 import { ExchangeAdapterError } from './exchanges/exchange-adapter.js';
 import type { ExchangeAdapter } from './exchanges/exchange-adapter.js';
 import type { CancelOrderInput, ClosePositionInput, PreviewOrderInput, SubmitOrderInput } from './manual-trading.schema.js';
+import { scheduleShadowComparison } from './shadow-compare.js';
+import { cancelTradingEngineOrder, executeTradingEngineOrder, getTradingEngineSnapshot, previewTradingEngineOrder } from './trading-engine.client.js';
+import { appendTradingEvent } from './trading-events.service.js';
 
 const PREVIEW_TTL_MS = 2 * 60 * 1000;
 
 export async function listSymbols(userId: string, exchangeAccountId: string) {
-  const { adapter } = await tradingContext(userId, exchangeAccountId);
-  return exchangeCall(() => adapter.getSymbols());
+  const account = await tradingAccount(userId, exchangeAccountId);
+  const symbols = account.executionEngine === 'GO'
+    ? (await getTradingEngineSnapshot(account)).symbols
+    : await exchangeCall(() => adapterFor(account).getSymbols());
+  if (account.executionEngine === 'TYPESCRIPT') scheduleShadowComparison(userId, exchangeAccountId, 'symbols', symbols);
+  return symbols;
 }
 
 export async function createOrderPreview(userId: string, input: PreviewOrderInput) {
-  const { account, adapter } = await tradingContext(userId, input.exchangeAccountId);
-  const symbols = await exchangeCall(() => adapter.getSymbols());
+  const account = await tradingAccount(userId, input.exchangeAccountId);
+  const goPreview = account.executionEngine === 'GO' ? await previewTradingEngineOrder(account, input) : undefined;
+  const adapter = account.executionEngine === 'TYPESCRIPT' ? adapterFor(account) : undefined;
+  const symbols = goPreview ? [goPreview.rule] : await exchangeCall(() => adapter!.getSymbols());
   const rules = symbols.find((item) => item.symbol === input.symbol);
   if (!rules) throw new ApiError(404, 'İşleme açık vadeli parite bulunamadı.', 'TRADING_SYMBOL_NOT_FOUND');
   if (input.leverage > rules.maxLeverage) throw new ApiError(400, `Bu paritede en fazla ${rules.maxLeverage}x kaldıraç kullanılabilir.`, 'LEVERAGE_LIMIT_EXCEEDED');
@@ -31,8 +40,8 @@ export async function createOrderPreview(userId: string, input: PreviewOrderInpu
 
   const price = input.price ? validatePrice(input.price, rules.tickSize, 'Fiyat') : undefined;
   const stopPrice = input.stopPrice ? validatePrice(input.stopPrice, rules.tickSize, 'Tetikleme fiyatı') : undefined;
-  const markPrice = normalizeDecimal(await exchangeCall(() => adapter.getMarkPrice(input.symbol)));
-  const estimatedNotional = multiplyDecimals(quantity, price ?? markPrice);
+  const markPrice = normalizeDecimal(goPreview?.markPrice ?? await exchangeCall(() => adapter!.getMarkPrice(input.symbol)));
+  const estimatedNotional = normalizeDecimal(goPreview?.estimatedNotional ?? multiplyDecimals(quantity, price ?? markPrice));
   if (compareDecimals(estimatedNotional, rules.minNotional) < 0) {
     throw new ApiError(400, `Tahmini emir büyüklüğü en az ${rules.minNotional} USDT olmalıdır.`, 'MIN_NOTIONAL_NOT_MET');
   }
@@ -81,6 +90,7 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
           clientOrderId, symbol: preview.symbol, side: preview.side, type: preview.type, quantity: preview.quantity,
           price: preview.price, stopPrice: preview.stopPrice, leverage: preview.leverage, marginMode: preview.marginMode,
           reduceOnly: preview.reduceOnly,
+          executionEngine: preview.exchangeAccount.executionEngine,
         },
       });
     });
@@ -92,19 +102,22 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
     throw error;
   }
 
-  const adapter = adapterFor(preview.exchangeAccount);
+  const goExecution = preview.exchangeAccount.executionEngine === 'GO';
+  const adapter = goExecution ? undefined : adapterFor(preview.exchangeAccount);
+  await emitTradingState({
+    userId, exchangeAccountId: preview.exchangeAccountId, provider: preview.exchangeAccount.provider,
+    eventType: 'ORDER_STATE_CHANGED', aggregateType: 'ORDER', aggregateId: stored.id,
+    payload: { localOrderId: stored.id, clientOrderId, symbol: preview.symbol, status: 'SUBMITTING' },
+  });
   try {
-    if (!preview.reduceOnly) {
-      await exchangeCall(() => adapter.configurePosition(preview.symbol, preview.leverage, preview.marginMode));
-    }
-    const exchangeOrder = await exchangeCall(() => adapter.placeOrder({
-      symbol: preview.symbol, side: preview.side, type: preview.type, quantity: preview.quantity.toString(),
-      ...(preview.price ? { price: preview.price.toString() } : {}), ...(preview.stopPrice ? { stopPrice: preview.stopPrice.toString() } : {}),
-      reduceOnly: preview.reduceOnly, clientOrderId,
-    }));
+    const exchangeOrder = goExecution
+      ? (await executeTradingEngineOrder(preview.exchangeAccount, preview, stored)).order
+      : await submitTypeScriptOrder(adapter!, preview, clientOrderId);
     const status = exchangeOrder.status === 'FILLED' ? 'FILLED' : 'OPEN';
     const completed = await prisma.$transaction(async (tx) => {
-      const order = await tx.tradingOrder.update({ where: { id: stored.id }, data: { exchangeOrderId: exchangeOrder.exchangeOrderId, status, submittedAt: new Date() } });
+      const order = goExecution
+        ? await tx.tradingOrder.findUniqueOrThrow({ where: { id: stored.id } })
+        : await tx.tradingOrder.update({ where: { id: stored.id }, data: { exchangeOrderId: exchangeOrder.exchangeOrderId, status, submittedAt: new Date(), executionAttemptedAt: new Date() } });
       await tx.tradingAuditLog.create({ data: {
         userId, exchangeAccountId: preview.exchangeAccountId, action: 'MANUAL_ORDER_SUBMITTED', entityType: 'TRADING_ORDER', entityId: order.id,
         metadata: { symbol: order.symbol, side: order.side, type: order.type, quantity: order.quantity.toString(), leverage: order.leverage, marginMode: order.marginMode, reduceOnly: order.reduceOnly, environment: preview.exchangeAccount.environment },
@@ -112,8 +125,35 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
       } });
       return order;
     });
+    await emitTradingState({
+      userId, exchangeAccountId: preview.exchangeAccountId, provider: preview.exchangeAccount.provider,
+      eventType: 'ORDER_STATE_CHANGED', aggregateType: 'ORDER', aggregateId: completed.exchangeOrderId ?? completed.id,
+      payload: { localOrderId: completed.id, exchangeOrderId: completed.exchangeOrderId, symbol: completed.symbol, status: completed.status },
+    });
     return { ...serializeStoredOrder(completed, false), exchange: exchangeOrder };
   } catch (error) {
+    if (goExecution) {
+      const failed = await prisma.tradingOrder.findUniqueOrThrow({ where: { id: stored.id } });
+      if (failed.exchangeOrderId && ['OPEN', 'PARTIALLY_FILLED', 'FILLED'].includes(failed.status)) {
+        return serializeStoredOrder(failed, false);
+      }
+      const action = failed.status === 'RECONCILIATION_REQUIRED'
+        ? 'ORDER_RECONCILIATION_REQUIRED'
+        : failed.status === 'SUBMITTING' ? 'ORDER_RESPONSE_UNCERTAIN' : 'MANUAL_ORDER_FAILED';
+      await prisma.tradingAuditLog.create({ data: {
+        userId, exchangeAccountId: preview.exchangeAccountId,
+        action,
+        entityType: 'TRADING_ORDER', entityId: stored.id,
+        metadata: { symbol: preview.symbol, clientOrderId, code: failed.failureCode ?? 'GO_EXECUTION_FAILED', executor: 'GO' },
+        ...(ipAddress ? { ipAddress } : {}),
+      } });
+      await emitTradingState({
+        userId, exchangeAccountId: preview.exchangeAccountId, provider: preview.exchangeAccount.provider,
+        eventType: 'ORDER_STATE_CHANGED', aggregateType: 'ORDER', aggregateId: stored.id,
+        payload: { localOrderId: stored.id, symbol: preview.symbol, status: failed.status, failureCode: failed.failureCode },
+      });
+      throw error;
+    }
     const uncertain = isUncertainExchangeFailure(error);
     const code = error instanceof ApiError ? error.code : 'ORDER_SUBMISSION_FAILED';
     const message = error instanceof Error ? error.message : 'Emir gönderilemedi.';
@@ -124,60 +164,132 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
       userId, exchangeAccountId: preview.exchangeAccountId, action: uncertain ? 'ORDER_RECONCILIATION_REQUIRED' : 'MANUAL_ORDER_FAILED',
       entityType: 'TRADING_ORDER', entityId: stored.id, metadata: { symbol: preview.symbol, clientOrderId, code }, ...(ipAddress ? { ipAddress } : {}),
     } });
+    await emitTradingState({
+      userId, exchangeAccountId: preview.exchangeAccountId, provider: preview.exchangeAccount.provider,
+      eventType: 'ORDER_STATE_CHANGED', aggregateType: 'ORDER', aggregateId: stored.id,
+      payload: { localOrderId: stored.id, symbol: preview.symbol, status: uncertain ? 'RECONCILIATION_REQUIRED' : 'FAILED', failureCode: code },
+    });
     throw error;
   }
 }
 
 export async function listOpenOrders(userId: string, exchangeAccountId: string) {
-  const { adapter } = await tradingContext(userId, exchangeAccountId);
-  return exchangeCall(() => adapter.getOpenOrders());
+  const account = await tradingAccount(userId, exchangeAccountId);
+  const orders = account.executionEngine === 'GO'
+    ? (await getTradingEngineSnapshot(account)).orders
+    : await exchangeCall(() => adapterFor(account).getOpenOrders());
+  if (account.executionEngine === 'TYPESCRIPT') scheduleShadowComparison(userId, exchangeAccountId, 'orders', orders);
+  const localPending = await prisma.tradingOrder.findMany({
+    where: { userId, exchangeAccountId, status: { in: ['SUBMITTING', 'CANCELING', 'CLOSING', 'RECONCILIATION_REQUIRED'] } },
+    orderBy: { createdAt: 'asc' },
+  });
+  const exchangeIds = new Set(orders.map((order) => order.exchangeOrderId));
+  return [
+    ...orders,
+    ...localPending.filter((order) => !order.exchangeOrderId || !exchangeIds.has(order.exchangeOrderId)).map((order) => ({
+      exchangeOrderId: order.exchangeOrderId ?? `local:${order.id}`,
+      clientOrderId: order.clientOrderId, symbol: order.symbol, side: order.side, type: order.type,
+      status: order.status, quantity: order.quantity.toString(), executedQuantity: '0',
+      price: order.price?.toString(), stopPrice: order.stopPrice?.toString(), reduceOnly: order.reduceOnly,
+      createdAt: order.createdAt.toISOString(), localOrderId: order.id, pending: true,
+    })),
+  ];
 }
 
 export async function cancelOpenOrder(userId: string, exchangeOrderId: string, input: CancelOrderInput, ipAddress?: string) {
-  const { adapter } = await tradingContext(userId, input.exchangeAccountId);
-  const current = await exchangeCall(() => adapter.getOpenOrders());
+  const account = await tradingAccount(userId, input.exchangeAccountId);
+  const adapter = account.executionEngine === 'TYPESCRIPT' ? adapterFor(account) : undefined;
+  const current = account.executionEngine === 'GO'
+    ? (await getTradingEngineSnapshot(account)).orders
+    : await exchangeCall(() => adapter!.getOpenOrders());
   const order = current.find((item) => item.exchangeOrderId === exchangeOrderId && item.symbol === input.symbol);
   if (!order) throw new ApiError(404, 'Açık emir bulunamadı veya daha önce sonuçlandı.', 'OPEN_ORDER_NOT_FOUND');
-  const canceled = await exchangeCall(() => adapter.cancelOrder(order.symbol, order.exchangeOrderId));
+  await emitTradingState({ userId, exchangeAccountId: input.exchangeAccountId, provider: account.provider,
+    eventType: 'ORDER_STATE_CHANGED', aggregateType: 'ORDER', aggregateId: exchangeOrderId,
+    payload: { exchangeOrderId, symbol: order.symbol, status: 'CANCELING' } });
+  let canceled;
+  try {
+    canceled = account.executionEngine === 'GO'
+      ? (await cancelTradingEngineOrder(account, order.exchangeOrderId, order.symbol, input.idempotencyKey)).order
+      : await exchangeCall(() => adapter!.cancelOrder(order.symbol, order.exchangeOrderId));
+  } catch (error) {
+    await emitTradingState({ userId, exchangeAccountId: input.exchangeAccountId, provider: account.provider,
+      eventType: 'ORDER_STATE_CHANGED', aggregateType: 'ORDER', aggregateId: exchangeOrderId,
+      payload: { exchangeOrderId, symbol: order.symbol, status: 'CANCEL_FAILED' } });
+    throw error;
+  }
   await prisma.$transaction([
     prisma.tradingOrder.updateMany({ where: { userId, exchangeAccountId: input.exchangeAccountId, exchangeOrderId }, data: { status: 'CANCELED' } }),
     prisma.tradingAuditLog.create({ data: { userId, exchangeAccountId: input.exchangeAccountId, action: 'ORDER_CANCELED', entityType: 'EXCHANGE_ORDER', entityId: exchangeOrderId, metadata: { symbol: order.symbol }, ...(ipAddress ? { ipAddress } : {}) } }),
   ]);
+  await emitTradingState({ userId, exchangeAccountId: input.exchangeAccountId, provider: account.provider,
+    eventType: 'ORDER_STATE_CHANGED', aggregateType: 'ORDER', aggregateId: exchangeOrderId,
+    payload: { exchangeOrderId, symbol: order.symbol, status: 'CANCELED' } });
   return canceled;
 }
 
 export async function listPositions(userId: string, exchangeAccountId: string) {
-  const { adapter } = await tradingContext(userId, exchangeAccountId);
-  return exchangeCall(() => adapter.getPositions());
+  const account = await tradingAccount(userId, exchangeAccountId);
+  const positions = account.executionEngine === 'GO'
+    ? (await getTradingEngineSnapshot(account)).positions
+    : await exchangeCall(() => adapterFor(account).getPositions());
+  if (account.executionEngine === 'TYPESCRIPT') scheduleShadowComparison(userId, exchangeAccountId, 'positions', positions);
+  return positions;
 }
 
 export async function closePosition(userId: string, positionKey: string, input: ClosePositionInput, ipAddress?: string) {
-  const { adapter } = await tradingContext(userId, input.exchangeAccountId);
-  const positions = await exchangeCall(() => adapter.getPositions());
+  const account = await tradingAccount(userId, input.exchangeAccountId);
+  const positions = await listPositions(userId, input.exchangeAccountId);
   const position = positions.find((item) => item.positionKey === positionKey);
   if (!position) throw new ApiError(404, 'Açık pozisyon bulunamadı.', 'POSITION_NOT_FOUND');
   const quantity = input.quantity ? normalizeDecimal(input.quantity) : position.quantity;
   assertPositiveDecimal(quantity, 'Kapatma miktarı');
   if (compareDecimals(quantity, position.quantity) > 0) throw new ApiError(400, 'Kapatma miktarı açık pozisyonu aşamaz.', 'CLOSE_QUANTITY_EXCEEDED');
-  const symbols = await exchangeCall(() => adapter.getSymbols());
+  const symbols = await listSymbols(userId, input.exchangeAccountId);
   const rules = symbols.find((item) => item.symbol === position.symbol);
   if (!rules || !isStepAligned(quantity, rules.stepSize)) throw new ApiError(400, 'Kapatma miktarı parite adımına uygun değil.', 'QUANTITY_STEP_MISMATCH');
+  await emitTradingState({ userId, exchangeAccountId: input.exchangeAccountId, provider: account.provider,
+    eventType: 'POSITION_STATE_CHANGED', aggregateType: 'POSITION', aggregateId: positionKey,
+    payload: { positionKey, symbol: position.symbol, status: 'CLOSING' } });
   const preview = await createOrderPreview(userId, {
     exchangeAccountId: input.exchangeAccountId, symbol: position.symbol, side: position.side === 'LONG' ? 'SELL' : 'BUY',
     type: 'MARKET', quantity, leverage: Math.max(1, Math.trunc(Number(position.leverage))), marginMode: position.marginMode, reduceOnly: true,
   });
-  const result = await submitOrder(userId, { previewId: preview.id, idempotencyKey: input.idempotencyKey }, ipAddress);
+  let result;
+  try {
+    result = await submitOrder(userId, { previewId: preview.id, idempotencyKey: input.idempotencyKey }, ipAddress);
+  } catch (error) {
+    await emitTradingState({ userId, exchangeAccountId: input.exchangeAccountId, provider: account.provider,
+      eventType: 'POSITION_STATE_CHANGED', aggregateType: 'POSITION', aggregateId: positionKey,
+      payload: { positionKey, symbol: position.symbol, status: 'CLOSE_FAILED' } });
+    throw error;
+  }
   await prisma.tradingAuditLog.create({ data: {
     userId, exchangeAccountId: input.exchangeAccountId, action: quantity === position.quantity ? 'POSITION_CLOSED' : 'POSITION_PARTIALLY_CLOSED',
     entityType: 'EXCHANGE_POSITION', entityId: positionKey, metadata: { symbol: position.symbol, quantity }, ...(ipAddress ? { ipAddress } : {}),
   } });
+  await emitTradingState({ userId, exchangeAccountId: input.exchangeAccountId, provider: account.provider,
+    eventType: 'POSITION_STATE_CHANGED', aggregateType: 'POSITION', aggregateId: positionKey,
+    payload: { positionKey, symbol: position.symbol, status: 'CLOSED' } });
   return result;
 }
 
-async function tradingContext(userId: string, exchangeAccountId: string): Promise<{ account: Awaited<ReturnType<typeof ownedAccount>>; adapter: ExchangeAdapter }> {
+async function tradingAccount(userId: string, exchangeAccountId: string) {
   const account = await ownedAccount(userId, exchangeAccountId);
   assertTradableAccount(account);
-  return { account, adapter: adapterFor(account) };
+  return account;
+}
+
+async function submitTypeScriptOrder(adapter: ExchangeAdapter, preview: {
+  symbol: string; side: 'BUY' | 'SELL'; type: 'MARKET' | 'LIMIT' | 'STOP_MARKET' | 'STOP_LIMIT'; quantity: Prisma.Decimal;
+  price: Prisma.Decimal | null; stopPrice: Prisma.Decimal | null; leverage: number; marginMode: 'ISOLATED' | 'CROSS'; reduceOnly: boolean;
+}, clientOrderId: string) {
+  if (!preview.reduceOnly) await exchangeCall(() => adapter.configurePosition(preview.symbol, preview.leverage, preview.marginMode));
+  return exchangeCall(() => adapter.placeOrder({
+    symbol: preview.symbol, side: preview.side, type: preview.type, quantity: preview.quantity.toString(),
+    ...(preview.price ? { price: preview.price.toString() } : {}), ...(preview.stopPrice ? { stopPrice: preview.stopPrice.toString() } : {}),
+    reduceOnly: preview.reduceOnly, clientOrderId,
+  }));
 }
 
 function assertTradableAccount(account: { isActive: boolean; canTrade: boolean }) {
@@ -211,4 +323,9 @@ function serializeStoredOrder(order: { id: string; exchangeAccountId: string; cl
 
 function isUncertainExchangeFailure(error: unknown): boolean {
   return error instanceof ApiError && error.code === 'EXCHANGE_UNAVAILABLE' || error instanceof ExchangeAdapterError && error.code === 'EXCHANGE_UNAVAILABLE';
+}
+
+function emitTradingState(input: Omit<Parameters<typeof appendTradingEvent>[0], 'topic'>) {
+  return appendTradingEvent({ ...input, topic: input.aggregateType === 'POSITION' ? 'trading.position' : 'trading.order' })
+    .then(() => undefined).catch(() => undefined);
 }

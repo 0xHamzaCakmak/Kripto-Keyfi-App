@@ -422,3 +422,110 @@ MySQL + kalıcı event/outbox
 - Cutover tamamlanmadan risk motoru, grid bot veya scalping bot geliştirmesine başlanmaz.
 
 Sonraki uygulama adımı Faz 3.5 Adım 1'dir: Go servis temeli, internal healthcheck, güvenli config ve graceful shutdown. Faz 4 gerçek zamanlı altyapı, Go manuel emir cutover'ından sonra Adım 5–6 kapsamında uygulanacaktır.
+
+### 1 Ağustos 2026 — Faz 3.5 Adım 1 tamamlandı
+
+- Go 1.26.5 geliştirme ortamı doğrulandı.
+- `services/trading-engine` altında bağımsız Go modülü oluşturuldu.
+- Servis güvenlik gereği yalnızca `shadow` modunda başlayabilir; bu aşamada exchange executor ve emir endpointleri kapalıdır.
+- En az 32 karakterlik `TRADING_ENGINE_TOKEN` zorunlu tutuldu; korumalı internal endpoint sabit zamanlı Bearer token karşılaştırması kullanır.
+- Public liveness/readiness healthcheck, request correlation ID, structured logging, güvenli HTTP timeout'ları ve graceful shutdown eklendi.
+- Container build tanımı ve yerel çalıştırma dokümanı eklendi; gerçek token veya credential repoya yazılmadı.
+- `go test ./...`, `go vet ./...` ve `go build ./...` kontrolleri başarıyla geçti.
+
+Sonraki uygulama adımı Faz 3.5 Adım 2'dir: ortak domain modelleri, versioned internal API sözleşmesi ve merkezi emir state machine.
+
+### 1 Ağustos 2026 — Faz 3.5 Adım 2 tamamlandı
+
+- Go engine için exchange account reference, sembol kuralı, bakiye, emir, pozisyon ve normalize borsa hatası domain modelleri eklendi.
+- Para, fiyat, miktar ve PnL alanlarının internal JSON sözleşmesinde string taşınması zorunlu tutuldu; floating point kullanılmadı.
+- `/internal/v1` tabanlı versioned sözleşme ve salt-okunur kaynak yolları tanımlandı.
+- Exchange üzerinde değişiklik yapacak place, cancel ve close komutlarının tamamında `idempotencyKey` ile `clientOrderId` zorunlu hale getirildi.
+- `PENDING`, `SUBMITTING`, `OPEN`, `PARTIALLY_FILLED`, `FILLED`, `CANCELING`, `CANCELED`, `CLOSING`, `FAILED` ve `RECONCILIATION_REQUIRED` durumlarını yöneten merkezi ve testli state machine eklendi.
+- Yazma komutları sözleşmede tanımlandı fakat shadow güvenlik sınırı gereği HTTP router'a bağlanmadı.
+- Güncel Go doğrulaması: `go test ./...`, `go vet ./...` ve `go build ./...` başarılı.
+
+Sonraki uygulama adımı Faz 3.5 Adım 3'tür: Binance/Bybit salt-okunur adapterları ve TypeScript çıktılarıyla shadow karşılaştırması.
+
+### 1 Ağustos 2026 — Faz 3.5 Adım 3 tamamlandı
+
+- Binance Demo ve Bybit Demo için yalnızca `GET` yeteneği sunan Go reader adapterları eklendi; adapter interface'inde yazma metodu bulunmuyor.
+- Bakiye, vadeli sembol kuralları, açık emirler ve açık pozisyonlar normalize Go domain modellerine taşındı.
+- Binance `/fapi/v2/positionRisk` kaldıraç ve margin mode kaynağı olarak korundu; Bybit `tradeMode` ve `positionIdx` alanları normalize edildi.
+- Her iki borsanın HMAC imzası, hata kodu normalizasyonu ve salt-okunur HTTP method sınırı sahte borsa sunucularıyla test edildi.
+- Go engine, Node ile uyumlu `v1.nonce.tag.ciphertext` AES-256-GCM credential formatını çözebiliyor; credential'ı hesap sahipliği kontrolüyle doğrudan MySQL'den okuyor.
+- Shadow snapshot endpointi internal Bearer token arkasında eklendi; API key, secret ve master key response veya loglara girmiyor.
+- Node mevcut TypeScript sonucunu kullanıcıya döndürmeye devam ederken Go snapshot'ını arka planda karşılaştıran, hata halinde kullanıcı isteğini bozmayan shadow comparator eklendi.
+- Shadow özellikleri environment flag ile varsayılan kapalıdır; Go executor ve bütün emir yazma endpointleri kapalı kalmaya devam eder.
+- Gerçek Binance Demo kabul testi sonucu: bakiye `7/7`, sembol `528/528`, açık emir `0/0`, pozisyon `3/3`; dört kaynakta da uyuşmazlık sayısı `0`.
+- Canlı testte üç pozisyonun gerçek kaldıraç ve margin mode alanları eksiksiz doğrulandı.
+- Güncel doğrulama: Go test/vet/build, backend typecheck/lint/build ve backend 22 test başarılı.
+
+Sonraki uygulama adımı Faz 3.5 Adım 4'tür: manuel emir yürütmesini hesap bazlı feature flag ve tek aktif executor garantisiyle Go order manager'a geçirmek.
+
+### 1 Ağustos 2026 — Faz 3.5 Adım 4 uygulama durumu
+
+Tamamlanan teknik işler:
+
+- `TradingExecutionEngine` enum'u ve hesap bazlı `TYPESCRIPT`/`GO` executor sahipliği migration'ı eklendi ve yerel MySQL'e uygulandı.
+- Mevcut bütün hesaplar ve eski emirler güvenli varsayılan olarak `TYPESCRIPT` üzerinde bırakıldı.
+- Executor değiştirme admin API'si eklendi; in-flight veya reconciliation bekleyen emir varken geçiş reddedilir.
+- Backend feature flag kapalıysa veya Go `/internal/v1/status` cevabı write-ready değilse hesap `GO` yapılamaz.
+- Binance ve Bybit Go adapterlarına margin/leverage yapılandırma, emir gönderme ve iptal yetenekleri eklendi.
+- Go order manager submit ve cancel öncesinde MySQL üzerinde atomik execution claim alır.
+- Submit ve cancel idempotency alanları kalıcıdır; ikinci istek kör retry oluşturmaz.
+- Timeout veya geçersiz write cevabı sonrası kayıt `RECONCILIATION_REQUIRED` olarak korunur.
+- Preview quantity, tick/step, leverage ve min-notional kontrolleri Go string-decimal kurallarıyla yeniden doğrulanır.
+- Node admin endpoint yüzeyi değiştirilmeden hesap executor'ına göre TypeScript veya Go internal API'ye yönlendirilir.
+- Go hesabında Node credential çözmez ve doğrudan borsa write adapterı oluşturmaz.
+- Reduce-only pozisyon kapatma mevcut onay akışını koruyarak Go place order manager üzerinden ilerler.
+- Frontend hesap görünümüne aktif executor bilgisi eklendi; cancel komutları idempotency key üretir.
+- `20260801234000_add_go_execution_cutover` migration'ı başarıyla uygulandı.
+- Go unit/integration adapter testleri, Go test/vet/build, backend typecheck/lint/build ve 22 backend testi başarılıdır.
+
+### 2 Ağustos 2026 — Faz 3.5 Adım 4 kabul testi
+
+- Açık kullanıcı onayıyla gerçek Binance Demo hesabında, önceden açık emri veya pozisyonu bulunmayan `ADAUSDT` paritesi kullanıldı.
+- Hesap geçici olarak `GO` executor'a geçirildi; mark fiyatının %4 altındaki `0.16690` fiyatından `36 ADA` limit emir açıldı ve borsada açık olduğu doğrulandıktan sonra iptal edildi.
+- `38 ADA` büyüklüğünde, `2x ISOLATED` küçük market LONG pozisyonu açıldı; borsa snapshot'ında kaldıraç ve margin mode doğrulandı.
+- Pozisyonun tamamı ters yönlü piyasa emriyle ve `reduceOnly=true` olarak kapatıldı.
+- Test sonunda `ADAUSDT` için açık emir ve açık pozisyon sayılarının sıfır olduğu bağımsız olarak doğrulandı.
+- Hesap executor'ı `TYPESCRIPT` durumuna geri getirildi ve geçici cutover servisleri kapatıldı.
+- İlk aşırı düşük fiyat denemesi Binance dinamik percent-price bandı tarafından güvenli biçimde reddedildi; borsada emir oluşmadı ve hata yolundaki otomatik `TYPESCRIPT` geri dönüşü de doğrulandı.
+- Faz 3.5 Adım 4 kabul kriterleri tamamlandı. Kalıcı Go cutover ayrıca planlanıp onaylanana kadar hesaplar güvenli varsayılan olarak `TYPESCRIPT`, Go servis modu ise `shadow` kalacaktır.
+
+### 2 Ağustos 2026 — Faz 4 / Adım 5 gerçek zamanlı altyapı
+
+- `20260802010000_add_trading_outbox` migration'ı ile kullanıcı ve borsa hesabı sahipliğine bağlı, artan cursor'lı ve deduplication key korumalı kalıcı event/outbox tablosu eklendi.
+- Go engine aktif Binance Demo hesaplarını executor'dan bağımsız keşfeder; private stream yalnızca `TRADING_ENGINE_REALTIME_ENABLED=true` ve shadow read açıkken başlar.
+- Binance listen key başlangıcı, 30 dakikalık keepalive, WebSocket ping/pong heartbeat ve 1–30 saniyelik exponential reconnect backoff uygulandı.
+- Her ilk bağlantı ve reconnect öncesinde açık emir/pozisyon REST snapshot'ı alınarak `SNAPSHOT_RECONCILED` olayı yazılır.
+- `ORDER_TRADE_UPDATE`, `ACCOUNT_UPDATE` ve listen-key expiry mesajları credential içermeyen normalize outbox olaylarına dönüştürülür.
+- Node tarafına admin authentication ve hesap sahipliği korumalı, cursor/replay destekli SSE endpointi eklendi.
+- Node manuel emir akışı `SUBMITTING`, `CANCELING`, `CLOSING` ve sonuç durumlarını outbox'a sıralı yazar.
+- Frontend açık emir ve pozisyon ekranları SSE'ye bağlandı; ara durumları satır üzerinde gösterir, kesin exchange veya snapshot olayında REST listesini sayfa yenilemeden günceller.
+- Canlı salt-okunur Binance Demo doğrulamasında `SNAPSHOT_RECONCILED` ve `STREAM_CONNECTED` olayları outbox'a yazıldı; Go executor kapalı ve hesap `TYPESCRIPT` kaldı.
+- Güncel doğrulama: Go testleri, backend 22 test/typecheck/lint/build, frontend typecheck/build ve SSE cursor replay testi başarılıdır.
+
+Sonraki adım Faz 4 / Adım 6'dır: belirsiz emir reconciliation worker'ı, engine restart recovery kapısı ve başarısız mutabakatta hesap `DEGRADED` güvenlik durumu.
+
+### 2 Ağustos 2026 — Gün sonu checkpoint
+
+Bugün bırakılan kararlı durum:
+
+- Faz 3.5 Adım 4 Binance Demo kabul testi tamamlandı; limit aç/iptal ve küçük market aç/reduce-only kapat akışları Go executor ile doğrulandı.
+- Faz 4 Adım 5 tamamlandı: Binance private WebSocket, listen-key keepalive, heartbeat, exponential reconnect, REST snapshot recovery, kalıcı event/outbox, Node SSE ve frontend canlı güncelleme hazır.
+- Yerel MySQL'e `20260802010000_add_trading_outbox` migration'ı uygulandı.
+- Canlı shadow testinde `SNAPSHOT_RECONCILED` ve `STREAM_CONNECTED` olayları doğrulandı.
+- Frontend `3000`, Node backend `4000`, Go realtime engine `8081` portunda çalışır durumda bırakıldı.
+- Go realtime engine `shadow` modunda ve exchange executor kapalıdır; Binance Demo hesabının kalıcı executor değeri `TYPESCRIPT` olarak doğrulandı.
+- Go test/vet/build, backend 22 test/typecheck/lint/build, frontend typecheck/build ve SSE cursor replay testi başarılıdır.
+- Mevcut Go süreci yerel geliştirme sürecidir; bilgisayar veya süreç yeniden başlarsa `TRADING_ENGINE_MODE=shadow`, `TRADING_ENGINE_SHADOW_READ_ENABLED=true` ve `TRADING_ENGINE_REALTIME_ENABLED=true` ile tekrar başlatılmalıdır. Secret değerler dokümana veya Git'e yazılmayacaktır.
+
+Yarın başlanacak ilk iş — Faz 4 / Adım 6:
+
+1. `RECONCILIATION_REQUIRED` emirleri client order ID ile Binance'ten sorgulayan worker.
+2. Engine başlangıcında açık emir/pozisyon snapshot'ı tamamlanana kadar write/bot readiness kapısı.
+3. Yerel emir state'i ile borsa snapshot'ı arasındaki farkları idempotent düzeltme.
+4. Mutabakat başarısızlığında hesap için `DEGRADED` durumu ve yeni bot emirlerini engelleme.
+5. Reconciliation, restart recovery ve kopma senaryoları için Go/backend testleri ve Binance Demo salt-okunur kabul testi.

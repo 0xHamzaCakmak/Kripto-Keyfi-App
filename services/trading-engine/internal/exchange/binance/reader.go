@@ -1,0 +1,496 @@
+package binance
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange"
+)
+
+type Reader struct {
+	credentials exchange.Credentials
+	client      *http.Client
+	futuresURL  string
+	spotURL     string
+	now         func() time.Time
+}
+
+type Options struct {
+	Credentials exchange.Credentials
+	Client      *http.Client
+	FuturesURL  string
+	SpotURL     string
+	Now         func() time.Time
+}
+
+func New(options Options) *Reader {
+	endpoints := exchange.DemoEndpoints()
+	client := options.Client
+	if client == nil {
+		client = &http.Client{Timeout: 8 * time.Second}
+	}
+	now := options.Now
+	if now == nil {
+		now = time.Now
+	}
+	return &Reader{
+		credentials: options.Credentials, client: client,
+		futuresURL: first(options.FuturesURL, endpoints.BinanceFutures),
+		spotURL:    first(options.SpotURL, endpoints.BinanceSpot), now: now,
+	}
+}
+
+type futuresAccount struct {
+	Assets []struct {
+		Asset            string `json:"asset"`
+		WalletBalance    string `json:"walletBalance"`
+		AvailableBalance string `json:"availableBalance"`
+		UnrealizedProfit string `json:"unrealizedProfit"`
+	} `json:"assets"`
+	Code int `json:"code"`
+}
+
+type spotAccount struct {
+	Balances []struct {
+		Asset  string `json:"asset"`
+		Free   string `json:"free"`
+		Locked string `json:"locked"`
+	} `json:"balances"`
+	Code int `json:"code"`
+}
+
+type ticker struct {
+	Symbol string `json:"symbol"`
+	Price  string `json:"price"`
+}
+
+func (r *Reader) GetBalances(ctx context.Context) ([]domain.Balance, error) {
+	var spot spotAccount
+	if err := r.signedGet(ctx, r.spotURL, "/api/v3/account", nil, &spot); err != nil {
+		return nil, err
+	}
+	var futures futuresAccount
+	if err := r.signedGet(ctx, r.futuresURL, "/fapi/v3/account", nil, &futures); err != nil {
+		return nil, err
+	}
+	prices := r.spotPrices(ctx)
+	balances := make([]domain.Balance, 0, len(spot.Balances)+len(futures.Assets))
+	for _, item := range spot.Balances {
+		if !exchange.IsNonZero(item.Free) && !exchange.IsNonZero(item.Locked) {
+			continue
+		}
+		walletBalance := exchange.AddDecimal(item.Free, item.Locked)
+		balance := domain.Balance{
+			WalletType: domain.WalletSpot, Asset: item.Asset, WalletBalance: domain.Decimal(walletBalance),
+			AvailableBalance: domain.Decimal(item.Free), LockedBalance: domain.Decimal(item.Locked), UnrealizedPnL: "0",
+		}
+		if price := usdtPrice(item.Asset, prices); price != "" {
+			balance.PriceUSDT = domain.Decimal(price)
+			balance.ValueUSDT = domain.Decimal(exchange.MultiplyDecimal(walletBalance, price, 8))
+		}
+		balances = append(balances, balance)
+	}
+	sort.Slice(balances, func(i, j int) bool { return balances[i].Asset < balances[j].Asset })
+	for _, item := range futures.Assets {
+		if !exchange.IsNonZero(item.WalletBalance) && !exchange.IsNonZero(item.UnrealizedProfit) {
+			continue
+		}
+		balances = append(balances, domain.Balance{
+			WalletType: domain.WalletUSDMFutures, Asset: item.Asset,
+			WalletBalance: domain.Decimal(item.WalletBalance), AvailableBalance: domain.Decimal(item.AvailableBalance),
+			UnrealizedPnL: domain.Decimal(item.UnrealizedProfit),
+		})
+	}
+	return balances, nil
+}
+
+type exchangeInfo struct {
+	Symbols []struct {
+		Symbol       string `json:"symbol"`
+		Status       string `json:"status"`
+		BaseAsset    string `json:"baseAsset"`
+		QuoteAsset   string `json:"quoteAsset"`
+		ContractType string `json:"contractType"`
+		Filters      []struct {
+			FilterType string `json:"filterType"`
+			TickSize   string `json:"tickSize"`
+			StepSize   string `json:"stepSize"`
+			MinQty     string `json:"minQty"`
+			MaxQty     string `json:"maxQty"`
+			Notional   string `json:"notional"`
+		} `json:"filters"`
+	} `json:"symbols"`
+}
+
+type leverageBracket struct {
+	Symbol   string `json:"symbol"`
+	Brackets []struct {
+		InitialLeverage int `json:"initialLeverage"`
+	} `json:"brackets"`
+	Code int `json:"code"`
+}
+
+func (r *Reader) GetSymbols(ctx context.Context) ([]domain.SymbolRule, error) {
+	var info exchangeInfo
+	if err := r.publicGet(ctx, r.futuresURL, "/fapi/v1/exchangeInfo", nil, &info); err != nil {
+		return nil, err
+	}
+	var brackets []leverageBracket
+	if err := r.signedGet(ctx, r.futuresURL, "/fapi/v1/leverageBracket", nil, &brackets); err != nil {
+		return nil, err
+	}
+	leverage := make(map[string]int, len(brackets))
+	for _, item := range brackets {
+		if len(item.Brackets) > 0 {
+			leverage[item.Symbol] = item.Brackets[0].InitialLeverage
+		}
+	}
+	rules := make([]domain.SymbolRule, 0, len(info.Symbols))
+	for _, symbol := range info.Symbols {
+		if symbol.Status != "TRADING" || symbol.QuoteAsset != "USDT" || symbol.ContractType != "PERPETUAL" {
+			continue
+		}
+		filters := make(map[string]struct{ TickSize, StepSize, MinQty, MaxQty, Notional string })
+		for _, item := range symbol.Filters {
+			filters[item.FilterType] = struct{ TickSize, StepSize, MinQty, MaxQty, Notional string }{
+				item.TickSize, item.StepSize, item.MinQty, item.MaxQty, item.Notional,
+			}
+		}
+		price, lot, marketLot, notional := filters["PRICE_FILTER"], filters["LOT_SIZE"], filters["MARKET_LOT_SIZE"], filters["MIN_NOTIONAL"]
+		maxLeverage := leverage[symbol.Symbol]
+		if symbol.Symbol == "" || price.TickSize == "" || lot.StepSize == "" || lot.MinQty == "" || lot.MaxQty == "" || notional.Notional == "" || maxLeverage == 0 {
+			continue
+		}
+		maxQuantity := marketLot.MaxQty
+		if maxQuantity == "" {
+			maxQuantity = lot.MaxQty
+		}
+		rules = append(rules, domain.SymbolRule{
+			Symbol: symbol.Symbol, BaseAsset: symbol.BaseAsset, QuoteAsset: "USDT", Status: "TRADING",
+			TickSize: domain.Decimal(price.TickSize), StepSize: domain.Decimal(lot.StepSize),
+			MinQuantity: domain.Decimal(lot.MinQty), MaxQuantity: domain.Decimal(maxQuantity),
+			MinNotional: domain.Decimal(notional.Notional), MaxLeverage: maxLeverage,
+		})
+	}
+	return rules, nil
+}
+
+type order struct {
+	OrderID     int64  `json:"orderId"`
+	ClientID    string `json:"clientOrderId"`
+	Symbol      string `json:"symbol"`
+	Side        string `json:"side"`
+	Type        string `json:"type"`
+	Status      string `json:"status"`
+	OriginalQty string `json:"origQty"`
+	ExecutedQty string `json:"executedQty"`
+	Price       string `json:"price"`
+	StopPrice   string `json:"stopPrice"`
+	ReduceOnly  bool   `json:"reduceOnly"`
+	Time        int64  `json:"time"`
+	UpdateTime  int64  `json:"updateTime"`
+}
+
+func (r *Reader) GetOpenOrders(ctx context.Context) ([]domain.Order, error) {
+	var source []order
+	if err := r.signedGet(ctx, r.futuresURL, "/fapi/v1/openOrders", nil, &source); err != nil {
+		return nil, err
+	}
+	result := make([]domain.Order, 0, len(source))
+	for _, item := range source {
+		if item.OrderID == 0 || item.Symbol == "" {
+			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+		}
+		result = append(result, mapOrder(item))
+	}
+	return result, nil
+}
+
+type position struct {
+	Symbol           string `json:"symbol"`
+	PositionAmount   string `json:"positionAmt"`
+	EntryPrice       string `json:"entryPrice"`
+	MarkPrice        string `json:"markPrice"`
+	UnrealizedProfit string `json:"unRealizedProfit"`
+	LiquidationPrice string `json:"liquidationPrice"`
+	Leverage         string `json:"leverage"`
+	MarginType       string `json:"marginType"`
+	PositionSide     string `json:"positionSide"`
+}
+
+func (r *Reader) GetPositions(ctx context.Context) ([]domain.Position, error) {
+	var source []position
+	if err := r.signedGet(ctx, r.futuresURL, "/fapi/v2/positionRisk", nil, &source); err != nil {
+		return nil, err
+	}
+	result := make([]domain.Position, 0, len(source))
+	for _, item := range source {
+		if item.Symbol == "" || !exchange.IsNonZero(item.PositionAmount) {
+			continue
+		}
+		if item.Leverage == "" || (item.MarginType != "isolated" && item.MarginType != "cross") {
+			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+		}
+		side := domain.PositionLong
+		if item.PositionSide == "SHORT" || (item.PositionSide != "LONG" && strings.HasPrefix(item.PositionAmount, "-")) {
+			side = domain.PositionShort
+		}
+		margin := domain.MarginCross
+		if item.MarginType == "isolated" {
+			margin = domain.MarginIsolated
+		}
+		mapped := domain.Position{
+			PositionKey: item.Symbol + ":" + first(item.PositionSide, "BOTH"), Symbol: item.Symbol, Side: side,
+			Quantity: domain.Decimal(strings.TrimPrefix(item.PositionAmount, "-")), EntryPrice: domain.Decimal(item.EntryPrice),
+			MarkPrice: domain.Decimal(item.MarkPrice), UnrealizedPnL: domain.Decimal(item.UnrealizedProfit),
+			Leverage: domain.Decimal(item.Leverage), MarginMode: margin,
+		}
+		if exchange.IsNonZero(item.LiquidationPrice) {
+			mapped.LiquidationPrice = domain.Decimal(item.LiquidationPrice)
+		}
+		result = append(result, mapped)
+	}
+	return result, nil
+}
+
+func (r *Reader) GetMarkPrice(ctx context.Context, symbol string) (domain.Decimal, error) {
+	var body struct {
+		MarkPrice string `json:"markPrice"`
+	}
+	params := url.Values{"symbol": {symbol}}
+	if err := r.publicGet(ctx, r.futuresURL, "/fapi/v1/premiumIndex", params, &body); err != nil {
+		return "", err
+	}
+	if body.MarkPrice == "" {
+		return "", exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+	}
+	return domain.Decimal(body.MarkPrice), nil
+}
+
+func (r *Reader) ConfigurePosition(ctx context.Context, symbol string, leverage int, marginMode domain.MarginMode) error {
+	marginType := "ISOLATED"
+	if marginMode == domain.MarginCross {
+		marginType = "CROSSED"
+	}
+	var marginResult struct {
+		Code int `json:"code"`
+	}
+	err := r.signedRequest(ctx, http.MethodPost, "/fapi/v1/marginType", url.Values{
+		"symbol": {symbol}, "marginType": {marginType},
+	}, &marginResult, map[string]struct{}{"-4046": {}, "-4048": {}})
+	if err != nil {
+		return err
+	}
+	if marginResult.Code == -4048 {
+		positions, positionErr := r.GetPositions(ctx)
+		if positionErr != nil {
+			return positionErr
+		}
+		matched := false
+		for _, position := range positions {
+			if position.Symbol == symbol && position.MarginMode == marginMode {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return exchange.NewError(domain.ErrorRejected, "MARGIN_MODE_CHANGE_BLOCKED", "-4048", false, false)
+		}
+	}
+	return r.signedRequest(ctx, http.MethodPost, "/fapi/v1/leverage", url.Values{
+		"symbol": {symbol}, "leverage": {strconv.Itoa(leverage)},
+	}, &struct{}{}, nil)
+}
+
+func (r *Reader) PlaceOrder(ctx context.Context, input exchange.PlaceOrderInput) (domain.Order, error) {
+	orderType := string(input.Type)
+	if input.Type == domain.OrderStopLimit {
+		orderType = "STOP"
+	}
+	params := url.Values{
+		"symbol": {input.Symbol}, "side": {string(input.Side)}, "type": {orderType},
+		"quantity": {string(input.Quantity)}, "reduceOnly": {strconv.FormatBool(input.ReduceOnly)},
+		"newClientOrderId": {input.ClientOrderID}, "newOrderRespType": {"RESULT"},
+	}
+	if input.Type == domain.OrderLimit || input.Type == domain.OrderStopLimit {
+		params.Set("timeInForce", "GTC")
+	}
+	if input.Price != "" {
+		params.Set("price", string(input.Price))
+	}
+	if input.StopPrice != "" {
+		params.Set("stopPrice", string(input.StopPrice))
+	}
+	var result order
+	if err := r.signedRequest(ctx, http.MethodPost, "/fapi/v1/order", params, &result, nil); err != nil {
+		return domain.Order{}, markWriteUncertain(err)
+	}
+	if result.OrderID == 0 || result.Symbol == "" {
+		return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, true)
+	}
+	return mapOrder(result), nil
+}
+
+func (r *Reader) CancelOrder(ctx context.Context, symbol, exchangeOrderID string) (domain.Order, error) {
+	var result order
+	err := r.signedRequest(ctx, http.MethodDelete, "/fapi/v1/order", url.Values{
+		"symbol": {symbol}, "orderId": {exchangeOrderID},
+	}, &result, nil)
+	if err != nil {
+		return domain.Order{}, markWriteUncertain(err)
+	}
+	if result.OrderID == 0 || result.Symbol == "" {
+		return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, true)
+	}
+	return mapOrder(result), nil
+}
+
+func (r *Reader) spotPrices(ctx context.Context) map[string]string {
+	var source []ticker
+	if err := r.publicGet(ctx, r.spotURL, "/api/v3/ticker/price", nil, &source); err != nil {
+		return map[string]string{}
+	}
+	result := make(map[string]string, len(source))
+	for _, item := range source {
+		if item.Symbol != "" && item.Price != "" {
+			result[item.Symbol] = item.Price
+		}
+	}
+	return result
+}
+
+func (r *Reader) signedGet(ctx context.Context, baseURL, path string, params url.Values, target any) error {
+	return r.signed(ctx, http.MethodGet, baseURL, path, params, target, nil)
+}
+
+func (r *Reader) signedRequest(ctx context.Context, method, path string, params url.Values, target any, acceptedCodes map[string]struct{}) error {
+	return r.signed(ctx, method, r.futuresURL, path, params, target, acceptedCodes)
+}
+
+func (r *Reader) signed(ctx context.Context, method, baseURL, path string, params url.Values, target any, acceptedCodes map[string]struct{}) error {
+	if params == nil {
+		params = make(url.Values)
+	}
+	params.Set("recvWindow", "5000")
+	params.Set("timestamp", strconv.FormatInt(r.now().UnixMilli(), 10))
+	unsigned := params.Encode()
+	mac := hmac.New(sha256.New, []byte(r.credentials.APISecret))
+	_, _ = mac.Write([]byte(unsigned))
+	params.Set("signature", hex.EncodeToString(mac.Sum(nil)))
+	requestURL := strings.TrimRight(baseURL, "/") + path + "?" + params.Encode()
+	_, err := exchange.RequestJSON(ctx, r.client, method, requestURL, map[string]string{"X-MBX-APIKEY": r.credentials.APIKey}, nil, target, acceptedCodes)
+	return err
+}
+
+func (r *Reader) publicGet(ctx context.Context, baseURL, path string, params url.Values, target any) error {
+	return r.get(ctx, baseURL, path, params, nil, target)
+}
+
+func (r *Reader) get(ctx context.Context, baseURL, path string, params url.Values, headers map[string]string, target any) error {
+	requestURL := strings.TrimRight(baseURL, "/") + path
+	if len(params) > 0 {
+		requestURL += "?" + params.Encode()
+	}
+	_, err := exchange.GetJSON(ctx, r.client, requestURL, headers, target)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func mapOrder(item order) domain.Order {
+	orderType := domain.OrderMarket
+	switch item.Type {
+	case "LIMIT":
+		orderType = domain.OrderLimit
+	case "STOP":
+		orderType = domain.OrderStopLimit
+	case "STOP_MARKET":
+		orderType = domain.OrderStopMarket
+	}
+	side := domain.SideBuy
+	if item.Side == "SELL" {
+		side = domain.SideSell
+	}
+	createdAt := time.Time{}
+	timestamp := item.Time
+	if timestamp == 0 {
+		timestamp = item.UpdateTime
+	}
+	if timestamp > 0 {
+		createdAt = time.UnixMilli(timestamp).UTC()
+	}
+	mapped := domain.Order{
+		ExchangeOrderID: strconv.FormatInt(item.OrderID, 10), ClientOrderID: item.ClientID,
+		Symbol: item.Symbol, Side: side, Type: orderType, Status: mapStatus(item.Status),
+		Quantity: domain.Decimal(item.OriginalQty), ExecutedQuantity: domain.Decimal(item.ExecutedQty),
+		ReduceOnly: item.ReduceOnly, CreatedAt: createdAt,
+	}
+	if exchange.IsNonZero(item.Price) {
+		mapped.Price = domain.Decimal(item.Price)
+	}
+	if exchange.IsNonZero(item.StopPrice) {
+		mapped.StopPrice = domain.Decimal(item.StopPrice)
+	}
+	return mapped
+}
+
+func mapStatus(status string) domain.OrderStatus {
+	switch status {
+	case "NEW":
+		return domain.OrderOpen
+	case "PARTIALLY_FILLED":
+		return domain.OrderPartiallyFilled
+	case "FILLED":
+		return domain.OrderFilled
+	case "CANCELED", "EXPIRED", "EXPIRED_IN_MATCH":
+		return domain.OrderCanceled
+	case "PENDING_CANCEL":
+		return domain.OrderCanceling
+	default:
+		return domain.OrderReconciliationRequired
+	}
+}
+
+func usdtPrice(asset string, prices map[string]string) string {
+	if asset == "USDT" {
+		return "1"
+	}
+	if price := prices[asset+"USDT"]; price != "" {
+		return price
+	}
+	if asset == "USDC" {
+		return first(prices["USDCUSDT"], "1")
+	}
+	if price := prices[asset+"USDC"]; price != "" {
+		return exchange.MultiplyDecimal(price, first(prices["USDCUSDT"], "1"), 8)
+	}
+	return ""
+}
+
+func first(value, fallback string) string {
+	if value != "" {
+		return value
+	}
+	return fallback
+}
+
+var _ exchange.Reader = (*Reader)(nil)
+var _ exchange.Writer = (*Reader)(nil)
+
+func markWriteUncertain(err error) error {
+	exchangeError, ok := err.(*exchange.Error)
+	if ok && (exchangeError.Normalized.Category == domain.ErrorTimeout || exchangeError.Normalized.Category == domain.ErrorUnavailable) {
+		exchangeError.Normalized.Reconciliation = true
+	}
+	return err
+}
