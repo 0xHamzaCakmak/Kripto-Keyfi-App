@@ -259,3 +259,166 @@ Mimari kararı:
 - Resmî OMS/Broker anlaşması yapılmadan normal API bağlantıları için OMS ücreti varmış gibi ücret tahsil edilmemelidir.
 
 Bu gelir modeli Faz 3'ün testnet işlem geliştirmesini etkilemez. Ticari entegrasyon; güvenli testnet doğrulaması, risk motoru, audit, abonelik/entitlement sistemi ve hukuki inceleme tamamlandıktan sonra ayrı bir faz olarak ele alınacaktır.
+
+## 1 Ağustos 2026 — Faz 3 tamamlandı
+
+- Binance Demo USDⓈ-M ve Bybit V5 Demo adapterları dinamik vadeli parite, tick/step size, minimum notional ve azami kaldıraç verilerini okuyacak şekilde genişletildi.
+- Kaldıraç ve margin modu yalnızca açık emir onayından sonra borsada yapılandırılır.
+- Market, limit, stop-market ve stop-limit emirleri için iki adımlı önizleme/onay akışı eklendi.
+- Önizlemeler iki dakika geçerlidir; miktar, fiyat, tetikleme fiyatı, kaldıraç ve notional borsanın güncel sembol kurallarına göre doğrulanır.
+- Finansal adım ve notional kontrolleri JavaScript floating point yerine `BigInt` tabanlı ondalık yardımcılarla yapılır.
+- Her emir kullanıcı tarafından üretilen idempotency anahtarı ve borsaya gönderilen benzersiz client order ID ile korunur.
+- Borsa yanıtı kaybolduğunda otomatik tekrar yapılmaz; kayıt `RECONCILIATION_REQUIRED` koduyla mutabakat için korunur.
+- Açık emir ve pozisyon listeleri doğrudan seçilen testnet/demo hesabından okunur.
+- Açık emir iptali, sahiplik ve borsadaki güncel açık emir kontrolünden sonra uygulanır.
+- Pozisyon kapatma tam miktarda reduce-only piyasa emriyle ve ikinci açık onayla yapılır.
+- Emir gönderme, başarısız emir, mutabakat gereksinimi, iptal ve pozisyon kapatma olayları secret içermeyen audit loga yazılır.
+- Admin paneline Manuel İşlem, Açık Emirler ve Açık Pozisyonlar sayfaları eklendi; masaüstü ve mobil menüye bağlandı.
+- Live/production işlemler kapalı kalmaya devam eder. Faz 3 API'leri yalnızca Faz 2'de kabul edilen Binance Testnet ve Bybit Demo hesaplarıyla çalışır.
+
+Faz 3 API'leri:
+
+```text
+GET    /api/admin/trading/symbols?exchangeAccountId=:id
+POST   /api/admin/trading/orders/preview
+POST   /api/admin/trading/orders
+GET    /api/admin/trading/orders?exchangeAccountId=:id
+POST   /api/admin/trading/orders/:id/cancel
+GET    /api/admin/trading/positions?exchangeAccountId=:id
+POST   /api/admin/trading/positions/:id/close
+```
+
+Veritabanı migration'ı:
+
+```text
+20260801213000_add_manual_trading
+```
+
+Yeni environment değişkeni eklenmedi. Mevcut `TRADING_CREDENTIALS_MASTER_KEY` zorunluluğu devam eder.
+
+Doğrulama sonucu:
+
+- Backend typecheck: başarılı
+- Backend lint: başarılı
+- Backend build: başarılı
+- Backend test: 6 dosya, 20 test başarılı
+- Frontend typecheck: başarılı
+- Frontend production build: başarılı
+
+## Faz 3.5 — Go Trading Engine'e güvenli geçiş
+
+Faz 4 gerçek zamanlı altyapısına, risk motoruna veya otomatik bot stratejilerine başlamadan önce borsa yürütme sorumluluğu ayrı bir Go servisine taşınacaktır. Mevcut TypeScript uygulaması yeniden yazılmayacak; authentication, admin yetkilendirmesi, kullanıcı API'leri ve frontend gateway görevlerini koruyacaktır.
+
+Hedef sorumluluk sınırı:
+
+```text
+React Frontend
+  ├── REST komutları
+  └── SSE durum olayları
+          ↓
+Node.js / TypeScript API
+  ├── Authentication ve roller
+  ├── Admin ve kullanıcı API'leri
+  ├── Abonelik / entitlement
+  ├── Açık kullanıcı onayı
+  └── Go engine internal API istemcisi
+          ↓ authenticated internal API
+Go Trading Engine
+  ├── Credential erişimi ve exchange adapterları
+  ├── Emir / pozisyon state machine
+  ├── Binance / Bybit private WebSocket
+  ├── Idempotency ve reconciliation
+  ├── Risk engine
+  ├── Bot scheduler
+  └── Grid / scalping strategy interface
+          ↓
+MySQL + kalıcı event/outbox
+```
+
+### Değişmez mimari kuralları
+
+- Aynı hesap için aynı anda yalnızca tek aktif order executor bulunabilir.
+- Go cutover tamamlandıktan sonra Node.js doğrudan borsaya emir gönderemez.
+- Geçiş sırasında dual-write veya iki servisten paralel test emri gönderilmez.
+- Shadow aşaması yalnızca bakiye, sembol, emir ve pozisyon gibi salt-okunur sonuçları karşılaştırır.
+- Frontend ve Node.js katmanına API secret, passphrase veya master key dönmez.
+- Go servisi credential'ı yalnızca emir/stream işlemi sırasında çözer; log, event ve hata yanıtlarına secret yazmaz.
+- Para ve miktar hesaplarında floating point kullanılmaz.
+- REST cevabı tek başına borsa gerçeği sayılmaz; private WebSocket olayı ve periyodik reconciliation birlikte kullanılır.
+- WebSocket olayı yinelenebilir veya sırasız gelebilir; event işleme idempotent olmalıdır.
+- Timeout alınan emir otomatik tekrar edilmez; client order ID ile borsada sorgulanıp mutabakat yapılır.
+- Engine restart sırasında açık emir ve pozisyonları borsadan okuyarak yerel state'i yeniden kurar.
+- Live trading bu geçiş boyunca kapalı kalır; bütün cutover testleri Binance Demo ve Bybit Demo üzerinde yapılır.
+
+### Kaydedilmiş geçiş sırası
+
+#### Adım 1 — Go servis temeli
+
+- `services/trading-engine` Go module yapısını oluştur.
+- Config validation, structured logging, healthcheck ve graceful shutdown ekle.
+- Internal API token doğrulaması ve request correlation ID standardını tanımla.
+- Dockerfile/çalıştırma dokümanı hazırla; mevcut deployment'ı bozmadan bağımsız servis olarak çalıştır.
+
+#### Adım 2 — Ortak domain ve internal API sözleşmesi
+
+- Exchange account reference, symbol rule, balance, order, position ve normalized exchange error modellerini tanımla.
+- Node → Go komutları için versioned internal API sözleşmesi oluştur.
+- İdempotency key ve client order ID alanlarını sözleşmenin zorunlu parçası yap.
+- `PENDING`, `SUBMITTING`, `OPEN`, `PARTIALLY_FILLED`, `FILLED`, `CANCELING`, `CANCELED`, `CLOSING`, `FAILED`, `RECONCILIATION_REQUIRED` durumlarını merkezi state machine olarak tanımla.
+
+#### Adım 3 — Salt-okunur adapter ve shadow doğrulama
+
+- Binance Demo symbol, balance, open order ve position sorgularını Go adapterına taşı.
+- Bybit Demo için aynı normalized adapter sözleşmesini uygula.
+- TypeScript ve Go çıktısını aynı hesaplarda karşılaştır; miktar, mark fiyatı, kaldıraç, margin modu ve position side eşitliğini test et.
+- Shadow aşamasında Go servisine emir gönderme yetkisi verme.
+
+#### Adım 4 — Manuel emir cutover
+
+- Önizleme kuralları, quantity/price rounding ve min-notional kontrollerini Go'ya taşı.
+- Market, limit, stop-market ve stop-limit emirlerini Go order manager üzerinden yürüt.
+- İptal ve reduce-only pozisyon kapatmayı Go'ya taşı.
+- Node.js endpoint yüzeyini koru; endpointler internal API üzerinden Go'ya komut iletsin.
+- Feature flag ile hesap bazlı cutover yap; Go aktifken TypeScript executor kesin olarak kapalı olsun.
+- Cutover sonrasında TypeScript exchange execution kodunu yalnızca geçici rollback süresi boyunca tut, ardından kaldır.
+
+#### Adım 5 — Private WebSocket ve canlı frontend durumu
+
+- Binance account/order/position stream ve Bybit private order/execution/position stream bağlantılarını Go'da yönet.
+- Reconnect, heartbeat, listen-key yenileme ve exponential backoff uygula.
+- Exchange olaylarını normalized, secret-free kalıcı event/outbox kayıtlarına dönüştür.
+- Node.js outbox/event akışını tüketip frontend'e SSE ile iletsin.
+- Frontend emir ve pozisyon satırlarında `SUBMITTING`, `CANCELING` ve `CLOSING` durumlarını anında göstersin.
+- WebSocket olayı geldiğinde sayfa yenilemeden emir/pozisyon tablosunu güncellesin.
+
+#### Adım 6 — Reconciliation ve restart recovery
+
+- Belirsiz emirleri client order ID ile borsada sorgula.
+- Periyodik olarak açık emir/pozisyon snapshot'ını yerel state ile karşılaştır.
+- Eksik, yinelenen veya sırasız eventleri idempotent biçimde düzelt.
+- Engine başlangıcında reconciliation tamamlanmadan otomatik bot veya yeni emir kabul etme.
+- Reconciliation başarısızsa ilgili hesabı `DEGRADED` durumuna getir ve yeni bot emirlerini durdur.
+
+#### Adım 7 — Risk motoru ve botlara geçiş
+
+- Günlük zarar, maksimum pozisyon, kaldıraç, bakiye rezervi ve kill switch kontrollerini Go engine'e ekle.
+- Risk motoru hem manuel hem otomatik emirlerde aynı order manager öncesinde çalışsın.
+- Grid/scalping stratejileri doğrudan exchange adapterına değil order manager ve risk engine interface'lerine bağımlı olsun.
+- Bot scheduler restart recovery ve reconciliation tamamlanmadan strateji çalıştırmasın.
+
+### Faz 3.5 kabul kriterleri
+
+- Go servisi bağımsız başlar, healthcheck verir ve graceful shutdown yapar.
+- Node ve Go arasında internal authentication olmadan komut kabul edilmez.
+- Shadow-read sonuçları Binance Demo ve Bybit Demo için TypeScript sonuçlarıyla eşleşir.
+- Manuel emir açma, iptal ve reduce-only kapatma yalnızca Go executor üzerinden çalışır.
+- Aynı idempotency key ile ikinci borsa emri oluşmaz.
+- Timeout sonrası kör retry yapılmaz ve reconciliation sonucu kayıt altına alınır.
+- Emir ve pozisyon değişiklikleri sayfa yenilenmeden frontend'e ulaşır.
+- WebSocket kopup bağlandığında state REST reconciliation ile doğrulanır.
+- Go servisi yeniden başlatıldığında açık emir ve pozisyonlar kaybolmaz.
+- API secret, authorization header ve master key hiçbir log/event/API response içinde bulunmaz.
+- Live trading kapalı kalır ve bütün kabul testleri demo/testnet ortamında geçer.
+- Cutover tamamlanmadan risk motoru, grid bot veya scalping bot geliştirmesine başlanmaz.
+
+Sonraki uygulama adımı Faz 3.5 Adım 1'dir: Go servis temeli, internal healthcheck, güvenli config ve graceful shutdown. Faz 4 gerçek zamanlı altyapı, Go manuel emir cutover'ından sonra Adım 5–6 kapsamında uygulanacaktır.

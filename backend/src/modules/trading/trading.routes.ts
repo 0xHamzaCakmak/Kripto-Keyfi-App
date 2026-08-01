@@ -7,6 +7,8 @@ import { validateRequest } from '../../middleware/validate-request.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { balances, createAccount, listAccounts, removeAccount, testAccount } from './exchange-account.controller.js';
 import { createExchangeAccountBodySchema, exchangeAccountIdParamsSchema } from './exchange-account.schema.js';
+import { cancel, close, orders, positions, preview, submit, symbols } from './manual-trading.controller.js';
+import { cancelOrderBodySchema, cancelOrderParamsSchema, closePositionBodySchema, closePositionParamsSchema, previewOrderBodySchema, submitOrderBodySchema, tradingAccountQuerySchema } from './manual-trading.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -16,3 +18,10 @@ tradingRouter.post('/exchange-accounts', validateRequest({ body: createExchangeA
 tradingRouter.post('/exchange-accounts/:id/test', validateRequest({ params: exchangeAccountIdParamsSchema }), asyncHandler(testAccount));
 tradingRouter.get('/exchange-accounts/:id/balances', validateRequest({ params: exchangeAccountIdParamsSchema }), asyncHandler(balances));
 tradingRouter.delete('/exchange-accounts/:id', validateRequest({ params: exchangeAccountIdParamsSchema }), asyncHandler(removeAccount));
+tradingRouter.get('/symbols', validateRequest({ query: tradingAccountQuerySchema }), asyncHandler(symbols));
+tradingRouter.post('/orders/preview', validateRequest({ body: previewOrderBodySchema }), asyncHandler(preview));
+tradingRouter.post('/orders', validateRequest({ body: submitOrderBodySchema }), asyncHandler(submit));
+tradingRouter.get('/orders', validateRequest({ query: tradingAccountQuerySchema }), asyncHandler(orders));
+tradingRouter.post('/orders/:id/cancel', validateRequest({ params: cancelOrderParamsSchema, body: cancelOrderBodySchema }), asyncHandler(cancel));
+tradingRouter.get('/positions', validateRequest({ query: tradingAccountQuerySchema }), asyncHandler(positions));
+tradingRouter.post('/positions/:id/close', validateRequest({ params: closePositionParamsSchema, body: closePositionBodySchema }), asyncHandler(close));

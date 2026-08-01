@@ -40,6 +40,14 @@ const futureLinks = [
   { label: 'Sistem Durumu', icon: Activity },
 ];
 
+const phaseThreeLinks = [
+  { label: 'Manuel İşlem', to: '/admin/trading/manual', icon: SlidersHorizontal, end: false },
+  { label: 'Açık Pozisyonlar', to: '/admin/trading/positions', icon: ChartNoAxesCombined, end: false },
+  { label: 'Açık Emirler', to: '/admin/trading/orders', icon: FileClock, end: false },
+];
+
+const upcomingLinks = futureLinks.filter(({ icon }) => ![SlidersHorizontal, ChartNoAxesCombined, FileClock].includes(icon));
+
 export default function AdminLayout() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -70,7 +78,7 @@ export default function AdminLayout() {
 
       <nav className="flex-1 space-y-6 overflow-y-auto p-3" aria-label="Admin menüsü">
         <div className="space-y-1">
-          {primaryLinks.map(({ label, to, icon: Icon, end }) => (
+          {[...primaryLinks, ...phaseThreeLinks].map(({ label, to, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end} title={collapsed ? label : undefined} className={({ isActive }) => cn('flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-bold transition-colors', collapsed && 'justify-center', isActive ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:bg-surface-high hover:text-white')}>
               <Icon size={19}/>{!collapsed && <span>{label}</span>}
             </NavLink>
@@ -79,7 +87,7 @@ export default function AdminLayout() {
 
         <div className="space-y-1">
           {!collapsed && <p className="px-3 pb-2 text-[10px] font-black uppercase tracking-[0.22em] text-outline">Sonraki fazlar</p>}
-          {futureLinks.map(({ label, icon: Icon }) => (
+          {upcomingLinks.map(({ label, icon: Icon }) => (
             <div key={label} title={collapsed ? `${label} — yakında` : undefined} className={cn('flex cursor-not-allowed items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-outline/70', collapsed && 'justify-center')}>
               <Icon size={18}/>{!collapsed && <><span className="flex-1">{label}</span><span className="rounded-md bg-surface-highest px-1.5 py-1 text-[9px] font-bold uppercase">Yakında</span></>}
             </div>

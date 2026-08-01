@@ -39,6 +39,31 @@ enum ExchangeConnectionStatus {
   DISABLED
 }
 
+enum TradingOrderSide {
+  BUY
+  SELL
+}
+
+enum TradingOrderType {
+  MARKET
+  LIMIT
+  STOP_MARKET
+  STOP_LIMIT
+}
+
+enum TradingMarginMode {
+  ISOLATED
+  CROSS
+}
+
+enum TradingOrderStatus {
+  SUBMITTING
+  OPEN
+  FILLED
+  CANCELED
+  FAILED
+}
+
 model User {
   id                 String            @id @default(cuid())
   email              String            @unique
@@ -52,6 +77,9 @@ model User {
   updatedAt          DateTime          @updatedAt
   refreshSessions    RefreshSession[]
   exchangeAccounts   ExchangeAccount[]
+  manualOrderPreviews ManualOrderPreview[]
+  tradingOrders       TradingOrder[]
+  tradingAuditLogs    TradingAuditLog[]
 
   @@map("users")
 }
@@ -78,11 +106,95 @@ model ExchangeAccount {
   updatedAt           DateTime                 @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manualOrderPreviews ManualOrderPreview[]
+  tradingOrders       TradingOrder[]
+  tradingAuditLogs    TradingAuditLog[]
 
   @@unique([userId, name])
   @@index([userId, provider])
   @@index([connectionStatus])
   @@map("exchange_accounts")
+}
+
+model ManualOrderPreview {
+  id                String             @id @default(cuid())
+  userId            String
+  exchangeAccountId String
+  symbol            String             @db.VarChar(40)
+  side              TradingOrderSide
+  type              TradingOrderType
+  quantity          Decimal            @db.Decimal(36, 18)
+  price             Decimal?           @db.Decimal(36, 18)
+  stopPrice         Decimal?           @db.Decimal(36, 18)
+  leverage          Int
+  marginMode        TradingMarginMode
+  reduceOnly        Boolean            @default(false)
+  markPrice         Decimal            @db.Decimal(36, 18)
+  estimatedNotional Decimal            @db.Decimal(36, 18)
+  expiresAt         DateTime
+  consumedAt        DateTime?
+  createdAt         DateTime           @default(now())
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeAccount ExchangeAccount @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+  order           TradingOrder?
+
+  @@index([userId, expiresAt])
+  @@index([exchangeAccountId, symbol])
+  @@map("manual_order_previews")
+}
+
+model TradingOrder {
+  id                String             @id @default(cuid())
+  userId            String
+  exchangeAccountId String
+  previewId         String             @unique
+  idempotencyKey    String             @db.VarChar(80)
+  clientOrderId     String             @unique @db.VarChar(36)
+  exchangeOrderId   String?            @db.VarChar(100)
+  symbol            String             @db.VarChar(40)
+  side              TradingOrderSide
+  type              TradingOrderType
+  quantity          Decimal            @db.Decimal(36, 18)
+  price             Decimal?           @db.Decimal(36, 18)
+  stopPrice         Decimal?           @db.Decimal(36, 18)
+  leverage          Int
+  marginMode        TradingMarginMode
+  reduceOnly        Boolean            @default(false)
+  status            TradingOrderStatus @default(SUBMITTING)
+  failureCode       String?            @db.VarChar(80)
+  failureMessage    String?            @db.VarChar(500)
+  submittedAt       DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeAccount ExchangeAccount    @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+  preview         ManualOrderPreview @relation(fields: [previewId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([exchangeAccountId, status])
+  @@index([userId, createdAt])
+  @@map("trading_orders")
+}
+
+model TradingAuditLog {
+  id                String   @id @default(cuid())
+  userId            String
+  exchangeAccountId String?
+  action            String   @db.VarChar(80)
+  entityType        String   @db.VarChar(50)
+  entityId          String?  @db.VarChar(100)
+  metadata          Json?
+  ipAddress         String?  @db.VarChar(64)
+  createdAt         DateTime @default(now())
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeAccount ExchangeAccount? @relation(fields: [exchangeAccountId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([exchangeAccountId, createdAt])
+  @@map("trading_audit_logs")
 }
 
 model RefreshSession {

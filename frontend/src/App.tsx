@@ -19,6 +19,8 @@ import AdminDashboard from './components/AdminDashboard';
 import AdminLayout from './components/AdminLayout';
 import TradingBotDashboard from './components/TradingBotDashboard';
 import ExchangeAccounts from './components/ExchangeAccounts';
+import ManualTrading from './components/ManualTrading';
+import { OpenOrdersPage, OpenPositionsPage } from './components/TradingActivity';
 import { AdminRoute, ProtectedRoute } from './auth/RouteGuards';
 
 export default function App() {
@@ -34,6 +36,9 @@ export default function App() {
               <Route index element={<AdminDashboard />} />
               <Route path="trading" element={<TradingBotDashboard />} />
               <Route path="trading/accounts" element={<ExchangeAccounts />} />
+              <Route path="trading/manual" element={<ManualTrading />} />
+              <Route path="trading/orders" element={<OpenOrdersPage />} />
+              <Route path="trading/positions" element={<OpenPositionsPage />} />
             </Route>
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />

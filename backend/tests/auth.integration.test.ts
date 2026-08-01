@@ -197,10 +197,10 @@ describe('authentication and admin API', () => {
       .set('Authorization', `Bearer access:ADMIN:${admin.id}:session`);
     expect(response.status).toBe(200);
     expect(response.body.data).toMatchObject({
-      moduleStatus: 'PHASE_TWO_READY',
-      engineStatus: 'NOT_CONFIGURED',
+      moduleStatus: 'PHASE_THREE_READY',
+      engineStatus: 'MANUAL_REST_READY',
       liveTradingEnabled: false,
-      globalKillSwitch: true,
+      globalKillSwitch: false,
     });
   });
 

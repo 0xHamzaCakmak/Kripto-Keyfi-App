@@ -5,6 +5,7 @@ import { ApiError } from '../../utils/api-error.js';
 import type { CreateExchangeAccountInput } from './exchange-account.schema.js';
 import { createExchangeAdapter } from './exchanges/exchange-adapter.factory.js';
 import { ExchangeAdapterError } from './exchanges/exchange-adapter.js';
+import type { CredentialValidationResult } from './exchanges/exchange-adapter.js';
 
 const publicSelect = {
   id: true, name: true, provider: true, environment: true, accountType: true, apiKeyHint: true,
@@ -48,7 +49,13 @@ export async function createExchangeAccount(userId: string, input: CreateExchang
 
 export async function testExchangeAccount(userId: string, id: string) {
   const account = await ownedAccount(userId, id);
-  const validation = await exchangeCall(() => adapterFor(account).validateCredentials());
+  let validation: CredentialValidationResult;
+  try {
+    validation = await exchangeCall(() => adapterFor(account).validateCredentials());
+  } catch (error) {
+    await prisma.exchangeAccount.update({ where: { id }, data: { connectionStatus: 'ERROR', canTrade: false } });
+    throw error;
+  }
   return prisma.exchangeAccount.update({
     where: { id },
     data: { connectionStatus: 'CONNECTED', canTrade: validation.canTrade, withdrawalEnabled: validation.withdrawalEnabled, lastConnectedAt: new Date() },
@@ -72,13 +79,13 @@ export async function deleteExchangeAccount(userId: string, id: string) {
 
 type StoredAccount = Awaited<ReturnType<typeof ownedAccount>>;
 
-async function ownedAccount(userId: string, id: string) {
+export async function ownedAccount(userId: string, id: string) {
   const account = await prisma.exchangeAccount.findFirst({ where: { id, userId } });
   if (!account) throw new ApiError(404, 'Borsa hesabı bulunamadı.', 'EXCHANGE_ACCOUNT_NOT_FOUND');
   return account;
 }
 
-function adapterFor(account: { provider: StoredAccount['provider']; apiKeyEncrypted: string; apiSecretEncrypted: string; passphraseEncrypted: string | null }) {
+export function adapterFor(account: { provider: StoredAccount['provider']; apiKeyEncrypted: string; apiSecretEncrypted: string; passphraseEncrypted: string | null }) {
   return createExchangeAdapter(account.provider, {
     apiKey: decryptCredential(account.apiKeyEncrypted),
     apiSecret: decryptCredential(account.apiSecretEncrypted),
@@ -90,7 +97,7 @@ function credentialsFromInput(input: CreateExchangeAccountInput) {
   return { apiKey: input.apiKey, apiSecret: input.apiSecret, ...(input.passphrase ? { passphrase: input.passphrase } : {}) };
 }
 
-async function exchangeCall<T>(operation: () => Promise<T>): Promise<T> {
+export async function exchangeCall<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
   } catch (error) {

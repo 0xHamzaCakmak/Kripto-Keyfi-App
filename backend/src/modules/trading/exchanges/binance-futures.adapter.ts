@@ -1,29 +1,48 @@
 import { createHmac } from 'node:crypto';
-import type { CredentialValidationResult, ExchangeAdapter, ExchangeBalance, ExchangeCredentials } from './exchange-adapter.js';
+import type {
+  CredentialValidationResult, ExchangeAdapter, ExchangeBalance, ExchangeCredentials, ExchangeOrder,
+  ExchangePosition, ExchangeSymbol, MarginMode, PlaceOrderInput,
+} from './exchange-adapter.js';
 import { ExchangeAdapterError } from './exchange-adapter.js';
-import { getJson } from './http.js';
+import { getJson, requestJson } from './http.js';
 
 const FUTURES_BASE_URL = 'https://demo-fapi.binance.com';
 const SPOT_BASE_URL = 'https://demo-api.binance.com';
 
-type BinanceFuturesAccount = {
-  canTrade?: boolean;
-  canWithdraw?: boolean;
-  assets?: Array<{ asset?: string; walletBalance?: string; availableBalance?: string; unrealizedProfit?: string }>;
-};
-
-type BinanceSpotAccount = {
-  balances?: Array<{ asset?: string; free?: string; locked?: string }>;
-};
-
+type BinanceFuturesAccount = { canTrade?: boolean; canWithdraw?: boolean; assets?: Array<{ asset?: string; walletBalance?: string; availableBalance?: string; unrealizedProfit?: string }> };
+type BinanceSpotAccount = { balances?: Array<{ asset?: string; free?: string; locked?: string }> };
 type BinanceTickerPrice = { symbol?: string; price?: string };
+type BinanceExchangeInfo = { symbols?: BinanceExchangeSymbol[] };
+type BinanceExchangeSymbol = {
+  symbol?: string; status?: string; baseAsset?: string; quoteAsset?: string; contractType?: string;
+  filters?: Array<{ filterType?: string; tickSize?: string; stepSize?: string; minQty?: string; maxQty?: string; notional?: string }>;
+};
+type BinanceLeverageBracket = { symbol?: string; brackets?: Array<{ initialLeverage?: number }> };
+type BinanceOrder = {
+  orderId?: number; clientOrderId?: string; symbol?: string; side?: string; type?: string; status?: string;
+  origQty?: string; executedQty?: string; price?: string; stopPrice?: string; reduceOnly?: boolean; time?: number; updateTime?: number;
+};
+type BinancePosition = {
+  symbol?: string; positionAmt?: string; entryPrice?: string; markPrice?: string; unRealizedProfit?: string;
+  liquidationPrice?: string; leverage?: string; marginType?: string; positionSide?: string;
+};
 
 export class BinanceFuturesAdapter implements ExchangeAdapter {
   constructor(private readonly credentials: ExchangeCredentials) {}
 
   async validateCredentials(): Promise<CredentialValidationResult> {
     const account = await this.futuresAccount();
-    return { canTrade: account.canTrade === true, withdrawalEnabled: account.canWithdraw === true };
+    let canTrade = false;
+    try {
+      const probe = await this.tradePermissionProbe();
+      await this.signedRequest('/fapi/v1/order/test', 'POST', {
+        symbol: probe.symbol, side: 'BUY', type: 'MARKET', quantity: probe.quantity,
+      }, [-4164, -2019]);
+      canTrade = true;
+    } catch (error) {
+      if (!(error instanceof ExchangeAdapterError) || error.code !== 'EXCHANGE_PERMISSION_DENIED') throw error;
+    }
+    return { canTrade, withdrawalEnabled: account.canWithdraw === true };
   }
 
   async getBalances(): Promise<ExchangeBalance[]> {
@@ -35,12 +54,8 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
         const walletBalance = addUnsignedDecimals(asset.free ?? '0', asset.locked ?? '0');
         const priceUsdt = findUsdtPrice(assetName, spotPrices);
         return {
-          walletType: 'SPOT' as const,
-          asset: assetName,
-          walletBalance,
-          availableBalance: asset.free ?? '0',
-          lockedBalance: asset.locked ?? '0',
-          unrealizedPnl: '0',
+          walletType: 'SPOT' as const, asset: assetName, walletBalance, availableBalance: asset.free ?? '0',
+          lockedBalance: asset.locked ?? '0', unrealizedPnl: '0',
           ...(priceUsdt ? { priceUsdt, valueUsdt: multiplyUnsignedDecimals(walletBalance, priceUsdt) } : {}),
         };
       })
@@ -48,38 +63,117 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
     const futuresBalances = (futuresAccount.assets ?? [])
       .filter((asset) => isNonZero(asset.walletBalance) || isNonZero(asset.unrealizedProfit))
       .map((asset) => ({
-        walletType: 'USD_M_FUTURES' as const,
-        asset: asset.asset ?? 'UNKNOWN',
-        walletBalance: asset.walletBalance ?? '0',
-        availableBalance: asset.availableBalance ?? '0',
-        unrealizedPnl: asset.unrealizedProfit ?? '0',
+        walletType: 'USD_M_FUTURES' as const, asset: asset.asset ?? 'UNKNOWN', walletBalance: asset.walletBalance ?? '0',
+        availableBalance: asset.availableBalance ?? '0', unrealizedPnl: asset.unrealizedProfit ?? '0',
       }));
     return [...spotBalances, ...futuresBalances];
   }
 
-  private async futuresAccount(): Promise<BinanceFuturesAccount> {
-    try {
-      return await this.signedAccount<BinanceFuturesAccount>(FUTURES_BASE_URL, '/fapi/v3/account');
-    } catch (error) {
-      if (error instanceof ExchangeAdapterError && error.code === 'EXCHANGE_REJECTED') {
+  async getSymbols(): Promise<ExchangeSymbol[]> {
+    const [infoBody, bracketsBody] = await Promise.all([
+      getJson(new URL('/fapi/v1/exchangeInfo', FUTURES_BASE_URL), {}),
+      this.signedRequest('/fapi/v1/leverageBracket', 'GET'),
+    ]);
+    const info = infoBody as BinanceExchangeInfo;
+    const brackets = Array.isArray(bracketsBody) ? bracketsBody as BinanceLeverageBracket[] : [];
+    const leverageBySymbol = new Map(brackets.flatMap((item) => item.symbol && item.brackets?.[0]?.initialLeverage
+      ? [[item.symbol, item.brackets[0].initialLeverage] as const] : []));
+    return (info.symbols ?? []).flatMap((symbol) => {
+      if (symbol.status !== 'TRADING' || symbol.quoteAsset !== 'USDT' || symbol.contractType !== 'PERPETUAL' || !symbol.symbol) return [];
+      const price = filter(symbol, 'PRICE_FILTER');
+      const lot = filter(symbol, 'LOT_SIZE');
+      const marketLot = filter(symbol, 'MARKET_LOT_SIZE');
+      const notional = filter(symbol, 'MIN_NOTIONAL');
+      const maxLeverage = leverageBySymbol.get(symbol.symbol);
+      if (!price?.tickSize || !lot?.stepSize || !lot.minQty || !lot.maxQty || !notional?.notional || maxLeverage === undefined) return [];
+      return [{
+        symbol: symbol.symbol, baseAsset: symbol.baseAsset ?? symbol.symbol.replace(/USDT$/, ''), quoteAsset: 'USDT', status: 'TRADING' as const,
+        tickSize: price.tickSize, stepSize: lot.stepSize, minQuantity: lot.minQty,
+        maxQuantity: marketLot?.maxQty ?? lot.maxQty, minNotional: notional.notional, maxLeverage,
+      }];
+    });
+  }
+
+  async getMarkPrice(symbol: string): Promise<string> {
+    const body = await getJson(new URL(`/fapi/v1/premiumIndex?symbol=${encodeURIComponent(symbol)}`, FUTURES_BASE_URL), {}) as { markPrice?: string };
+    if (!body.markPrice) throw new ExchangeAdapterError('INVALID_EXCHANGE_RESPONSE', 'Binance mark fiyatı alınamadı.');
+    return body.markPrice;
+  }
+
+  async configurePosition(symbol: string, leverage: number, marginMode: MarginMode): Promise<void> {
+    const marginResult = await this.signedRequest(
+      '/fapi/v1/marginType', 'POST',
+      { symbol, marginType: marginMode === 'CROSS' ? 'CROSSED' : 'ISOLATED' },
+      [-4046, -4048],
+    ) as { code?: number };
+    if (marginResult.code === -4048) {
+      const openPosition = (await this.getPositions()).find((position) => position.symbol === symbol);
+      if (!openPosition || openPosition.marginMode !== marginMode) {
         throw new ExchangeAdapterError(
-          'EXCHANGE_ENVIRONMENT_MISMATCH',
-          'Binance Demo Futures anahtarı doğrulanamadı. Demo hesabına ait API anahtarını ve Futures erişimini kontrol edin.',
+          'MARGIN_MODE_CHANGE_BLOCKED',
+          'Açık pozisyon varken margin modu değiştirilemez. Mevcut pozisyonu kapatın veya mevcut margin modunu seçin.',
+          -4048,
         );
+      }
+    }
+    await this.signedRequest('/fapi/v1/leverage', 'POST', { symbol, leverage: leverage.toString() });
+  }
+
+  async placeOrder(input: PlaceOrderInput): Promise<ExchangeOrder> {
+    const params: Record<string, string> = {
+      symbol: input.symbol, side: input.side, type: binanceOrderType(input.type), quantity: input.quantity,
+      reduceOnly: input.reduceOnly.toString(), newClientOrderId: input.clientOrderId, newOrderRespType: 'RESULT',
+    };
+    if (input.type === 'LIMIT' || input.type === 'STOP_LIMIT') params.timeInForce = 'GTC';
+    if (input.price) params.price = input.price;
+    if (input.stopPrice) params.stopPrice = input.stopPrice;
+    return mapOrder(await this.signedRequest('/fapi/v1/order', 'POST', params) as BinanceOrder);
+  }
+
+  async getOpenOrders(): Promise<ExchangeOrder[]> {
+    const body = await this.signedRequest('/fapi/v1/openOrders', 'GET');
+    return Array.isArray(body) ? (body as BinanceOrder[]).map(mapOrder) : [];
+  }
+
+  async cancelOrder(symbol: string, exchangeOrderId: string): Promise<ExchangeOrder> {
+    return mapOrder(await this.signedRequest('/fapi/v1/order', 'DELETE', { symbol, orderId: exchangeOrderId }) as BinanceOrder);
+  }
+
+  async getPositions(): Promise<ExchangePosition[]> {
+    const body = await this.signedRequest('/fapi/v2/positionRisk', 'GET');
+    return (Array.isArray(body) ? body as BinancePosition[] : []).flatMap((position) => {
+      const amount = position.positionAmt ?? '0';
+      if (!isNonZero(amount) || !position.symbol) return [];
+      if (!position.leverage || (position.marginType !== 'isolated' && position.marginType !== 'cross')) {
+        throw new ExchangeAdapterError('INVALID_EXCHANGE_RESPONSE', 'Binance pozisyon kaldıraç veya margin modu cevabı eksik.');
+      }
+      const negative = amount.startsWith('-');
+      const side = position.positionSide === 'LONG' ? 'LONG' : position.positionSide === 'SHORT' ? 'SHORT' : negative ? 'SHORT' : 'LONG';
+      return [{
+        positionKey: `${position.symbol}:${position.positionSide ?? 'BOTH'}`, symbol: position.symbol, side,
+        quantity: amount.replace(/^-/, ''), entryPrice: position.entryPrice ?? '0', markPrice: position.markPrice ?? '0',
+        ...(isNonZero(position.liquidationPrice) ? { liquidationPrice: position.liquidationPrice } : {}),
+        unrealizedPnl: position.unRealizedProfit ?? '0', leverage: position.leverage,
+        marginMode: position.marginType === 'isolated' ? 'ISOLATED' as const : 'CROSS' as const,
+      }];
+    });
+  }
+
+  private async futuresAccount(): Promise<BinanceFuturesAccount> {
+    try { return await this.signedRequest('/fapi/v3/account', 'GET') as BinanceFuturesAccount; }
+    catch (error) {
+      if (error instanceof ExchangeAdapterError && ['EXCHANGE_REJECTED', 'EXCHANGE_PERMISSION_DENIED'].includes(error.code)) {
+        throw new ExchangeAdapterError('EXCHANGE_ENVIRONMENT_MISMATCH', 'Binance Demo Futures anahtarı doğrulanamadı. Demo hesabı anahtarını ve Futures erişimini kontrol edin.');
       }
       throw error;
     }
   }
 
   private async spotAccount(): Promise<BinanceSpotAccount> {
-    try {
-      return await this.signedAccount<BinanceSpotAccount>(SPOT_BASE_URL, '/api/v3/account');
-    } catch (error) {
-      if (error instanceof ExchangeAdapterError && error.code === 'EXCHANGE_REJECTED') {
-        throw new ExchangeAdapterError(
-          'SPOT_ACCOUNT_UNAVAILABLE',
-          'Binance Demo Spot/Main bakiyesi okunamadı. API anahtarının okuma yetkisini kontrol edin.',
-        );
+    try { return await this.signedAccount<BinanceSpotAccount>(SPOT_BASE_URL, '/api/v3/account'); }
+    catch (error) {
+      if (error instanceof ExchangeAdapterError && ['EXCHANGE_REJECTED', 'EXCHANGE_PERMISSION_DENIED'].includes(error.code)) {
+        throw new ExchangeAdapterError('SPOT_ACCOUNT_UNAVAILABLE', 'Binance Demo Spot/Main bakiyesi okunamadı. API anahtarının okuma yetkisini kontrol edin.');
       }
       throw error;
     }
@@ -89,61 +183,72 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
     try {
       const body = await getJson(new URL('/api/v3/ticker/price', SPOT_BASE_URL), {});
       if (!Array.isArray(body)) return new Map();
-      return new Map(
-        (body as BinanceTickerPrice[])
-          .filter((ticker): ticker is Required<BinanceTickerPrice> => typeof ticker.symbol === 'string' && typeof ticker.price === 'string')
-          .map((ticker) => [ticker.symbol, ticker.price]),
-      );
-    } catch {
-      return new Map();
-    }
+      return new Map((body as BinanceTickerPrice[])
+        .filter((ticker): ticker is Required<BinanceTickerPrice> => typeof ticker.symbol === 'string' && typeof ticker.price === 'string')
+        .map((ticker) => [ticker.symbol, ticker.price]));
+    } catch { return new Map(); }
+  }
+
+  private async tradePermissionProbe(): Promise<{ symbol: string; quantity: string }> {
+    const body = await getJson(new URL('/fapi/v1/exchangeInfo', FUTURES_BASE_URL), {}) as BinanceExchangeInfo;
+    const symbol = (body.symbols ?? []).find((item) => item.status === 'TRADING' && item.quoteAsset === 'USDT' && item.contractType === 'PERPETUAL');
+    const lot = symbol ? filter(symbol, 'MARKET_LOT_SIZE') ?? filter(symbol, 'LOT_SIZE') : undefined;
+    if (!symbol?.symbol || !lot?.minQty) throw new ExchangeAdapterError('INVALID_EXCHANGE_RESPONSE', 'Binance işlem yetkisi için uygun test paritesi bulunamadı.');
+    return { symbol: symbol.symbol, quantity: lot.minQty };
   }
 
   private async signedAccount<T extends object>(baseUrl: string, path: string): Promise<T> {
-    const query = new URLSearchParams({ recvWindow: '5000', timestamp: Date.now().toString() });
-    query.set('signature', createHmac('sha256', this.credentials.apiSecret).update(query.toString()).digest('hex'));
-    const body = await getJson(new URL(`${path}?${query.toString()}`, baseUrl), { 'X-MBX-APIKEY': this.credentials.apiKey });
+    const query = signedQuery({}, this.credentials.apiSecret);
+    const body = await getJson(new URL(`${path}?${query}`, baseUrl), { 'X-MBX-APIKEY': this.credentials.apiKey });
     if (!body || typeof body !== 'object') throw new ExchangeAdapterError('INVALID_EXCHANGE_RESPONSE', 'Binance hesap cevabı doğrulanamadı.');
     return body as T;
   }
-}
 
-function isNonZero(value?: string): boolean {
-  return value !== undefined && !/^[-+]?0*(?:\.0*)?$/.test(value);
-}
-
-function addUnsignedDecimals(left: string, right: string): string {
-  const [leftWhole = '0', leftFraction = ''] = left.split('.');
-  const [rightWhole = '0', rightFraction = ''] = right.split('.');
-  const scale = Math.max(leftFraction.length, rightFraction.length);
-  const leftInteger = BigInt(`${leftWhole}${leftFraction.padEnd(scale, '0')}`);
-  const rightInteger = BigInt(`${rightWhole}${rightFraction.padEnd(scale, '0')}`);
-  const sum = (leftInteger + rightInteger).toString().padStart(scale + 1, '0');
-  if (scale === 0) return sum;
-  return `${sum.slice(0, -scale)}.${sum.slice(-scale)}`.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
-}
-
-function findUsdtPrice(asset: string, prices: Map<string, string>): string | undefined {
-  if (asset === 'USDT') return '1';
-  const directPrice = prices.get(`${asset}USDT`);
-  if (directPrice) return directPrice;
-  if (asset === 'USDC') return prices.get('USDCUSDT') ?? '1';
-  const usdcPrice = prices.get(`${asset}USDC`);
-  if (!usdcPrice) return undefined;
-  return multiplyUnsignedDecimals(usdcPrice, prices.get('USDCUSDT') ?? '1');
-}
-
-function multiplyUnsignedDecimals(left: string, right: string, maximumScale = 8): string {
-  const [leftWhole = '0', leftFraction = ''] = left.split('.');
-  const [rightWhole = '0', rightFraction = ''] = right.split('.');
-  let product = BigInt(`${leftWhole}${leftFraction}`) * BigInt(`${rightWhole}${rightFraction}`);
-  let scale = leftFraction.length + rightFraction.length;
-  if (scale > maximumScale) {
-    const divisor = 10n ** BigInt(scale - maximumScale);
-    product = (product + divisor / 2n) / divisor;
-    scale = maximumScale;
+  private async signedRequest(path: string, method: 'GET' | 'POST' | 'DELETE', params: Record<string, string> = {}, acceptedErrorCodes?: Array<string | number>) {
+    const query = signedQuery(params, this.credentials.apiSecret);
+    return requestJson(new URL(`${path}?${query}`, FUTURES_BASE_URL), {
+      method, headers: { 'X-MBX-APIKEY': this.credentials.apiKey }, ...(acceptedErrorCodes ? { acceptedErrorCodes } : {}),
+    });
   }
+}
+
+function signedQuery(params: Record<string, string>, secret: string): string {
+  const query = new URLSearchParams({ ...params, recvWindow: '5000', timestamp: Date.now().toString() });
+  query.set('signature', createHmac('sha256', secret).update(query.toString()).digest('hex'));
+  return query.toString();
+}
+
+function filter(symbol: BinanceExchangeSymbol, filterType: string) { return symbol.filters?.find((item) => item.filterType === filterType); }
+function binanceOrderType(type: PlaceOrderInput['type']) { return type === 'STOP_LIMIT' ? 'STOP' : type; }
+function fromBinanceOrderType(type?: string): ExchangeOrder['type'] { return type === 'STOP' ? 'STOP_LIMIT' : type === 'LIMIT' || type === 'STOP_MARKET' ? type : 'MARKET'; }
+function mapOrder(order: BinanceOrder): ExchangeOrder {
+  if (order.orderId === undefined || !order.symbol) throw new ExchangeAdapterError('INVALID_EXCHANGE_RESPONSE', 'Binance emir cevabı doğrulanamadı.');
+  return {
+    exchangeOrderId: order.orderId.toString(), clientOrderId: order.clientOrderId ?? '', symbol: order.symbol,
+    side: order.side === 'SELL' ? 'SELL' : 'BUY', type: fromBinanceOrderType(order.type), status: order.status ?? 'UNKNOWN',
+    quantity: order.origQty ?? '0', executedQuantity: order.executedQty ?? '0',
+    ...(isNonZero(order.price) ? { price: order.price } : {}), ...(isNonZero(order.stopPrice) ? { stopPrice: order.stopPrice } : {}),
+    reduceOnly: order.reduceOnly === true,
+    ...((order.time ?? order.updateTime) ? { createdAt: new Date(order.time ?? order.updateTime ?? 0).toISOString() } : {}),
+  };
+}
+
+function isNonZero(value?: string): boolean { return value !== undefined && !/^[-+]?0*(?:\.0*)?$/.test(value); }
+function addUnsignedDecimals(left: string, right: string): string {
+  const [leftWhole = '0', leftFraction = ''] = left.split('.'); const [rightWhole = '0', rightFraction = ''] = right.split('.');
+  const scale = Math.max(leftFraction.length, rightFraction.length);
+  const sum = (BigInt(`${leftWhole}${leftFraction.padEnd(scale, '0')}`) + BigInt(`${rightWhole}${rightFraction.padEnd(scale, '0')}`)).toString().padStart(scale + 1, '0');
+  return scale === 0 ? sum : `${sum.slice(0, -scale)}.${sum.slice(-scale)}`.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+}
+function findUsdtPrice(asset: string, prices: Map<string, string>): string | undefined {
+  if (asset === 'USDT') return '1'; const directPrice = prices.get(`${asset}USDT`); if (directPrice) return directPrice;
+  if (asset === 'USDC') return prices.get('USDCUSDT') ?? '1'; const usdcPrice = prices.get(`${asset}USDC`);
+  return usdcPrice ? multiplyUnsignedDecimals(usdcPrice, prices.get('USDCUSDT') ?? '1') : undefined;
+}
+function multiplyUnsignedDecimals(left: string, right: string, maximumScale = 8): string {
+  const [leftWhole = '0', leftFraction = ''] = left.split('.'); const [rightWhole = '0', rightFraction = ''] = right.split('.');
+  let product = BigInt(`${leftWhole}${leftFraction}`) * BigInt(`${rightWhole}${rightFraction}`); let scale = leftFraction.length + rightFraction.length;
+  if (scale > maximumScale) { const divisor = 10n ** BigInt(scale - maximumScale); product = (product + divisor / 2n) / divisor; scale = maximumScale; }
   const digits = product.toString().padStart(scale + 1, '0');
-  if (scale === 0) return digits;
-  return `${digits.slice(0, -scale)}.${digits.slice(-scale)}`.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+  return scale === 0 ? digits : `${digits.slice(0, -scale)}.${digits.slice(-scale)}`.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
 }
