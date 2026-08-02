@@ -1,0 +1,2 @@
+ALTER TABLE `exchange_accounts`
+  MODIFY `connectionStatus` ENUM('CONNECTED', 'DEGRADED', 'ERROR', 'DISABLED') NOT NULL DEFAULT 'CONNECTED';

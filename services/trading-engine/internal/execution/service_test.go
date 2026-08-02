@@ -9,6 +9,7 @@ import (
 	tradingv1 "github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/api/v1"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/risk"
 )
 
 var fixedTime = time.Date(2026, 8, 1, 20, 0, 0, 0, time.UTC)
@@ -49,6 +50,17 @@ func TestPlaceRejectsStoredCommandMismatch(t *testing.T) {
 	}
 }
 
+func TestPlaceRiskRejectionNeverWritesToExchange(t *testing.T) {
+	store := &fakeStore{claim: ClaimAcquired, order: sampleStoredOrder()}
+	writer := &fakeWriter{markPrice: "50000"}
+	service := testService(store, writer)
+	service.risk = &fakeRisk{decision: risk.Decision{Status: "REJECTED", Code: "RISK_MAX_LEVERAGE_EXCEEDED", Message: "risk rejected"}}
+	_, _, err := service.Place(t.Context(), samplePlaceCommand())
+	if err == nil || writer.configureCalls != 0 || writer.placeCalls != 0 || store.failCalls != 1 {
+		t.Fatalf("risk rejection reached exchange: writer=%#v failures=%d err=%v", writer, store.failCalls, err)
+	}
+}
+
 func TestCancelReplayNeverWritesToExchange(t *testing.T) {
 	stored := sampleStoredOrder()
 	stored.Status = domain.OrderCanceled
@@ -80,7 +92,7 @@ func TestPreviewUsesStringDecimalRules(t *testing.T) {
 }
 
 func testService(store *fakeStore, writer *fakeWriter) *Service {
-	return NewWithFactory(store, store, func(account.Resolved) (exchange.Writer, error) { return writer, nil }, func() time.Time { return fixedTime })
+	return NewWithFactory(store, store, &fakeRisk{decision: risk.Decision{Status: "APPROVED", Code: "RISK_APPROVED"}}, func(account.Resolved) (exchange.Writer, error) { return writer, nil }, func() time.Time { return fixedTime })
 }
 
 func sampleAccount() domain.ExchangeAccountRef {
@@ -137,6 +149,15 @@ type fakeWriter struct {
 	markPrice                               domain.Decimal
 	placed                                  domain.Order
 	configureCalls, placeCalls, cancelCalls int
+}
+
+type fakeRisk struct {
+	decision risk.Decision
+	err      error
+}
+
+func (r *fakeRisk) Evaluate(context.Context, account.Resolved, risk.OrderInput, risk.MarketReader) (risk.Decision, error) {
+	return r.decision, r.err
 }
 
 func (w *fakeWriter) GetBalances(context.Context) ([]domain.Balance, error)   { return nil, nil }

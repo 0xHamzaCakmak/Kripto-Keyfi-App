@@ -84,6 +84,22 @@ func TestReaderNormalizesPermissionErrors(t *testing.T) {
 	}
 }
 
+func TestReaderQueriesOrderByOriginalClientID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		assertBinanceSignature(t, request)
+		if request.Method != http.MethodGet || request.URL.Path != "/fapi/v1/order" || request.URL.Query().Get("origClientOrderId") != "kk_reconcile" {
+			t.Fatalf("unexpected reconciliation request: %s %s", request.Method, request.URL.String())
+		}
+		_, _ = w.Write([]byte(`{"orderId":77,"clientOrderId":"kk_reconcile","symbol":"BTCUSDT","side":"BUY","type":"LIMIT","status":"FILLED","origQty":"0.01","executedQty":"0.01","price":"50000","updateTime":1700000001000}`))
+	}))
+	defer server.Close()
+	reader := New(Options{Credentials: exchange.Credentials{APIKey: "test-key", APISecret: testSecret}, Client: server.Client(), FuturesURL: server.URL})
+	order, err := reader.GetOrderByClientID(t.Context(), "BTCUSDT", "kk_reconcile")
+	if err != nil || order.ExchangeOrderID != "77" || order.Status != domain.OrderFilled || order.UpdatedAt.IsZero() {
+		t.Fatalf("unexpected reconciliation order: %#v err=%v", order, err)
+	}
+}
+
 func TestWriterSignsConfigurePlaceAndCancelRequests(t *testing.T) {
 	var marginCalls, leverageCalls, placeCalls, cancelCalls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

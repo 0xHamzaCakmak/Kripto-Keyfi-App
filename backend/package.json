@@ -17,7 +17,11 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "acceptance:paper": "tsx scripts/prepare-paper-acceptance.ts",
+    "acceptance:paper-lifecycle": "tsx scripts/run-paper-lifecycle-acceptance.ts",
+    "acceptance:bot-signals": "tsx scripts/verify-bot-signal-acceptance.ts",
+    "acceptance:ai-observer-server": "tsx scripts/ai-observer-acceptance-server.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -1,0 +1,41 @@
+CREATE TABLE `trading_bot_paper_positions` (
+  `tradingBotId` VARCHAR(191) NOT NULL,
+  `symbol` VARCHAR(40) NOT NULL,
+  `netQuantity` DECIMAL(36,18) NOT NULL DEFAULT 0,
+  `avgEntryPrice` DECIMAL(36,18) NOT NULL DEFAULT 0,
+  `realizedPnl` DECIMAL(36,18) NOT NULL DEFAULT 0,
+  `unrealizedPnl` DECIMAL(36,18) NOT NULL DEFAULT 0,
+  `totalFees` DECIMAL(36,18) NOT NULL DEFAULT 0,
+  `lastMarkPrice` DECIMAL(36,18) NOT NULL DEFAULT 0,
+  `totalFills` INTEGER NOT NULL DEFAULT 0,
+  `openedAt` DATETIME(3) NULL,
+  `lastFilledAt` DATETIME(3) NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL,
+  INDEX `trading_bot_paper_positions_symbol_idx` (`symbol`),
+  PRIMARY KEY (`tradingBotId`),
+  CONSTRAINT `trading_bot_paper_positions_tradingBotId_fkey` FOREIGN KEY (`tradingBotId`) REFERENCES `trading_bots` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `trading_bot_paper_fills` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `tradingBotId` VARCHAR(191) NOT NULL,
+  `decisionId` BIGINT UNSIGNED NOT NULL,
+  `side` ENUM('BUY', 'SELL') NOT NULL,
+  `quantity` DECIMAL(36,18) NOT NULL,
+  `markPrice` DECIMAL(36,18) NOT NULL,
+  `fillPrice` DECIMAL(36,18) NOT NULL,
+  `notional` DECIMAL(36,18) NOT NULL,
+  `fee` DECIMAL(36,18) NOT NULL,
+  `realizedPnl` DECIMAL(36,18) NOT NULL,
+  `slippageBps` DECIMAL(12,4) NOT NULL,
+  `feeBps` DECIMAL(12,4) NOT NULL,
+  `occurredAt` DATETIME(3) NOT NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE INDEX `trading_bot_paper_fills_decisionId_key` (`decisionId`),
+  INDEX `trading_bot_paper_fills_tradingBotId_id_idx` (`tradingBotId`, `id`),
+  INDEX `trading_bot_paper_fills_occurredAt_idx` (`occurredAt`),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `trading_bot_paper_fills_tradingBotId_fkey` FOREIGN KEY (`tradingBotId`) REFERENCES `trading_bots` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `trading_bot_paper_fills_decisionId_fkey` FOREIGN KEY (`decisionId`) REFERENCES `trading_bot_decisions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

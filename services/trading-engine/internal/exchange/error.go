@@ -31,6 +31,8 @@ func safeMessage(code string) string {
 		return "The exchange returned an invalid response."
 	case "EXCHANGE_UNAVAILABLE":
 		return "A secure connection to the exchange could not be established."
+	case "RISK_ENGINE_UNAVAILABLE":
+		return "The order could not be verified by the risk engine."
 	default:
 		return "The exchange rejected the request."
 	}

@@ -2,7 +2,8 @@ import { api } from './apiClient';
 
 export type TradingAccount = {
   id: string; name: string; provider: 'BINANCE' | 'BYBIT'; environment: 'TESTNET' | 'DEMO';
-  isActive: boolean; canTrade: boolean; connectionStatus: 'CONNECTED' | 'ERROR' | 'DISABLED';
+  accountType: 'USDT_M' | 'UNIFIED';
+  isActive: boolean; canTrade: boolean; connectionStatus: 'CONNECTED' | 'DEGRADED' | 'ERROR' | 'DISABLED';
   executionEngine: 'TYPESCRIPT' | 'GO';
 };
 export type TradingSymbol = {
@@ -27,6 +28,54 @@ export type OpenPosition = {
   positionKey: string; symbol: string; side: 'LONG' | 'SHORT'; quantity: string; entryPrice: string; markPrice: string;
   liquidationPrice?: string; unrealizedPnl: string; leverage: string; marginMode: MarginMode;
   lifecycleStatus?: 'CLOSING' | 'CLOSE_FAILED';
+};
+export type TradingBotState = 'DRAFT' | 'VALIDATING' | 'STARTING' | 'RUNNING' | 'PAUSED' | 'STOPPED' | 'RISK_BLOCKED' | 'RECONCILING' | 'EMERGENCY_STOPPED' | 'ERROR';
+export type TradingBot = {
+  id: string; exchangeAccountId: string; name: string; type: 'SCALPING' | 'GRID'; mode: 'SHADOW' | 'PAPER' | 'DEMO';
+  state: TradingBotState; desiredState: 'RUNNING' | 'PAUSED' | 'STOPPED'; symbol: string; intervalSeconds: number;
+  configuration: Record<string, unknown>; stateReason?: string; lastErrorCode?: string; lastErrorMessage?: string;
+  heartbeatAt?: string; lastDecisionAt?: string; startedAt?: string; stoppedAt?: string; createdAt: string; updatedAt: string;
+  exchangeAccount: Pick<TradingAccount, 'name' | 'provider' | 'environment' | 'connectionStatus' | 'isActive'>;
+};
+export type TradingBotDecision = {
+  id: string; type: 'SCALPING' | 'GRID'; mode: 'SHADOW' | 'PAPER' | 'DEMO'; symbol: string;
+  kind: 'WARMING_UP' | 'HOLD' | 'BUY' | 'SELL' | 'GRID_BUY' | 'GRID_SELL' | 'OUT_OF_RANGE';
+  summary: string; markPrice: string; referencePrice: string | null; hypotheticalOrder: Record<string, unknown> | null;
+  metrics: Record<string, unknown> | null; occurredAt: string;
+};
+export type TradingBotSignal = {
+  id: string; decisionId: string | null; source: 'RULE_ENGINE' | 'AI_MODEL'; action: 'HOLD' | 'BUY' | 'SELL';
+  status: 'OBSERVED' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED'; confidence: string; rationale: string;
+  modelProvider: string | null; modelName: string | null; promptVersion: string | null;
+  features: Record<string, unknown> | null; safetyChecks: Record<string, unknown>; expiresAt: string | null;
+  decidedAt: string | null; createdAt: string;
+};
+export type TradingBotPaperPerformance = {
+  position: null | {
+    tradingBotId: string; symbol: string; netQuantity: string; avgEntryPrice: string; realizedPnl: string;
+    unrealizedPnl: string; totalFees: string; lastMarkPrice: string; netPnl: string; totalFills: number;
+    openedAt: string | null; lastFilledAt: string | null; updatedAt: string;
+  };
+  fills: Array<{
+    id: string; decisionId: string; side: 'BUY' | 'SELL'; quantity: string; markPrice: string; fillPrice: string;
+    notional: string; fee: string; realizedPnl: string; slippageBps: string; feeBps: string; occurredAt: string;
+  }>;
+};
+export type TradingGridPlan = {
+  symbol: string; marketType: 'FUTURES'; gridDirection: 'NEUTRAL'; spacingType: 'ARITHMETIC';
+  lowerPrice: string; upperPrice: string; markPrice: string; markPriceInRange: boolean;
+  gridLevels: number; gridIntervals: number; priceSpacing: string; quantityPerGrid: string; leverage: number; marginMode: MarginMode;
+  buyCount: number; sellCount: number; waitCount: number; maximumPlannedNotional: string; estimatedMaximumInitialMargin: string;
+  account: { id: string; name: string; provider: string; environment: string; accountType: string };
+  levels: Array<{ index: number; price: string; side: 'BUY' | 'SELL' | 'WAIT'; quantity: string; notional: string; estimatedInitialMargin: string; distancePercent: string; status: 'PLANNED' }>;
+  generatedAt: string; submittedToExchange: false; warnings: string[];
+};
+export type CreateTradingBotInput = {
+  name: string; exchangeAccountId: string; type: 'SCALPING'; mode: 'SHADOW' | 'PAPER'; symbol: string; intervalSeconds: number;
+  configuration: { side: 'BUY' | 'SELL' | 'BOTH'; quantity: string; leverage: number; marginMode: MarginMode; signalThresholdBps: number; paperFeeBps: number; paperSlippageBps: number };
+} | {
+  name: string; exchangeAccountId: string; type: 'GRID'; mode: 'SHADOW' | 'PAPER'; symbol: string; intervalSeconds: number;
+  configuration: { marketType: 'FUTURES'; gridDirection: 'NEUTRAL'; spacingType: 'ARITHMETIC'; lowerPrice: string; upperPrice: string; gridLevels: number; quantityPerGrid: string; leverage: number; marginMode: MarginMode; paperFeeBps: number; paperSlippageBps: number };
 };
 
 export async function getTradingAccounts() {
@@ -55,4 +104,28 @@ export async function getOpenPositions(exchangeAccountId: string) {
 }
 export async function closeOpenPosition(exchangeAccountId: string, position: OpenPosition) {
   return api.post(`/admin/trading/positions/${encodeURIComponent(position.positionKey)}/close`, { exchangeAccountId, idempotencyKey: crypto.randomUUID() });
+}
+export async function getTradingBots() {
+  return (await api.get<{ data: TradingBot[] }>('/admin/trading/bots')).data.data;
+}
+export async function getTradingBotDecisions(id: string) {
+  return (await api.get<{ data: TradingBotDecision[] }>(`/admin/trading/bots/${encodeURIComponent(id)}/decisions`)).data.data;
+}
+export async function getTradingBotSignals(id: string) {
+  return (await api.get<{ data: TradingBotSignal[] }>(`/admin/trading/bots/${encodeURIComponent(id)}/signals`)).data.data;
+}
+export async function getTradingBotPaperPerformance(id: string) {
+  return (await api.get<{ data: TradingBotPaperPerformance }>(`/admin/trading/bots/${encodeURIComponent(id)}/paper-performance`)).data.data;
+}
+export async function previewTradingGridPlan(input: { exchangeAccountId: string; symbol: string; configuration: Extract<CreateTradingBotInput, { type: 'GRID' }>['configuration'] }) {
+  return (await api.post<{ data: TradingGridPlan }>('/admin/trading/bots/grid-plan/preview', input)).data.data;
+}
+export async function getTradingBotGridPlan(id: string) {
+  return (await api.get<{ data: TradingGridPlan }>(`/admin/trading/bots/${encodeURIComponent(id)}/grid-plan`)).data.data;
+}
+export async function createTradingBot(input: CreateTradingBotInput) {
+  return (await api.post<{ data: TradingBot }>('/admin/trading/bots', input)).data.data;
+}
+export async function runTradingBotAction(id: string, action: 'validate' | 'start' | 'pause' | 'resume' | 'stop' | 'emergency-stop') {
+  return (await api.post<{ data: TradingBot }>(`/admin/trading/bots/${encodeURIComponent(id)}/${action}`)).data.data;
 }

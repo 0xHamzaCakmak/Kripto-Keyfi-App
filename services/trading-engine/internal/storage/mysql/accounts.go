@@ -48,16 +48,19 @@ func Open(ctx context.Context, databaseURL string, vault *credential.Vault) (*Ac
 func (s *AccountStore) Close() error { return s.database.Close() }
 
 func (s *AccountStore) Resolve(ctx context.Context, userID, accountID string) (account.Resolved, error) {
+	if s.vault == nil {
+		return account.Resolved{}, errors.New("credential vault is unavailable")
+	}
 	const query = `SELECT id, userId, provider, environment, accountType,
-apiKeyEncrypted, apiSecretEncrypted, COALESCE(passphraseEncrypted, ''), isActive, executionEngine
+apiKeyEncrypted, apiSecretEncrypted, COALESCE(passphraseEncrypted, ''), isActive, executionEngine, connectionStatus
 FROM exchange_accounts WHERE id = ? AND userId = ? LIMIT 1`
 	var reference domain.ExchangeAccountRef
 	var apiKeyEncrypted, apiSecretEncrypted, passphraseEncrypted string
 	var active bool
-	var engine string
+	var engine, referenceStatus string
 	err := s.database.QueryRowContext(ctx, query, accountID, userID).Scan(
 		&reference.ID, &reference.UserID, &reference.Provider, &reference.Environment, &reference.AccountType,
-		&apiKeyEncrypted, &apiSecretEncrypted, &passphraseEncrypted, &active, &engine,
+		&apiKeyEncrypted, &apiSecretEncrypted, &passphraseEncrypted, &active, &engine, &referenceStatus,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return account.Resolved{}, ErrAccountNotFound
@@ -86,12 +89,15 @@ FROM exchange_accounts WHERE id = ? AND userId = ? LIMIT 1`
 			return account.Resolved{}, errors.New("decrypt exchange credentials: passphrase authentication failed")
 		}
 	}
-	return account.Resolved{Reference: reference, Credentials: credentials, Engine: engine}, nil
+	if referenceStatus != "CONNECTED" {
+		return account.Resolved{}, fmt.Errorf("exchange account is not write-ready: %s", referenceStatus)
+	}
+	return account.Resolved{Reference: reference, Credentials: credentials, Engine: engine, ConnectionStatus: referenceStatus}, nil
 }
 
 func (s *AccountStore) ListRealtimeAccounts(ctx context.Context) ([]account.Resolved, error) {
 	const query = `SELECT id, userId, provider, environment, accountType,
-apiKeyEncrypted, apiSecretEncrypted, COALESCE(passphraseEncrypted, ''), isActive, executionEngine
+apiKeyEncrypted, apiSecretEncrypted, COALESCE(passphraseEncrypted, ''), isActive, executionEngine, connectionStatus
 FROM exchange_accounts
 WHERE isActive = TRUE AND connectionStatus = 'CONNECTED' AND provider = 'BINANCE'
 ORDER BY id`
@@ -103,11 +109,11 @@ ORDER BY id`
 	result := make([]account.Resolved, 0)
 	for rows.Next() {
 		var reference domain.ExchangeAccountRef
-		var apiKeyEncrypted, apiSecretEncrypted, passphraseEncrypted, engine string
+		var apiKeyEncrypted, apiSecretEncrypted, passphraseEncrypted, engine, connectionStatus string
 		var active bool
 		if err := rows.Scan(
 			&reference.ID, &reference.UserID, &reference.Provider, &reference.Environment, &reference.AccountType,
-			&apiKeyEncrypted, &apiSecretEncrypted, &passphraseEncrypted, &active, &engine,
+			&apiKeyEncrypted, &apiSecretEncrypted, &passphraseEncrypted, &active, &engine, &connectionStatus,
 		); err != nil {
 			return nil, fmt.Errorf("scan realtime exchange account: %w", err)
 		}
@@ -126,7 +132,7 @@ ORDER BY id`
 				return nil, errors.New("decrypt realtime credentials: passphrase authentication failed")
 			}
 		}
-		result = append(result, account.Resolved{Reference: reference, Credentials: credentials, Engine: engine})
+		result = append(result, account.Resolved{Reference: reference, Credentials: credentials, Engine: engine, ConnectionStatus: connectionStatus})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate realtime exchange accounts: %w", err)

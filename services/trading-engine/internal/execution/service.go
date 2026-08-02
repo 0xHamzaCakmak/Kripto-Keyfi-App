@@ -15,6 +15,7 @@ import (
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange/binance"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange/bybit"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/risk"
 )
 
 type WriterFactory func(account.Resolved) (exchange.Writer, error)
@@ -23,11 +24,12 @@ type Service struct {
 	accounts account.Store
 	orders   OrderStore
 	factory  WriterFactory
+	risk     risk.Evaluator
 	now      func() time.Time
 }
 
-func New(accounts account.Store, orders OrderStore, client *http.Client, endpoints exchange.Endpoints) *Service {
-	return &Service{accounts: accounts, orders: orders, now: time.Now, factory: func(resolved account.Resolved) (exchange.Writer, error) {
+func New(accounts account.Store, orders OrderStore, riskStore risk.Store, client *http.Client, endpoints exchange.Endpoints) *Service {
+	return &Service{accounts: accounts, orders: orders, risk: risk.New(riskStore), now: time.Now, factory: func(resolved account.Resolved) (exchange.Writer, error) {
 		switch resolved.Reference.Provider {
 		case domain.ProviderBinance:
 			return binance.New(binance.Options{Credentials: resolved.Credentials, Client: client, FuturesURL: endpoints.BinanceFutures, SpotURL: endpoints.BinanceSpot}), nil
@@ -39,8 +41,8 @@ func New(accounts account.Store, orders OrderStore, client *http.Client, endpoin
 	}}
 }
 
-func NewWithFactory(accounts account.Store, orders OrderStore, factory WriterFactory, now func() time.Time) *Service {
-	return &Service{accounts: accounts, orders: orders, factory: factory, now: now}
+func NewWithFactory(accounts account.Store, orders OrderStore, evaluator risk.Evaluator, factory WriterFactory, now func() time.Time) *Service {
+	return &Service{accounts: accounts, orders: orders, risk: evaluator, factory: factory, now: now}
 }
 
 func (s *Service) Preview(ctx context.Context, request tradingv1.PreviewOrderRequest) (tradingv1.PreviewOrderResponse, error) {
@@ -103,7 +105,7 @@ func (s *Service) Place(ctx context.Context, command tradingv1.PlaceOrderCommand
 	if command.Account.UserID != command.Meta.ActorUserID {
 		return domain.Order{}, false, validationError("ACCOUNT_ACTOR_MISMATCH")
 	}
-	_, writer, err := s.resolveWriter(ctx, command.Account)
+	resolved, writer, err := s.resolveWriter(ctx, command.Account)
 	if err != nil {
 		return domain.Order{}, false, err
 	}
@@ -119,6 +121,21 @@ func (s *Service) Place(ctx context.Context, command tradingv1.PlaceOrderCommand
 	}
 	if !commandMatchesStored(command, stored) {
 		failure := domain.ExchangeError{Category: domain.ErrorValidation, Code: "COMMAND_ORDER_MISMATCH", Message: "Stored order and execution command do not match."}
+		_ = s.orders.Fail(ctx, stored, failure, s.now())
+		return domain.Order{}, false, &exchange.Error{Normalized: failure}
+	}
+	decision, riskErr := s.risk.Evaluate(ctx, resolved, risk.OrderInput{
+		ID: stored.ID, UserID: stored.UserID, ExchangeAccountID: stored.ExchangeAccountID,
+		Symbol: stored.Symbol, Source: stored.Source, Quantity: stored.Quantity, Price: stored.Price,
+		Leverage: stored.Leverage, ReduceOnly: stored.ReduceOnly,
+	}, writer)
+	if riskErr != nil {
+		failure := domain.ExchangeError{Category: domain.ErrorUnavailable, Code: "RISK_ENGINE_UNAVAILABLE", Message: "Risk engine could not verify the order."}
+		_ = s.orders.Fail(ctx, stored, failure, s.now())
+		return domain.Order{}, false, &exchange.Error{Normalized: failure}
+	}
+	if decision.Status != "APPROVED" {
+		failure := domain.ExchangeError{Category: domain.ErrorRejected, Code: decision.Code, Message: decision.Message}
 		_ = s.orders.Fail(ctx, stored, failure, s.now())
 		return domain.Order{}, false, &exchange.Error{Normalized: failure}
 	}

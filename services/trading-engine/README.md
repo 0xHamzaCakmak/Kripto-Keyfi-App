@@ -99,3 +99,38 @@ TRADING_ENGINE_REALTIME_ENABLED=true
 - Node SSE endpointi: `GET /api/admin/trading/events?exchangeAccountId=...&cursor=...`
 
 Kalıcı servis kurulumunda `TRADING_ENGINE_REALTIME_ENABLED=true` verilmeden private stream başlamaz. Go order executor ayrıca açılmadıkça borsaya emir gönderme endpointleri kapalı kalır.
+
+## Merkezi risk motoru
+
+Cutover modundaki her yeni emir, exchange write çağrısından önce Go risk motorundan geçer. Risk profili veya borsa snapshot'ı okunamazsa risk artırıcı emir fail-closed reddedilir. Reduce-only çıkışlar ve emir iptalleri kill switch sırasında açık kalır.
+
+Risk kararları MySQL `trading_risk_events` tablosu ile kalıcı outbox'a birlikte yazılır. Global veya hesap kill switch, eksik/kapalı risk profili ve `DEGRADED` hesap yeni emirleri engeller. Günlük zarar limiti, realized PnL ve ücret defteri tamamlanana kadar etkinleştirilmez.
+
+## Shadow / paper bot scheduler
+
+Bot scheduler yalnızca MySQL'deki `SHADOW` ve `PAPER` botlarını lease ile sahiplenir. Her restart veya yeniden sahiplenmede bot önce `RECONCILING` durumuna geçer; hesap bağlantısı, risk profili ve global/hesap kill switch kapıları hazır olmadan `RUNNING` olmaz.
+
+```text
+TRADING_ENGINE_MODE=shadow
+TRADING_ENGINE_SHADOW_READ_ENABLED=false
+TRADING_ENGINE_BOT_SCHEDULER_ENABLED=true
+DATABASE_URL=<mysql-url>
+```
+
+Scheduler yalnızca Binance/Bybit'in kimlik bilgisi gerektirmeyen halka açık mark fiyatı endpoint'ini kullanır; şifreli API anahtarını çözmez ve private/account reader'a erişmez. SHADOW kararları ile PAPER sanal fill/PnL kayıtlarını kalıcılaştırır, order executor'a bağlı değildir. Payload'da `submittedToExchange=false` taşır. Private shadow snapshot ve realtime özellikleri ayrıca açılacaksa `TRADING_ENGINE_SHADOW_READ_ENABLED=true` ve credential master key yine zorunludur. `DEMO` bot modu kontrollü kabul tamamlanana kadar kilitlidir.
+
+## Comparison-only AI observer
+
+AI observer varsayılan olarak kapalıdır. Açıldığında scheduler, public fiyat ve mevcut kural kararını onaylı bir HTTPS inference gateway'ine gönderir. İstek exchange credential, bot miktarı veya order-manager erişimi taşımaz. Local geliştirmede yalnızca `localhost/127.0.0.1` için HTTP kabul edilir.
+
+```text
+TRADING_ENGINE_AI_OBSERVER_ENABLED=true
+TRADING_ENGINE_AI_OBSERVER_URL=https://approved-observer.example/v1/observe
+TRADING_ENGINE_AI_OBSERVER_TOKEN=<minimum-32-character-service-token>
+TRADING_ENGINE_AI_OBSERVER_PROVIDER=HTTP_GATEWAY
+TRADING_ENGINE_AI_OBSERVER_MODEL=<versioned-model-name>
+TRADING_ENGINE_AI_OBSERVER_PROMPT_VERSION=v1
+TRADING_ENGINE_AI_OBSERVER_TIMEOUT=1500ms
+```
+
+Observer yalnızca `HOLD`, `BUY` veya `SELL`, `0..1` güven ve 5–1000 karakterlik açıklama döndürebilir. Çıktı `AI_MODEL / OBSERVED` olarak saklanır ve `comparisonOnly=true`, `paperFillAllowed=false`, `orderExecutionAllowed=false`, `submittedToExchange=false` güvenlik alanlarını taşır. Geçersiz/timeout model cevabı kural çevrimini durdurmaz; kural kararı AI olmadan devam eder. Observer yalnızca `shadow` engine modu ve bot scheduler açıkken etkinleştirilebilir.

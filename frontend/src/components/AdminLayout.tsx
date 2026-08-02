@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Activity,
   Bot,
+  BookOpen,
   Building2,
   ChartNoAxesCombined,
   ChevronLeft,
@@ -29,24 +30,17 @@ const primaryLinks = [
   { label: 'Borsa Hesapları', to: '/admin/trading/accounts', icon: Building2 },
 ];
 
-const futureLinks = [
-  { label: 'Botlarım', icon: ListChecks },
-  { label: 'Manuel İşlem', icon: SlidersHorizontal },
-  { label: 'Grid Bot', icon: Gauge },
-  { label: 'Açık Pozisyonlar', icon: ChartNoAxesCombined },
-  { label: 'Açık Emirler', icon: FileClock },
-  { label: 'Kâr / Zarar', icon: CircleDollarSign },
-  { label: 'Risk Yönetimi', icon: ShieldAlert },
-  { label: 'Sistem Durumu', icon: Activity },
-];
-
 const phaseThreeLinks = [
+  { label: 'Botlarım', to: '/admin/trading/bots', icon: ListChecks, end: true },
+  { label: 'Bot Rehberi', to: '/admin/trading/bots/guide', icon: BookOpen, end: false },
   { label: 'Manuel İşlem', to: '/admin/trading/manual', icon: SlidersHorizontal, end: false },
   { label: 'Açık Pozisyonlar', to: '/admin/trading/positions', icon: ChartNoAxesCombined, end: false },
   { label: 'Açık Emirler', to: '/admin/trading/orders', icon: FileClock, end: false },
+  { label: 'Grid Bot', to: '/admin/trading/grid', icon: Gauge, end: false },
+  { label: 'Kâr / Zarar', to: '/admin/trading/profit-loss', icon: CircleDollarSign, end: false },
+  { label: 'Risk Yönetimi', to: '/admin/trading/risk', icon: ShieldAlert, end: false },
+  { label: 'Sistem Durumu', to: '/admin/trading/system', icon: Activity, end: false },
 ];
-
-const upcomingLinks = futureLinks.filter(({ icon }) => ![SlidersHorizontal, ChartNoAxesCombined, FileClock].includes(icon));
 
 export default function AdminLayout() {
   const { user } = useAuth();
@@ -85,14 +79,6 @@ export default function AdminLayout() {
           ))}
         </div>
 
-        <div className="space-y-1">
-          {!collapsed && <p className="px-3 pb-2 text-[10px] font-black uppercase tracking-[0.22em] text-outline">Sonraki fazlar</p>}
-          {upcomingLinks.map(({ label, icon: Icon }) => (
-            <div key={label} title={collapsed ? `${label} — yakında` : undefined} className={cn('flex cursor-not-allowed items-center gap-3 rounded-2xl px-3 py-2.5 text-sm text-outline/70', collapsed && 'justify-center')}>
-              <Icon size={18}/>{!collapsed && <><span className="flex-1">{label}</span><span className="rounded-md bg-surface-highest px-1.5 py-1 text-[9px] font-bold uppercase">Yakında</span></>}
-            </div>
-          ))}
-        </div>
       </nav>
 
       <div className="border-t border-outline/10 p-3">

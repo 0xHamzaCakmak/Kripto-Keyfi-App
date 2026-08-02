@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/execution"
 )
 
 const testToken = "0123456789abcdef0123456789abcdef"
@@ -59,5 +61,18 @@ func TestReadinessTurnsOffDuringShutdown(t *testing.T) {
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d", response.Code)
+	}
+}
+
+func TestStatusDoesNotAdvertiseExecutorBeforeReconciliation(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	server := New(Options{Addr: ":0", Logger: logger, Mode: "cutover", Execution: &execution.Service{}, Token: testToken})
+	server.SetReady(false)
+	request := httptest.NewRequest(http.MethodGet, "/internal/v1/status", nil)
+	request.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"not_ready"`) || !strings.Contains(response.Body.String(), `"executor":"disabled"`) {
+		t.Fatalf("unsafe pre-reconciliation status: %d %s", response.Code, response.Body.String())
 	}
 }

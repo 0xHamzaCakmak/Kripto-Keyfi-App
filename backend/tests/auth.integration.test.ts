@@ -88,6 +88,21 @@ const prismaMock = {
       return exchangeAccounts.splice(index, 1)[0];
     }),
   },
+  tradingRiskProfile: {
+    create: vi.fn(async ({ data }: { data: { userId: string; exchangeAccountId: string } }) => ({
+      id: `risk-${data.exchangeAccountId}`, ...data,
+    })),
+  },
+  tradingRiskControl: {
+    findUnique: vi.fn(async () => ({ globalKillSwitch: false })),
+  },
+  tradingOrder: {
+    count: vi.fn(async () => 0),
+  },
+  tradingBot: {
+    count: vi.fn(async () => 0),
+    findMany: vi.fn(async () => []),
+  },
   $transaction: vi.fn(async (input: unknown) => typeof input === 'function' ? (input as (client: typeof prismaMock) => unknown)(prismaMock) : Promise.all(input as Promise<unknown>[])),
   $queryRaw: vi.fn(async () => [{ ok: 1 }]),
 };
@@ -197,11 +212,29 @@ describe('authentication and admin API', () => {
       .set('Authorization', `Bearer access:ADMIN:${admin.id}:session`);
     expect(response.status).toBe(200);
     expect(response.body.data).toMatchObject({
-      moduleStatus: 'PHASE_FOUR_REALTIME_READY',
-      engineStatus: 'PRIVATE_STREAM_READY',
+      moduleStatus: 'TRADING_ADMIN_READY',
       liveTradingEnabled: false,
       globalKillSwitch: false,
     });
+  });
+
+  it('lists owned trading bots through the admin contract', async () => {
+    const admin = addUser({ role: UserRole.ADMIN });
+    const response = await request(app).get('/api/admin/trading/bots')
+      .set('Authorization', `Bearer access:ADMIN:${admin.id}:session`);
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([]);
+  });
+
+  it('keeps demo execution locked at the bot HTTP boundary', async () => {
+    const admin = addUser({ role: UserRole.ADMIN });
+    const response = await request(app).post('/api/admin/trading/bots')
+      .set('Authorization', `Bearer access:ADMIN:${admin.id}:session`)
+      .send({
+        name: 'Unsafe Demo Bot', exchangeAccountId: 'account-1', type: 'SCALPING', mode: 'DEMO', symbol: 'BTCUSDT', intervalSeconds: 30,
+        configuration: { side: 'BOTH', quantity: '0.001', leverage: 2, marginMode: 'ISOLATED', signalThresholdBps: 25 },
+      });
+    expect(response.status).toBe(400);
   });
 
   it('creates and lists an owned testnet exchange account without leaking credentials', async () => {

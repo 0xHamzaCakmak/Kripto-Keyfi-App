@@ -101,11 +101,15 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 		shadowRead = "enabled"
 	}
 	executor := "disabled"
-	if s.execution != nil {
+	if s.execution != nil && s.ready.Load() {
 		executor = "enabled"
 	}
+	status := "not_ready"
+	if s.ready.Load() {
+		status = "ready"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "ready",
+		"status":      status,
 		"mode":        s.mode,
 		"executor":    executor,
 		"shadow_read": shadowRead,
@@ -113,6 +117,9 @@ func (s *Server) status(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) previewOrder(w http.ResponseWriter, r *http.Request) {
+	if !s.requireWriteReady(w) {
+		return
+	}
 	var request tradingv1.PreviewOrderRequest
 	if err := decodeJSON(r, &request); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
@@ -128,6 +135,9 @@ func (s *Server) previewOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) placeOrder(w http.ResponseWriter, r *http.Request) {
+	if !s.requireWriteReady(w) {
+		return
+	}
 	var command tradingv1.PlaceOrderCommand
 	if err := decodeJSON(r, &command); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
@@ -142,6 +152,9 @@ func (s *Server) placeOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {
+	if !s.requireWriteReady(w) {
+		return
+	}
 	var command tradingv1.CancelOrderCommand
 	if err := decodeJSON(r, &command); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid_request"})
@@ -153,6 +166,18 @@ func (s *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"order": result, "idempotentReplay": replay})
+}
+
+func (s *Server) requireWriteReady(w http.ResponseWriter) bool {
+	if s.ready.Load() {
+		return true
+	}
+	writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]any{
+		"category": "UNAVAILABLE", "code": "ENGINE_RECONCILIATION_PENDING",
+		"message":   "Trading engine startup reconciliation has not completed.",
+		"retryable": true, "reconciliationRequired": false,
+	}})
+	return false
 }
 
 func decodeJSON(r *http.Request, target any) error {

@@ -18,9 +18,12 @@ import { ConnectWalletPage, ForgotPasswordPage, LoginPage, OnboardingPage, Regis
 import AdminDashboard from './components/AdminDashboard';
 import AdminLayout from './components/AdminLayout';
 import TradingBotDashboard from './components/TradingBotDashboard';
+import TradingBots from './components/TradingBots';
+import TradingBotGuide from './components/TradingBotGuide';
 import ExchangeAccounts from './components/ExchangeAccounts';
 import ManualTrading from './components/ManualTrading';
 import { OpenOrdersPage, OpenPositionsPage } from './components/TradingActivity';
+import { GridBotsPage, TradingProfitLossPage, TradingRiskManagementPage, TradingSystemStatusPage } from './components/TradingAdminPhases';
 import { AdminRoute, ProtectedRoute } from './auth/RouteGuards';
 
 export default function App() {
@@ -35,10 +38,16 @@ export default function App() {
             <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
               <Route index element={<AdminDashboard />} />
               <Route path="trading" element={<TradingBotDashboard />} />
+              <Route path="trading/bots" element={<TradingBots />} />
+              <Route path="trading/bots/guide" element={<TradingBotGuide />} />
               <Route path="trading/accounts" element={<ExchangeAccounts />} />
               <Route path="trading/manual" element={<ManualTrading />} />
               <Route path="trading/orders" element={<OpenOrdersPage />} />
               <Route path="trading/positions" element={<OpenPositionsPage />} />
+              <Route path="trading/grid" element={<GridBotsPage />} />
+              <Route path="trading/profit-loss" element={<TradingProfitLossPage />} />
+              <Route path="trading/risk" element={<TradingRiskManagementPage />} />
+              <Route path="trading/system" element={<TradingSystemStatusPage />} />
             </Route>
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />

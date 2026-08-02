@@ -27,9 +27,15 @@ async function start() {
     await prisma.$connect();
     logger.info('database connection established');
     const app = createApp();
-    server = app.listen(env.PORT, () => logger.info({ port: env.PORT }, 'KriptoKeyfi API listening'));
+    server = await new Promise<Server>((resolve, reject) => {
+      const listener = app.listen(env.PORT);
+      listener.once('listening', () => resolve(listener));
+      listener.once('error', reject);
+    });
+    logger.info({ port: env.PORT }, 'KriptoKeyfi API listening');
   } catch (error) {
-    logger.fatal({ err: error instanceof Error ? { name: error.name, message: error.message } : error }, 'application startup failed');
+    const code = error instanceof Error && 'code' in error ? String(error.code) : undefined;
+    logger.fatal({ err: error instanceof Error ? { name: error.name, message: error.message, ...(code ? { code } : {}) } : error }, code === 'EADDRINUSE' ? `Port ${env.PORT} is already in use; stop the existing backend process before starting another.` : 'application startup failed');
     await prisma.$disconnect().catch(() => undefined);
     process.exitCode = 1;
   }

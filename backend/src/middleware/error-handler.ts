@@ -15,7 +15,10 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, _nex
     normalized = new ApiError(500, 'An unexpected error occurred', 'INTERNAL_ERROR');
   }
 
-  req.log?.error({ err: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error }, 'request failed');
+  const logData = { err: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error };
+  if (normalized.statusCode >= 500) req.log?.error(logData, 'request failed');
+  else if (normalized.statusCode === 401) req.log?.debug(logData, 'request authentication required');
+  else req.log?.warn(logData, 'request rejected');
   res.status(normalized.statusCode).json({
     success: false,
     error: {

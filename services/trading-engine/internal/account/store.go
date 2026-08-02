@@ -8,9 +8,10 @@ import (
 )
 
 type Resolved struct {
-	Reference   domain.ExchangeAccountRef
-	Credentials exchange.Credentials
-	Engine      string
+	Reference        domain.ExchangeAccountRef
+	Credentials      exchange.Credentials
+	Engine           string
+	ConnectionStatus string
 }
 
 type Store interface {

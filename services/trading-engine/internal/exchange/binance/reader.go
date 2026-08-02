@@ -215,6 +215,21 @@ func (r *Reader) GetOpenOrders(ctx context.Context) ([]domain.Order, error) {
 	return result, nil
 }
 
+// GetOrderByClientID is a read-only reconciliation lookup. It must be used
+// after an uncertain write instead of submitting or canceling the order again.
+func (r *Reader) GetOrderByClientID(ctx context.Context, symbol, clientOrderID string) (domain.Order, error) {
+	var source order
+	if err := r.signedGet(ctx, r.futuresURL, "/fapi/v1/order", url.Values{
+		"symbol": {symbol}, "origClientOrderId": {clientOrderID},
+	}, &source); err != nil {
+		return domain.Order{}, err
+	}
+	if source.OrderID == 0 || source.Symbol == "" || source.ClientID == "" {
+		return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+	}
+	return mapOrder(source), nil
+}
+
 type position struct {
 	Symbol           string `json:"symbol"`
 	PositionAmount   string `json:"positionAmt"`
@@ -435,6 +450,9 @@ func mapOrder(item order) domain.Order {
 		Quantity: domain.Decimal(item.OriginalQty), ExecutedQuantity: domain.Decimal(item.ExecutedQty),
 		ReduceOnly: item.ReduceOnly, CreatedAt: createdAt,
 	}
+	if item.UpdateTime > 0 {
+		mapped.UpdatedAt = time.UnixMilli(item.UpdateTime).UTC()
+	}
 	if exchange.IsNonZero(item.Price) {
 		mapped.Price = domain.Decimal(item.Price)
 	}
@@ -454,6 +472,8 @@ func mapStatus(status string) domain.OrderStatus {
 		return domain.OrderFilled
 	case "CANCELED", "EXPIRED", "EXPIRED_IN_MATCH":
 		return domain.OrderCanceled
+	case "REJECTED":
+		return domain.OrderFailed
 	case "PENDING_CANCEL":
 		return domain.OrderCanceling
 	default:

@@ -292,8 +292,9 @@ async function submitTypeScriptOrder(adapter: ExchangeAdapter, preview: {
   }));
 }
 
-function assertTradableAccount(account: { isActive: boolean; canTrade: boolean }) {
+function assertTradableAccount(account: { isActive: boolean; canTrade: boolean; connectionStatus: string }) {
   if (!account.isActive) throw new ApiError(409, 'Pasif borsa hesabında işlem yapılamaz.', 'EXCHANGE_ACCOUNT_DISABLED');
+  if (account.connectionStatus !== 'CONNECTED') throw new ApiError(409, 'Borsa hesabı bağlantı veya mutabakat nedeniyle işlem kabul etmiyor.', 'EXCHANGE_ACCOUNT_NOT_READY');
   if (!account.canTrade) throw new ApiError(409, 'Borsa hesabının vadeli işlem yetkisi bulunmuyor.', 'EXCHANGE_TRADING_NOT_ALLOWED');
 }
 

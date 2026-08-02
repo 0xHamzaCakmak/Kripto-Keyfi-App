@@ -51,3 +51,45 @@ func TestLoadParsesSafeDefaults(t *testing.T) {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 }
+
+func TestLoadAllowsPublicMarketBotSchedulerWithoutCredentialVault(t *testing.T) {
+	t.Setenv("TRADING_ENGINE_TOKEN", "0123456789abcdef0123456789abcdef")
+	t.Setenv("TRADING_ENGINE_BOT_SCHEDULER_ENABLED", "true")
+	t.Setenv("TRADING_ENGINE_SHADOW_READ_ENABLED", "false")
+	t.Setenv("DATABASE_URL", "mysql://user:pass@127.0.0.1:3306/app")
+	t.Setenv("TRADING_CREDENTIALS_MASTER_KEY", "")
+	config, err := Load()
+	if err != nil || !config.BotScheduler || config.ShadowRead {
+		t.Fatalf("public market scheduler should not require credentials: %#v, err=%v", config, err)
+	}
+}
+
+func TestLoadKeepsAIObserverDisabledByDefault(t *testing.T) {
+	t.Setenv("TRADING_ENGINE_TOKEN", "0123456789abcdef0123456789abcdef")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_ENABLED", "false")
+	cfg, err := Load()
+	if err != nil || cfg.AIObserver {
+		t.Fatalf("AI observer must remain disabled by default: %#v, err=%v", cfg, err)
+	}
+}
+
+func TestLoadRequiresSafeAIObserverConfiguration(t *testing.T) {
+	t.Setenv("TRADING_ENGINE_TOKEN", "0123456789abcdef0123456789abcdef")
+	t.Setenv("TRADING_ENGINE_MODE", "shadow")
+	t.Setenv("TRADING_ENGINE_BOT_SCHEDULER_ENABLED", "true")
+	t.Setenv("TRADING_ENGINE_SHADOW_READ_ENABLED", "false")
+	t.Setenv("DATABASE_URL", "mysql://user:pass@127.0.0.1:3306/app")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_ENABLED", "true")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_URL", "https://observer.example.test/v1/signal")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_TOKEN", "0123456789abcdef0123456789abcdef")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_MODEL", "observer-model")
+	cfg, err := Load()
+	if err != nil || !cfg.AIObserver || cfg.AIObserverTimeout != 1500*time.Millisecond {
+		t.Fatalf("valid AI observer configuration rejected: %#v, err=%v", cfg, err)
+	}
+
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_TIMEOUT", "3s")
+	if _, err := Load(); err == nil {
+		t.Fatal("observer timeout above scheduler safety limit must be rejected")
+	}
+}

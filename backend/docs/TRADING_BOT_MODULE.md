@@ -529,3 +529,212 @@ Yarın başlanacak ilk iş — Faz 4 / Adım 6:
 3. Yerel emir state'i ile borsa snapshot'ı arasındaki farkları idempotent düzeltme.
 4. Mutabakat başarısızlığında hesap için `DEGRADED` durumu ve yeni bot emirlerini engelleme.
 5. Reconciliation, restart recovery ve kopma senaryoları için Go/backend testleri ve Binance Demo salt-okunur kabul testi.
+
+### 2 Ağustos 2026 — Faz 4 / Adım 6 tamamlandı
+
+- Go engine'e Binance emirlerini `clientOrderId` ile salt-okunur sorgulayan reconciliation worker eklendi; belirsiz write işlemleri borsaya yeniden gönderilmez.
+- Worker açık emir ve pozisyon REST snapshot'ını alır; yerel `GO` emirlerini açık snapshot veya tekil emir sorgusuyla idempotent biçimde `OPEN`, `PARTIALLY_FILLED`, `FILLED`, `CANCELED` ya da `FAILED` durumuna getirir.
+- Borsaya gönderilmeden önce süreç kesilmiş `SUBMITTING` kayıtları yeni emir oluşturmadan güvenli biçimde `FAILED` yapılır.
+- Emir düzeltmesi ile `ORDER_RECONCILED` outbox olayı aynı MySQL transaction'ında kalıcılaştırılır.
+- `ExchangeConnectionStatus.DEGRADED` eklendi. Mutabakatı başarısız bir `GO` hesabı `DEGRADED` olur; hesap çözümleme katmanı bu hesaptan yeni manuel veya bot emri kabul etmez. Sağlıklı periyodik mutabakat hesabı yeniden `CONNECTED` yapar.
+- HTTP liveness servis başlangıcında erişilebilir kalır; `/health/ready` reconciliation tamamlanana kadar `503 not_ready` döner. Internal status bu sırada executor'ı `disabled` gösterir.
+- Startup mutabakatı tamamlanınca servis atomik olarak `ready` olur; bundan sonra 30 saniyelik periyodik reconciliation ve private WebSocket manager başlar.
+- `20260802120000_add_exchange_degraded_status` migration'ı yerel MySQL'e uygulandı.
+- Binance Demo salt-okunur restart kabulünde ilk readiness cevabı `503`, snapshot sonrasında `ready` olarak doğrulandı. Hesap `TYPESCRIPT / CONNECTED`, engine `shadow` ve executor `disabled` kaldı; yeni `SNAPSHOT_RECONCILED` ile `STREAM_CONNECTED` olayları kalıcı outbox'a yazıldı.
+- Doğrulamalar başarılıdır: Go test/vet/build, reconciliation ve readiness senaryo testleri, backend typecheck/lint/build ve 22 test, frontend typecheck/build.
+
+Sonraki adım Faz 4 / Adım 7'dir: merkezi risk motoru, kill switch ve bot scheduler güvenlik kapısı. Bu katman tamamlandıktan sonra ilk otomatik strateji kontrollü biçimde geliştirilecektir.
+
+Uygulama sırası:
+
+1. Hesap ve strateji bazlı risk limitlerinin veri modeli: maksimum açık pozisyon/notional, günlük zarar, maksimum kaldıraç, bakiye rezervi ve işlem sıklığı.
+2. Go order manager önünde hem manuel hem bot emirlerinin zorunlu geçtiği merkezi pre-trade risk engine.
+3. Global, hesap ve bot seviyesinde kalıcı kill switch; `DEGRADED` veya reconciliation-not-ready durumunda fail-closed davranış.
+4. Bot scheduler yaşam döngüsü ve restart recovery; yalnızca readiness ile risk motoru sağlıklı olduğunda strateji çalıştırma.
+5. İlk strateji için paper/shadow sinyal üretimi, ardından Binance Demo'da düşük limitli kontrollü kabul. Gerçek/live işlem bu aşamada kapalı kalacaktır.
+
+### 2 Ağustos 2026 — Faz 4 / Adım 7 risk motoru temeli
+
+Tamamlanan ilk bölüm:
+
+- `TradingRiskProfile`, global `TradingRiskControl`, kalıcı `TradingRiskEvent`, risk karar enum'ları ve emir kaynağı modeli eklendi.
+- `20260802170000_add_trading_risk_engine` migration'ı yerel MySQL'e uygulandı; mevcut her borsa hesabına güvenli başlangıç profili oluşturuldu.
+- Başlangıç profili Demo için emir başına `100 USDT`, başlangıç teminatı `50 USDT`, hesap açık notional `500 USDT`, maksimum `5` pozisyon, `5x` kaldıraç, `20 USDT` rezerv, dakikada `10` ve günde `100` emir sınırlarıyla oluşturulur. Bu değerler admin risk API'sinden değiştirilebilir.
+- Go merkezi pre-trade risk engine; kaldıraç, emir notional/teminatı, toplam açık notional, açık pozisyon sayısı, parite pozisyon sayısı, USDT rezervi, emir sıklığı ve izinli/yasaklı sembol kurallarını string-decimal aritmetiğiyle uygular.
+- Mark fiyatı, pozisyon, bakiye, risk profili veya kullanım ölçümü doğrulanamazsa yeni risk artırıcı emir fail-closed olarak engellenir.
+- Reduce-only pozisyon azaltma emirleri global veya hesap kill switch sırasında güvenli çıkış yolu olarak açık kalır; yine `RISK_REDUCING_EXIT` kararıyla kayıt altına alınır. Emir iptali de engellenmez.
+- Risk kontrolü Go order manager içinde exchange `ConfigurePosition` ve `PlaceOrder` çağrılarından önce zorunlu çalışır. Risk reddinde borsaya hiçbir write isteği gönderilmez ve yerel emir açık hata koduyla `FAILED` olur.
+- Her risk kararı `trading_risk_events` tablosuna, aynı transaction içinde SSE'ye ulaşacak `trading.risk` outbox olayına yazılır.
+- Global ve hesap seviyesinde kalıcı kill switch, zorunlu sebep, admin audit log ve outbox olayları eklendi.
+- Yeni borsa hesabı risk profiliyle aynı transaction içinde oluşturulur. Risk profili hazır değilse veya kill switch aktifse hesap `GO` executor'a geçirilemez.
+- `DEGRADED`, `ERROR` veya `DISABLED` hesaplarda TypeScript dahil yeni manuel işlem de engellenir.
+- Günlük zarar alanı veri modelinde PnL defteri için ayrıldı; gerçek realized-PnL/fee/funding kaynağı tamamlanmadan API'den ayarlanamaz ve uygulanıyormuş gibi gösterilmez.
+
+Admin API yüzeyi:
+
+- `GET /api/admin/trading/exchange-accounts/:id/risk-profile`
+- `PATCH /api/admin/trading/exchange-accounts/:id/risk-profile`
+- `GET /api/admin/trading/exchange-accounts/:id/risk-events`
+- `POST /api/admin/trading/risk/kill-switch`
+
+Doğrulama sonucu: Go test/vet/build, merkezi risk senaryoları, backend typecheck/lint/build ve `25` test, frontend typecheck/build başarılıdır. Yerel veritabanında hesap/risk profili bire bir eşleşmesi ve kill switch'lerin kapalı başlangıç durumu doğrulandı.
+
+Adım 7 henüz tamamen bitmedi. Sıradaki somut iş bot domain modeli ve scheduler yaşam döngüsüdür: kontrollü bot state machine, restart sırasında `RECONCILING`, lease/heartbeat, readiness-risk-kill-switch kapıları ve önce yalnızca shadow/paper runner.
+
+### 2 Ağustos 2026 — Sohbet devir checkpoint'i
+
+Yeni sohbet bu bölümden devam etmelidir.
+
+#### Projenin mevcut aşaması
+
+- Faz 3.5 Go manuel emir altyapısı ve Binance Demo kabulü tamamlandı.
+- Faz 4 Adım 5 gerçek zamanlı private WebSocket, kalıcı outbox, Node SSE ve sayfa yenilemeden emir/pozisyon güncellemesi tamamlandı.
+- Faz 4 Adım 6 reconciliation, restart readiness kapısı ve `DEGRADED` hesap izolasyonu tamamlandı.
+- Faz 4 Adım 7'nin risk motoru bölümü tamamlandı; bot domain modeli, scheduler ve strateji runner henüz yapılmadı.
+- Binance Demo hesabının kalıcı executor değeri güvenli biçimde `TYPESCRIPT` durumundadır. Kalıcı `GO` cutover yapılmadı.
+- Live/gerçek para işlemi kapalıdır. Gerçek para ortamına geçiş için yetki verilmedi ve bu aşamada planlanmıyor.
+- Kabul için açılan geçici Go süreçleri kapatıldı; frontend, Node ve Go servislerinin çalıştığı varsayılmamalıdır.
+- Faz 4 değişiklikleri çalışma ağacındadır; yeni oturum mevcut dosyaları korumalı, reset/geri alma yapmamalıdır.
+
+#### Neden arayüzde büyük değişiklik görülmedi?
+
+Bu aşamaya kadar ağırlıkla altyapı ve güvenlik katmanları geliştirildi:
+
+- Borsaya iki kez emir gönderilmesini önleyen idempotency ve execution claim.
+- WebSocket kopması, restart ve kayıp borsa cevabında state kurtarma.
+- Gerçek kaldıraç/margin mode ve reduce-only emir akışları.
+- Kalıcı event/outbox ve SSE canlı güncelleme omurgası.
+- Merkezi risk kontrolleri ve kill switch.
+
+Risk ayar ekranı ve bot ekranları henüz frontend'e eklenmediği için son risk motoru değişiklikleri görsel değildir. Mevcut arayüzde görülebilen önceki değişiklikler executor bilgisi, doğru pozisyon kaldıraç/margin alanları ve SSE ile otomatik tablo yenilemesidir.
+
+#### Sıradaki görünür dikey teslimat
+
+Sadece arka uç geliştirmek yerine aşağıdaki parçalar tek bir uçtan uca teslimat olarak uygulanmalıdır:
+
+1. `TradingBot` veri modeli, bot tipi/modu ve kontrollü state machine: `DRAFT`, `VALIDATING`, `STARTING`, `RUNNING`, `PAUSED`, `STOPPED`, `RISK_BLOCKED`, `RECONCILING`, `EMERGENCY_STOPPED`, `ERROR`.
+2. Restart recovery için lease, heartbeat, desired-state ve scheduler sahipliği.
+3. Admin bot API'leri: listele, oluştur, doğrula, başlat, duraklat, devam ettir, durdur ve acil durdur.
+4. Frontend'de gerçek **Botlar** sayfası: bot listesi, durum rozetleri, bağlantı/risk engeli, temel oluşturma sihirbazı ve başlat/durdur kontrolleri.
+5. İlk aşamada yalnızca `SHADOW/PAPER` runner: sinyal ve varsayımsal emir üretir, Binance'e write göndermez; kararları outbox/SSE üzerinden ekranda canlı gösterir.
+6. Shadow kabulünden sonra mevcut merkezi order manager ve risk engine üzerinden düşük limitli Binance Demo emir kabulü. Strateji exchange adapter'a doğrudan erişemez.
+
+İlk başlanacak somut iş: bot Prisma migration'ı + Go bot state machine + Node bot API sözleşmesi. Aynı çalışma diliminde frontend Botlar sayfasının ilk kullanılabilir görünümü de eklenmelidir.
+
+#### Son doğrulama durumu
+
+- Go: test, vet ve build başarılı.
+- Backend: typecheck, lint, build ve `25` test başarılı.
+- Frontend: typecheck ve production build başarılı.
+- Uygulanan son migration'lar: `20260802120000_add_exchange_degraded_status` ve `20260802170000_add_trading_risk_engine`.
+- Mevcut hesap/risk profili eşleşmesi `1/1`; global ve hesap kill switch kapalıdır.
+
+### 2 Ağustos 2026 — Bot dikey teslimat checkpoint'i
+
+Sohbet devir checkpoint'inde tanımlanan ilk görünür bot dilimi tamamlandı:
+
+- `20260802190000_add_trading_bots` migration'ı yerel MySQL veritabanına uygulandı. `TradingBot` modeli; tip/mod, kontrollü state, desired-state, lease, scheduler owner, heartbeat, son karar ve optimistic version alanlarını içeriyor.
+- Go engine'e merkezi ve testli bot state machine, restart sırasında `RECONCILING`, atomik MySQL lease alma/bırakma, bağlantı-risk-kill-switch kapısı ve periyodik scheduler eklendi.
+- Scheduler yalnızca `SHADOW` ve `PAPER` botlarını çalıştırıyor. İlk runner exchange adapter veya order executor bağımlılığı taşımıyor; `submittedToExchange: false` varsayımsal kararını `trading.bot / BOT_SHADOW_DECISION` outbox event'i olarak yayımlıyor. `DEMO` modu kilitli.
+- Node admin API sözleşmesi eklendi: listele, oluştur, doğrula, başlat, duraklat, devam ettir, durdur ve acil durdur. Bot oluşturma sözleşmesi yalnızca `SHADOW/PAPER` kabul ediyor ve testnet/demo hesap sahipliği ile merkezi güvenlik kapılarını kontrol ediyor.
+- Frontend'e `/admin/trading/bots` altında gerçek Botlar sayfası, canlı SSE yenilemesi, durum/bağlantı/risk rozetleri, yaşam döngüsü kontrolleri ve üç adımlı SCALPING/GRID oluşturma sihirbazı eklendi.
+- Go bot scheduler varsayılan olarak kapalıdır. Kontrollü shadow kabulü için `TRADING_ENGINE_SHADOW_READ_ENABLED=true` yanında `TRADING_ENGINE_BOT_SCHEDULER_ENABLED=true` verilmelidir.
+
+Doğrulama sonucu: Go test/vet/build, backend typecheck/lint/build ve `30` test, frontend typecheck/build başarılıdır. Prisma client normal engine ile yeniden üretildi ve 8 migration'ın tamamının güncel olduğu doğrulandı.
+
+Sıradaki kabul adımı servisleri kontrollü biçimde açıp bir SHADOW bot oluşturarak heartbeat, state ve `BOT_SHADOW_DECISION` SSE akışını gözlemlemektir. Bu kabul tamamlanmadan Binance Demo bot emri açılmayacak veya gönderilmeyecektir.
+
+### 2 Ağustos 2026 — Strateji karar motoru ve kalıcı karar geçmişi
+
+- SCALPING botları ardışık mark fiyatları arasındaki baz-puan değişimini yapılandırılan `signalThresholdBps` eşiğiyle karşılaştırır; yön filtresine göre `BUY`, `SELL` veya `HOLD` kararı üretir.
+- GRID botları fiyatın tanımlı alt/üst sınırlar içindeki seviyesini izler; aşağı seviye geçişinde `GRID_BUY`, yukarı geçişinde `GRID_SELL`, aralık dışında `OUT_OF_RANGE` kararı üretir.
+- İlk çevrim yalnızca referans fiyatı oluşturur ve `WARMING_UP` olarak kaydedilir.
+- `TradingBotDecision` modeli ve `20260802210000_add_trading_bot_decisions` migration'ı eklendi. Her çevrimde fiyat, referans fiyat, ölçümler ve varsa varsayımsal PAPER emri aynı transaction içinde kalıcılaştırılır.
+- Node API'ye son 50 kararı döndüren `GET /api/admin/trading/bots/:id/decisions` endpoint'i eklendi. Bot kartı açılır karar geçmişinde son kayıtları gösterir.
+- Strateji runner yalnızca borsanın salt-okunur mark fiyatı endpoint'ini kullanır. SHADOW kararları emir oluşturmaz; PAPER kayıtlarında `submittedToExchange: false` zorunludur. Exchange write/order manager bağlantısı hâlâ yoktur ve `DEMO` modu kilitlidir.
+
+Sıradaki iş PAPER sanal fill, pozisyon ve gerçekleşmiş/gerçekleşmemiş PnL defteridir. Bu katmandan sonra kontrollü SHADOW kabulü yapılacak; Binance Demo bot emri ayrıca açık kabul adımı ve kullanıcı onayı olmadan etkinleştirilmeyecektir.
+
+### 2 Ağustos 2026 — PAPER fill, pozisyon ve PnL defteri
+
+- `TradingBotPaperPosition` ve `TradingBotPaperFill` modelleri ile `20260802220000_add_trading_bot_paper_ledger` migration'ı eklendi ve yerel MySQL'e uygulandı.
+- PAPER sinyalleri varsayılan `4 bps` ücret ve `2 bps` slippage ile sanal fill'e dönüştürülür. Bu varsayımlar bot yapılandırmasında saklanır; borsaya write isteği gönderilmez.
+- Net miktar ve ağırlıklı ortalama giriş fiyatı tutulur. Ters yönlü fill mevcut pozisyonu kısmen/tamamen kapatabilir veya LONG/SHORT yönünü değiştirebilir.
+- Her çevrimde brüt gerçekleşmiş PnL, gerçekleşmemiş PnL ve toplam sanal ücret güncellenir. Arayüzdeki net PnL, `gerçekleşmiş - ücret + gerçekleşmemiş` olarak gösterilir.
+- Karar, sanal fill, pozisyon güncellemesi ve `BOT_PAPER_DECISION` outbox olayı aynı MySQL transaction'ında kaydedilir.
+- `GET /api/admin/trading/bots/:id/paper-performance` endpoint'i güncel sanal pozisyonu ve son 50 fill'i döndürür. Bot kartında yön, miktar, ortalama giriş, PnL, ücret ve fill sayısı gösterilir.
+
+Sıradaki kabul adımı scheduler'ı salt-okunur SHADOW modunda kontrollü açarak gerçek mark fiyatlarıyla heartbeat ve karar akışını gözlemlemektir. PAPER defteri bundan sonra ayrı bir kontrollü simülasyon kabulüyle çalıştırılabilir; Binance Demo order manager bağlantısı hâlâ kilitlidir.
+
+### 2 Ağustos 2026 — Kontrollü SHADOW kabulü
+
+- Strateji mark fiyatı okuyucusu private hesap çözümlemesinden ayrıldı. Scheduler yalnızca hesap sahipliği/provider/environment bilgisini MySQL'den, mark fiyatını ise borsanın halka açık endpoint'inden alır; credential vault ve API anahtarı kullanmaz.
+- Bot scheduler `TRADING_ENGINE_MODE=shadow`, `TRADING_ENGINE_BOT_SCHEDULER_ENABLED=true`, private shadow/realtime kapalı olacak şekilde başlatıldı. Go engine `8081` üzerinde `ready` durumuna geçti.
+- Mevcut `BTC TEST` SHADOW botu restart recovery ile `ERROR -> STARTING -> RECONCILING -> RUNNING` yolunu tamamladı.
+- İlk gerçek çevrimde `BTCUSDT` mark fiyatı okunarak `WARMING_UP` kararı kalıcı `trading_bot_decisions` kaydına yazıldı; heartbeat, lease sahibi ve son karar zamanı güncellendi.
+- Kabul sırasında exchange write endpoint'i bağlı değildi, credential çözülmedi ve Binance'e emir gönderilmedi.
+
+Sıradaki kabul PAPER botunun arayüzden oluşturulması, iki veya daha fazla sinyal çevrimi sonrasında sanal fill/pozisyon/PnL görünümünün doğrulanmasıdır. Binance Demo bot emri bu kabulden sonra da ayrıca kilitli kalacaktır.
+
+### 2 Ağustos 2026 — Trading admin ürün ekranları
+
+- Admin menüsündeki `Grid Bot`, `Kâr / Zarar`, `Risk Yönetimi` ve `Sistem Durumu` placeholder'ları kaldırılarak gerçek route ve ekranlara dönüştürüldü.
+- Grid Bot ekranı yalnızca GRID botlarını listeler ve sihirbazı GRID stratejisiyle kilitli açar; mevcut state/karar/PAPER kontrollerini kullanır.
+- Kâr/Zarar ekranı tüm PAPER botların sanal pozisyonlarını toplar; gerçekleşmiş, gerçekleşmemiş, ücret sonrası net PnL ve fill sayılarını bot bazında gösterir.
+- Risk Yönetimi ekranı hesap risk profilini, merkezi limitleri, global/hesap kill switch'lerini ve son risk kararlarını mevcut audit/outbox korumalı API'lere bağlar.
+- Sistem Durumu ekranı backend/veritabanı, borsa hesabı, bot state'leri, global kill switch ve canlı işlem kilidini tek noktada gösterir. Trading overview artık global risk kontrolünü ve Go `/health/ready` durumunu dinamik okur.
+- Admin-first ürün sınırı korunmaktadır. Kullanıcı hesaplarına açılmadan önce sahiplik, kota/paket, fon tahsis limiti ve kullanıcı seviyesinde kill switch modeli ayrıca uygulanacaktır.
+- AI sinyal katmanı doğrudan exchange adapter'a bağlanmayacaktır. AI çıktısı sürümlü/açıklanabilir bir sinyal kaydı olarak önce SHADOW/PAPER runner'a, daha sonra merkezi risk motoru ve sınırlı Demo order manager'a girecektir.
+
+### 2 Ağustos 2026 — PAPER yaşam döngüsü kabulü
+
+- `BTC PAPER KABUL` botu gerçek public `BTCUSDT` mark fiyatıyla `WARMING_UP -> BUY -> SELL` kararlarını ve sanal fill'leri üretti. Pozisyon, gerçekleşen/gerçekleşmemiş PnL, ücret ve slippage kayıtları arayüzde kullanılan performans API'sinden doğrulandı.
+- Duraklatma sırasında karar sayısının sabit kaldığı, devam ettirmeden sonra yeniden arttığı doğrulandı.
+- Hesap kill switch'i açıldığında bot `RISK_BLOCKED` durumuna geçti; kilit kaldırılınca güvenlik kapılarından geçerek tekrar `RUNNING` oldu.
+- Scheduler restart kabulünde önceki lease sahibi bırakılarak yeni süreç botları geri aldı. Son doğrulamada her iki çalışan botun scheduler sahibi `Kripto:19260`, heartbeat ve karar zamanları günceldi.
+- Kabulün tamamı PAPER/SHADOW sınırında yapıldı. Credential çözülmedi, private hesap verisi okunmadı ve Binance'e emir gönderilmedi.
+
+Kabul işlemleri tekrar çalıştırılabilir ve idempotent script'lerle belgelenmiştir: `npm run acceptance:paper`, `npm run acceptance:paper-lifecycle` ve salt-okunur `npm run acceptance:bot-signals`.
+
+### 2 Ağustos 2026 — Kontrollü sinyal defteri ve AI güvenlik sınırı
+
+- `TradingBotSignal` modeli ve `20260802230000_add_trading_bot_signal_ledger` migration'ı eklendi. Kaynak (`RULE_ENGINE`/`AI_MODEL`), yön, durum, güven seviyesi, açıklama, model/prompt sürümü, özellikler, güvenlik kontrolleri ve son kullanma zamanı tutulabilir.
+- Go scheduler her strateji kararını aynı transaction içinde bir `RULE_ENGINE` sinyaline dönüştürür. `GRID_BUY/BUY -> BUY`, `GRID_SELL/SELL -> SELL`; bekleme ve ısınma kararları `HOLD` olarak kaydedilir.
+- Her mevcut sinyalin güvenlik kaydı `riskGatePassed: true`, `submittedToExchange: false` ve `orderExecutionAllowed: false` değerlerini taşır. Böylece açıklama kaydı oluşsa bile sinyal exchange adapter'a erişemez.
+- Node yalnızca sahiplik kontrollü `GET /api/admin/trading/bots/:id/signals` okuma endpoint'ini sunar. AI sinyali yazma veya sinyalden emir üretme endpoint'i henüz yoktur.
+- Bot kartında en güncel sinyalin kaynağı, yönü, güveni, açıklaması ve emir yetkisinin kapalı olduğu görünür. Sistem Durumu ekranındaki `AI emir yetkisi: Kapalı` güvenlik göstergesi korunur.
+- Restart sonrası kabulde `BTC PAPER KABUL` için `RULE_ENGINE/SELL`, `BTC TEST` için `RULE_ENGINE/HOLD` sinyalleri yeni süreç tarafından kalıcılaştırıldı.
+
+Sıradaki güvenli adım AI model sağlayıcısını exchange katmanından tamamen ayrı, yalnızca `OBSERVED` sinyal üreten bir adapter olarak eklemektir. Bu sinyaller önce SHADOW/PAPER karşılaştırma ve kalite ölçümünden geçecek; otomatik Binance Demo emir yetkisi bu ölçümler, merkezi risk bütçesi ve ayrıca kontrollü kabul tamamlanmadan açılmayacaktır.
+
+### 2 Ağustos 2026 — AI observer ve SHADOW karşılaştırma kabulü
+
+- Provider bağımsız HTTP AI observer adapter'ı eklendi. Adapter yalnızca sürümlü public fiyat/kural bağlamı gönderir; exchange credential, emir miktarı ve order manager bağımlılığı taşımaz.
+- Güvenli cevap sözleşmesi `HOLD/BUY/SELL`, `0..1` güven, açıklama ve `1..900` saniye geçerlilik ile sınırlandı. HTTPS zorunludur; HTTP yalnızca localhost geliştirme kabulünde kullanılabilir. Çağrı süresi en fazla 2 saniyedir.
+- AI hatası botu `ERROR` durumuna düşürmez ve kural kararını engellemez. Model çıktısı yalnızca `AI_MODEL / OBSERVED` kaydıdır; `paperFillAllowed=false`, `orderExecutionAllowed=false` ve `submittedToExchange=false` değerleri transaction içinde kalıcılaştırılır.
+- Aynı `TradingBotDecision` altında kural ve AI sinyalini saklamak için `20260802233000_allow_multiple_bot_signals_per_decision` migration'ı uygulandı. Toplam 12 migration günceldir.
+- Bot kartına aynı decision üzerindeki `RULE_ENGINE` ve `AI_MODEL` sinyallerini, güvenlerini, açıklamalarını, model/prompt sürümünü ve son kayıtlardaki yön uyumunu yan yana gösteren SHADOW karşılaştırması eklendi.
+- Yerel deterministic kabul gateway'iyle gerçek scheduler çevrimleri çalıştırıldı. `BTC PAPER KABUL` ve `BTC TEST` için `AI_MODEL / OBSERVED` kayıtları oluştu; kabul modeli `deterministic-shadow-stub`, güven `%74` olarak doğrulandı.
+- Kabul gateway'i kapatıldı. Kalıcı Go scheduler PID `3268` ile AI observer kapalı güvenli varsayılanda çalışıyor; önceki OBSERVED karşılaştırma kayıtları arayüzde incelenebilir.
+
+Sıradaki adım observer sinyallerini gelecekteki fiyat sonucu ile etiketleyen kalite ölçüm defteridir: yön doğruluğu, ücret/slippage sonrası varsayımsal sonuç, maksimum ters hareket ve model/prompt sürümü bazında karşılaştırma. Bu metrikler yeterli örnek toplamadan AI'ya PAPER fill veya Demo emir yetkisi verilmeyecektir.
+
+### 2 Ağustos 2026 — Grid planı ve bot modülü geçiş checkpoint'i
+
+- Grid bot sihirbazının son adımı artık kayıttan önce borsanın güncel vadeli mark fiyatını, sembol tick/quantity kurallarını ve yapılandırmayı kullanarak görünür plan oluşturur.
+- Aritmetik plan alt ve üst fiyat dahil `gridLevels` adet fiyat çizgisi üretir. Örneğin 10 seviye 9 aralık demektir. Her satırda fiyat, güncel marka göre `BUY/SELL/WAIT`, miktar, notional,  kaldıraç sonrası tahmini başlangıç teminatı ve mark fiyatına uzaklık gösterilir.
+- Özet bölümünde fiyat adımı, BUY/SELL sayısı, azami plan notional ve tahmini azami başlangıç teminatı görünür. Mark fiyatı aralık dışındaysa yanlış emir beklentisi oluşturmamak için bütün seviyeler `WAIT` kalır.
+- Grid planı yalnızca oluşturma önizlemesi değildir. Kayıtlı bot kartındaki **Bot detayları ve grid planı** alanı kalıcı `configuration` üzerinden planı güncel mark fiyatıyla yeniden üretir. Scalping botlarında da kayıtlı parametreler aynı detay alanında gösterilir.
+- Node sözleşmeleri: `POST /api/admin/trading/bots/grid-plan/preview` ve sahiplik kontrollü `GET /api/admin/trading/bots/:id/grid-plan`.
+- Mevcut destek açıkça `FUTURES / NEUTRAL / ARITHMETIC` ile sınırlandırılmıştır. Sihirbazda SPOT görünür ancak seçilemez; spot envanter/bakiye tahsis modeli tamamlanmadan spot bot oluşturulamaz.
+- Plan satırları açık borsa emri değildir ve `submittedToExchange=false` taşır. Mevcut runner seviye geçişinde tek `GRID_BUY/GRID_SELL` kararı üretmeye devam eder; tek çevrimde atlanan her seviyeyi ayrı fill işleme ve gerçek limit emir merdiveni ilerideki grid-runtime işidir.
+- Futures planındaki teminat tahminine tasfiye, funding ve değişken komisyon dahil değildir. PAPER fill defteri ücret/slippage varsayımını ayrıca uygular; gerçek borsa sonucu garantisi vermez.
+- Saf grid plan hesapları ETH `1800–1900`, 10 seviye, 10x örneği ve aralık dışı `WAIT` davranışıyla test edildi. Backend `32` test, typecheck/lint/build; frontend typecheck/build başarılıdır. Veritabanındaki 12 migration günceldir.
+
+#### Bot modülünün bu checkpoint'teki kullanılabilir durumu
+
+- Kullanılabilir: admin Botlar/Grid sayfaları, sihirbaz, öğretici rehber, SCALPING ve GRID SHADOW/PAPER scheduler, durum/lease/restart yönetimi, PAPER pozisyon-fill-PnL, karar ve sinyal geçmişi, risk/kill switch, AI OBSERVED karşılaştırması, futures grid plan önizleme ve kayıtlı bot detayları.
+- Güvenlik kilitleri: live trading kapalı, AI emir yetkisi kapalı, Demo bot order-manager bağlantısı kapalı, spot grid kapalı.
+- Bot modülünde daha sonra ele alınacak işler: spot envanter grid'i; LONG/SHORT/NEUTRAL futures grid ayrımı; geometrik grid; atlanan her seviyeyi ayrı işleyen runtime; tasfiye/funding hesabı; AI kalite etiketleri ve ancak kontrollü onaydan sonra küçük Binance Demo kabulü.
+
+Bu checkpoint'ten sonra ürün geliştirmesi diğer admin sayfalarına taşınabilir. Bot dosyaları ve güvenlik sınırları korunmalı; yukarıdaki ertelenmiş maddeler yeni bir bot çalışma dilimi açılana kadar otomatik olarak etkinleştirilmemelidir.

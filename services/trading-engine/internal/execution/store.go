@@ -23,6 +23,7 @@ type StoredOrder struct {
 	Leverage          int
 	MarginMode        domain.MarginMode
 	ReduceOnly        bool
+	Source            string
 	Status            domain.OrderStatus
 }
 

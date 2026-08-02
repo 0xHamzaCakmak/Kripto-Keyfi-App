@@ -23,10 +23,10 @@ var orderTransitions = map[OrderStatus]map[OrderStatus]struct{}{
 		OrderOpen, OrderPartiallyFilled, OrderFilled, OrderFailed, OrderReconciliationRequired,
 	),
 	OrderOpen: allowed(
-		OrderPartiallyFilled, OrderFilled, OrderCanceling, OrderClosing, OrderReconciliationRequired,
+		OrderPartiallyFilled, OrderFilled, OrderCanceling, OrderCanceled, OrderClosing, OrderReconciliationRequired,
 	),
 	OrderPartiallyFilled: allowed(
-		OrderFilled, OrderCanceling, OrderClosing, OrderReconciliationRequired,
+		OrderFilled, OrderCanceling, OrderCanceled, OrderClosing, OrderReconciliationRequired,
 	),
 	OrderCanceling: allowed(
 		OrderOpen, OrderPartiallyFilled, OrderFilled, OrderCanceled, OrderReconciliationRequired,

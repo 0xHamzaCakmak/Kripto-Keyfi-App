@@ -25,23 +25,27 @@ export async function createExchangeAccount(userId: string, input: CreateExchang
   const adapter = createExchangeAdapter(input.provider, credentialsFromInput(input));
   const validation = await exchangeCall(() => adapter.validateCredentials());
   try {
-    return await prisma.exchangeAccount.create({
-      data: {
-        userId,
-        name: input.name,
-        provider: input.provider,
-        environment: input.environment,
-        accountType: input.accountType,
-        apiKeyEncrypted: encryptCredential(input.apiKey),
-        apiSecretEncrypted: encryptCredential(input.apiSecret),
-        ...(input.passphrase ? { passphraseEncrypted: encryptCredential(input.passphrase) } : {}),
-        apiKeyHint: apiKeyHint(input.apiKey),
-        ...(input.description ? { description: input.description } : {}),
-        canTrade: validation.canTrade,
-        withdrawalEnabled: validation.withdrawalEnabled,
-        lastConnectedAt: new Date(),
-      },
-      select: publicSelect,
+    return await prisma.$transaction(async (tx) => {
+      const created = await tx.exchangeAccount.create({
+        data: {
+          userId,
+          name: input.name,
+          provider: input.provider,
+          environment: input.environment,
+          accountType: input.accountType,
+          apiKeyEncrypted: encryptCredential(input.apiKey),
+          apiSecretEncrypted: encryptCredential(input.apiSecret),
+          ...(input.passphrase ? { passphraseEncrypted: encryptCredential(input.passphrase) } : {}),
+          apiKeyHint: apiKeyHint(input.apiKey),
+          ...(input.description ? { description: input.description } : {}),
+          canTrade: validation.canTrade,
+          withdrawalEnabled: validation.withdrawalEnabled,
+          lastConnectedAt: new Date(),
+        },
+        select: publicSelect,
+      });
+      await tx.tradingRiskProfile.create({ data: { userId, exchangeAccountId: created.id } });
+      return created;
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -91,7 +95,16 @@ export async function updateExecutionEngine(userId: string, id: string, input: U
     where: { exchangeAccountId: id, status: { in: ['PENDING', 'SUBMITTING', 'CANCELING', 'CLOSING', 'RECONCILIATION_REQUIRED'] } },
   });
   if (inFlightCount > 0) throw new ApiError(409, 'Mutabakat veya yürütme bekleyen emir varken executor değiştirilemez.', 'EXECUTOR_CUTOVER_BLOCKED');
-  if (input.executionEngine === 'GO') await assertGoExecutorReady();
+  if (input.executionEngine === 'GO') {
+    const [profile, global] = await Promise.all([
+      prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId: id }, select: { enabled: true, accountKillSwitch: true } }),
+      prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
+    ]);
+    if (!profile?.enabled || profile.accountKillSwitch || !global || global.globalKillSwitch) {
+      throw new ApiError(409, 'Risk profili hazır değil veya kill switch aktif.', 'GO_RISK_GATE_BLOCKED');
+    }
+    await assertGoExecutorReady();
+  }
   return prisma.$transaction(async (tx) => {
     const updated = await tx.exchangeAccount.update({ where: { id }, data: { executionEngine: input.executionEngine }, select: publicSelect });
     await tx.tradingAuditLog.create({ data: {

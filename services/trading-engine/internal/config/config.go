@@ -10,15 +10,23 @@ import (
 )
 
 type Config struct {
-	Addr            string
-	DatabaseURL     string
-	InternalToken   string
-	LogLevel        slog.Level
-	MasterKey       string
-	Mode            string
-	Realtime        bool
-	ShadowRead      bool
-	ShutdownTimeout time.Duration
+	Addr              string
+	DatabaseURL       string
+	InternalToken     string
+	LogLevel          slog.Level
+	MasterKey         string
+	Mode              string
+	Realtime          bool
+	ShadowRead        bool
+	ShutdownTimeout   time.Duration
+	BotScheduler      bool
+	AIObserver        bool
+	AIObserverURL     string
+	AIObserverToken   string
+	AIProvider        string
+	AIModel           string
+	AIPromptVersion   string
+	AIObserverTimeout time.Duration
 }
 
 func Load() (Config, error) {
@@ -65,17 +73,55 @@ func Load() (Config, error) {
 	if realtime && !shadowRead {
 		return Config{}, errors.New("TRADING_ENGINE_REALTIME_ENABLED=true requires shadow reads")
 	}
+	botScheduler, err := parseBoolean(valueOrDefault("TRADING_ENGINE_BOT_SCHEDULER_ENABLED", "false"))
+	if err != nil {
+		return Config{}, err
+	}
+	if botScheduler && !shadowRead {
+		if !strings.HasPrefix(databaseURL, "mysql://") {
+			return Config{}, errors.New("DATABASE_URL must use mysql:// when bot scheduler is enabled")
+		}
+	}
+	aiObserver, err := parseBoolean(valueOrDefault("TRADING_ENGINE_AI_OBSERVER_ENABLED", "false"))
+	if err != nil {
+		return Config{}, err
+	}
+	aiTimeout, err := time.ParseDuration(valueOrDefault("TRADING_ENGINE_AI_OBSERVER_TIMEOUT", "1500ms"))
+	if err != nil || aiTimeout <= 0 || aiTimeout > 2*time.Second {
+		return Config{}, errors.New("TRADING_ENGINE_AI_OBSERVER_TIMEOUT must be positive and at most 2s")
+	}
+	aiURL := strings.TrimSpace(os.Getenv("TRADING_ENGINE_AI_OBSERVER_URL"))
+	aiToken := strings.TrimSpace(os.Getenv("TRADING_ENGINE_AI_OBSERVER_TOKEN"))
+	aiProvider := valueOrDefault("TRADING_ENGINE_AI_OBSERVER_PROVIDER", "HTTP_GATEWAY")
+	aiModel := strings.TrimSpace(os.Getenv("TRADING_ENGINE_AI_OBSERVER_MODEL"))
+	aiPromptVersion := valueOrDefault("TRADING_ENGINE_AI_OBSERVER_PROMPT_VERSION", "v1")
+	if aiObserver {
+		if mode != "shadow" || !botScheduler {
+			return Config{}, errors.New("AI observer requires shadow mode and the bot scheduler")
+		}
+		if aiURL == "" || len(aiToken) < 32 || aiModel == "" {
+			return Config{}, errors.New("enabled AI observer requires URL, 32-character token and model")
+		}
+	}
 
 	return Config{
-		Addr:            valueOrDefault("TRADING_ENGINE_ADDR", ":8081"),
-		DatabaseURL:     databaseURL,
-		InternalToken:   token,
-		LogLevel:        level,
-		MasterKey:       masterKey,
-		Mode:            mode,
-		Realtime:        realtime,
-		ShadowRead:      shadowRead,
-		ShutdownTimeout: shutdownTimeout,
+		Addr:              valueOrDefault("TRADING_ENGINE_ADDR", ":8081"),
+		DatabaseURL:       databaseURL,
+		InternalToken:     token,
+		LogLevel:          level,
+		MasterKey:         masterKey,
+		Mode:              mode,
+		Realtime:          realtime,
+		ShadowRead:        shadowRead,
+		ShutdownTimeout:   shutdownTimeout,
+		BotScheduler:      botScheduler,
+		AIObserver:        aiObserver,
+		AIObserverURL:     aiURL,
+		AIObserverToken:   aiToken,
+		AIProvider:        aiProvider,
+		AIModel:           aiModel,
+		AIPromptVersion:   aiPromptVersion,
+		AIObserverTimeout: aiTimeout,
 	}, nil
 }
 
@@ -86,7 +132,7 @@ func parseBoolean(value string) (bool, error) {
 	case "false":
 		return false, nil
 	default:
-		return false, fmt.Errorf("TRADING_ENGINE_SHADOW_READ_ENABLED must be true or false")
+		return false, fmt.Errorf("boolean configuration value %q must be true or false", value)
 	}
 }
 
