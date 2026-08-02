@@ -4,7 +4,7 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { validateRequest } from '../../middleware/validate-request.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import * as controller from './auth.controller.js';
-import { loginBodySchema } from './auth.schema.js';
+import { googleBodySchema, loginBodySchema, registerBodySchema } from './auth.schema.js';
 import { env } from '../../config/env.js';
 
 export const authRouter = Router();
@@ -19,6 +19,8 @@ const loginLimiter = rateLimit({
 });
 
 authRouter.post('/login', loginLimiter, validateRequest({ body: loginBodySchema }), asyncHandler(controller.login));
+authRouter.post('/register', loginLimiter, validateRequest({ body: registerBodySchema }), asyncHandler(controller.register));
+authRouter.post('/google', loginLimiter, validateRequest({ body: googleBodySchema }), asyncHandler(controller.google));
 authRouter.post('/refresh', asyncHandler(controller.refresh));
 authRouter.post('/logout', asyncHandler(controller.logout));
 authRouter.get('/me', authenticate, asyncHandler(controller.me));

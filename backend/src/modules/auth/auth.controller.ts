@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { REFRESH_COOKIE_NAME } from '../../config/constants.js';
 import { clearRefreshCookie, setRefreshCookie } from '../../security/cookies.js';
 import { success } from '../../utils/response.js';
-import type { LoginInput } from './auth.schema.js';
+import type { GoogleInput, LoginInput, RegisterInput } from './auth.schema.js';
 import * as authService from './auth.service.js';
 
 const metadataFrom = (req: { ip: string | undefined; get(name: string): string | undefined }) => ({
@@ -12,6 +12,18 @@ const metadataFrom = (req: { ip: string | undefined; get(name: string): string |
 
 export async function login(req: Request<object, object, LoginInput>, res: Response) {
   const result = await authService.login(req.body, metadataFrom(req));
+  setRefreshCookie(res, result.refreshToken);
+  return success(res, { accessToken: result.accessToken, user: result.user });
+}
+
+export async function register(req: Request<object, object, RegisterInput>, res: Response) {
+  const result = await authService.register(req.body, metadataFrom(req));
+  setRefreshCookie(res, result.refreshToken);
+  return success(res, { accessToken: result.accessToken, user: result.user }, 201);
+}
+
+export async function google(req: Request<object, object, GoogleInput>, res: Response) {
+  const result = await authService.google(req.body, metadataFrom(req));
   setRefreshCookie(res, result.refreshToken);
   return success(res, { accessToken: result.accessToken, user: result.user });
 }

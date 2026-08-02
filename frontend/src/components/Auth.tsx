@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { CheckCircle2, Chrome, Mail, ShieldCheck, Wallet } from 'lucide-react';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { CheckCircle2, Mail, ShieldCheck, Wallet } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { getAuthState, loginWithEmail, loginWithGoogleMock, loginWithWalletMock, registerWithEmail } from '../services/authService';
+import { getAuthState, loginWithEmail, loginWithGoogle, loginWithWalletMock, registerWithEmail } from '../services/authService';
 import { completeOnboarding } from '../services/onboardingService';
 import { connectWalletMock, WalletProvider } from '../services/walletService';
 import { getApiErrorMessage } from '../services/apiClient';
+import { GoogleSignInButton } from './GoogleSignInButton';
 
 function AuthShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
@@ -35,22 +36,35 @@ function ErrorBox({ message }: { message: string }) {
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const requestedPath = (location.state as { from?: string } | null)?.from;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState('');
 
-  async function submit(kind: 'email' | 'google' | 'wallet') {
+  async function submit(kind: 'email' | 'wallet') {
     setError('');
     setLoading(kind);
     try {
-      const user = kind === 'email'
-        ? await loginWithEmail(email, password)
-        : kind === 'google' ? loginWithGoogleMock() : loginWithWalletMock();
-      navigate(user.backendRole === 'ADMIN' ? '/admin' : '/onboarding');
+      const user = kind === 'email' ? await loginWithEmail(email, password) : loginWithWalletMock();
+      navigate(requestedPath || (user.backendRole === 'ADMIN' ? '/admin' : '/'), { replace: true });
     } catch (err) {
       setError(getApiErrorMessage(err, 'Giriş yapılamadı.'));
+    } finally {
+      setLoading('');
+    }
+  }
+
+  async function submitGoogle(credential: string) {
+    setError('');
+    setLoading('google');
+    try {
+      const user = await loginWithGoogle(credential);
+      navigate(requestedPath || (user.backendRole === 'ADMIN' ? '/admin' : '/'), { replace: true });
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Google ile giriş yapılamadı.'));
     } finally {
       setLoading('');
     }
@@ -59,7 +73,7 @@ export function LoginPage() {
   return (
     <AuthShell title="Kripto Keyfi'ne Giriş Yap" description="Haberleri takip et, akademi içeriklerini kaydet, videoları izle ve Web3 kimliğini oluştur.">
       <div className="space-y-5">
-        <button onClick={() => void submit('google')} className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-high px-4 py-3 text-sm font-bold text-on-surface hover:bg-surface-highest"><Chrome size={18} /> {loading === 'google' ? 'Giriş yapılıyor...' : 'Google ile devam et'}</button>
+        <GoogleSignInButton onCredential={(credential) => void submitGoogle(credential)} onError={setError} />
         <div className="grid gap-4">
           <Input label="E-posta" value={email} onChange={setEmail} />
           <Input label="Şifre" value={password} onChange={setPassword} type="password" />
@@ -83,32 +97,63 @@ export function RegisterPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  function submit() {
+  const normalizeUsername = (value: string) => value
+    .toLocaleLowerCase('tr-TR')
+    .replaceAll('ı', 'i')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+/, '');
+
+  async function submit() {
     setError('');
     if (!form.terms || !form.privacy) {
       setError('Kullanım şartları ve gizlilik metni kabul edilmeli.');
       return;
     }
     setLoading(true);
-    window.setTimeout(() => {
-      try {
-        registerWithEmail(form);
-        navigate('/onboarding');
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Kayıt oluşturulamadı.');
-      } finally {
-        setLoading(false);
-      }
-    }, 500);
+    try {
+      await registerWithEmail({
+        fullName: form.fullName,
+        username: form.username,
+        email: form.email,
+        password: form.password,
+        confirmPassword: form.confirmPassword,
+        termsAccepted: form.terms,
+        privacyAccepted: form.privacy,
+      });
+      navigate('/');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Kayıt oluşturulamadı.'));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitGoogle(credential: string) {
+    setError('');
+    setLoading(true);
+    try {
+      await loginWithGoogle(credential, form.terms, form.privacy);
+      navigate('/');
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Google ile kayıt oluşturulamadı.'));
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <AuthShell title="Ücretsiz Kripto Keyfi hesabı oluştur" description="Kripto, Web3, akademi, video ve topluluk içeriklerini kişiselleştirilmiş şekilde takip et.">
       <div className="space-y-5">
-        <button onClick={() => { loginWithGoogleMock(); navigate('/onboarding'); }} className="flex w-full items-center justify-center gap-2 rounded-xl bg-surface-high px-4 py-3 text-sm font-bold text-on-surface hover:bg-surface-highest"><Chrome size={18} /> Google ile devam et</button>
+        <GoogleSignInButton
+          disabled={!form.terms || !form.privacy || loading}
+          onCredential={(credential) => void submitGoogle(credential)}
+          onError={setError}
+        />
         <div className="grid gap-4 md:grid-cols-2">
           <Input label="Ad soyad" value={form.fullName} onChange={(v) => setForm((c) => ({ ...c, fullName: v }))} />
-          <Input label="Kullanıcı adı" value={form.username} onChange={(v) => setForm((c) => ({ ...c, username: v }))} />
+          <Input label="Kullanıcı adı" value={form.username} onChange={(v) => setForm((c) => ({ ...c, username: normalizeUsername(v) }))} hint="Türkçe karakterler otomatik dönüştürülür. Örn: Çakmak → cakmak" />
           <Input label="E-posta" value={form.email} onChange={(v) => setForm((c) => ({ ...c, email: v }))} />
           <Input label="Şifre" value={form.password} onChange={(v) => setForm((c) => ({ ...c, password: v }))} type="password" />
           <Input label="Şifre tekrar" value={form.confirmPassword} onChange={(v) => setForm((c) => ({ ...c, confirmPassword: v }))} type="password" />
@@ -116,7 +161,7 @@ export function RegisterPage() {
         <label className="flex gap-3 rounded-2xl bg-surface-high/40 p-4 text-sm text-on-surface-variant"><input type="checkbox" checked={form.terms} onChange={(e) => setForm((c) => ({ ...c, terms: e.target.checked }))} /> Kullanım şartlarını kabul ediyorum.</label>
         <label className="flex gap-3 rounded-2xl bg-surface-high/40 p-4 text-sm text-on-surface-variant"><input type="checkbox" checked={form.privacy} onChange={(e) => setForm((c) => ({ ...c, privacy: e.target.checked }))} /> KVKK / gizlilik metnini kabul ediyorum.</label>
         {error && <ErrorBox message={error} />}
-        <button onClick={submit} className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-background">{loading ? 'Kayıt oluşturuluyor...' : 'Ücretsiz Katıl'}</button>
+        <button onClick={() => void submit()} disabled={loading} className="w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-background disabled:opacity-60">{loading ? 'Kayıt oluşturuluyor...' : 'Ücretsiz Katıl'}</button>
         <button onClick={() => { loginWithWalletMock(); navigate('/onboarding'); }} className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline/10 bg-surface-high/40 px-4 py-3 text-sm font-bold text-on-surface-variant"><Wallet size={18} /> Cüzdan ile kayıt ol</button>
         <p className="text-sm text-on-surface-variant">Cüzdan bağlamak zorunlu değildir. İstersen daha sonra profilinden bağlayabilirsin.</p>
       </div>
@@ -218,6 +263,6 @@ export function LoginRequiredPage({ feature = 'bu sayfa' }: { feature?: string }
   );
 }
 
-function Input({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
-  return <label className="space-y-2"><span className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border-none bg-surface-high px-4 py-3 text-sm text-on-surface placeholder:text-outline/70" /></label>;
+function Input({ label, value, onChange, type = 'text', hint }: { label: string; value: string; onChange: (value: string) => void; type?: string; hint?: string }) {
+  return <label className="space-y-2"><span className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="w-full rounded-2xl border-none bg-surface-high px-4 py-3 text-sm text-on-surface placeholder:text-outline/70" />{hint && <span className="block text-[11px] leading-4 text-on-surface-variant">{hint}</span>}</label>;
 }

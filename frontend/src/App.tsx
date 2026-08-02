@@ -2,7 +2,6 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import TickerTape from './components/TickerTape';
 import Home from './components/Home';
-import Dashboard from './components/Dashboard';
 import Ecosystem from './components/Ecosystem';
 import Chat from './components/Chat';
 import Insights, { SavedNewsPage } from './components/Insights';
@@ -12,7 +11,7 @@ import WhaleGuessPage from './components/WhaleGuess';
 import TransferVolumeGuessPage from './components/TransferVolumeGuess';
 import ScamOrSafePage from './components/ScamOrSafe';
 import GasFeeChallengePage from './components/GasFeeChallenge';
-import Profile, { CreatorApplyPage, CreatorDashboard, CreatorVerificationPage, PlaceholderDashboard, PublicProfile } from './components/Profile';import TokenAirdropManager from './components/TokenAirdropManager';import VideoCenter, { ChannelProfile, SavedVideosPage, VideoDetail } from './components/Videos';
+import { PlaceholderDashboard } from './components/Profile';import TokenAirdropManager from './components/TokenAirdropManager';import VideoCenter, { ChannelProfile, SavedVideosPage, VideoDetail } from './components/Videos';
 import AcademyHome, { AcademyArticleDetail, AcademySeriesDetail, AcademySeriesList, GlossaryDetail, GlossaryPage, ReadingList } from './components/Academy';
 import { ConnectWalletPage, ForgotPasswordPage, LoginPage, OnboardingPage, RegisterPage } from './components/Auth';
 import AdminDashboard from './components/AdminDashboard';
@@ -25,6 +24,7 @@ import ManualTrading from './components/ManualTrading';
 import { OpenOrdersPage, OpenPositionsPage } from './components/TradingActivity';
 import { GridBotsPage, TradingProfitLossPage, TradingRiskManagementPage, TradingSystemStatusPage } from './components/TradingAdminPhases';
 import { AdminRoute, ProtectedRoute } from './auth/RouteGuards';
+import UserProfilePage from './components/UserProfilePage';
 
 export default function App() {
   return (
@@ -53,8 +53,8 @@ export default function App() {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/onboarding" element={<OnboardingPage />} />
             <Route path="/connect-wallet" element={<ConnectWalletPage />} />
-            <Route path="/assets" element={<ProtectedRoute feature="My Assets"><Dashboard /></ProtectedRoute>} />
-            <Route path="/my-assets" element={<ProtectedRoute feature="My Assets"><Dashboard /></ProtectedRoute>} />
+            <Route path="/assets" element={<ProtectedRoute feature="My Assets"><PlaceholderDashboard title="My Assets hazırlanıyor" /></ProtectedRoute>} />
+            <Route path="/my-assets" element={<ProtectedRoute feature="My Assets"><PlaceholderDashboard title="My Assets hazırlanıyor" /></ProtectedRoute>} />
             <Route path="/games" element={<GamesPage />} />
             <Route path="/games/up-down" element={<UpDownGamePage />} />
             <Route path="/games/eth-up-down" element={<UpDownGamePage assetId="eth" />} />
@@ -67,12 +67,12 @@ export default function App() {
             <Route path="/ecosystem/:section/:tool" element={<Ecosystem />} />
             <Route path="/ecosystem/launchpad" element={<Ecosystem />} />
             <Route path="/chat" element={<Chat />} />
-            <Route path="/profile" element={<ProtectedRoute feature="Identity Center"><Profile /></ProtectedRoute>} />
-            <Route path="/identity" element={<ProtectedRoute feature="Identity Center"><Profile /></ProtectedRoute>} />
-            <Route path="/u/:username" element={<PublicProfile />} />
-            <Route path="/creator/apply" element={<ProtectedRoute feature="Creator başvurusu"><CreatorApplyPage /></ProtectedRoute>} />
-            <Route path="/creator/verify" element={<ProtectedRoute feature="Creator doğrulama"><CreatorVerificationPage /></ProtectedRoute>} />
-            <Route path="/creator/dashboard" element={<ProtectedRoute feature="Creator Dashboard"><CreatorDashboard /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute feature="Profil"><UserProfilePage /></ProtectedRoute>} />
+            <Route path="/identity" element={<ProtectedRoute feature="Profil"><UserProfilePage /></ProtectedRoute>} />
+            <Route path="/u/:username" element={<PlaceholderDashboard title="Public profil hazırlanıyor" />} />
+            <Route path="/creator/apply" element={<ProtectedRoute feature="Creator başvurusu"><PlaceholderDashboard title="Creator başvuru sistemi hazırlanıyor" /></ProtectedRoute>} />
+            <Route path="/creator/verify" element={<ProtectedRoute feature="Creator doğrulama"><PlaceholderDashboard title="Creator doğrulama sistemi hazırlanıyor" /></ProtectedRoute>} />
+            <Route path="/creator/dashboard" element={<ProtectedRoute feature="Creator Dashboard"><PlaceholderDashboard title="Creator Dashboard hazırlanıyor" /></ProtectedRoute>} />
             <Route path="/author/apply" element={<ProtectedRoute feature="Author başvurusu"><PlaceholderDashboard title="Author Başvuru Ekranı Hazırlanıyor" /></ProtectedRoute>} />
             <Route path="/project/apply" element={<ProtectedRoute feature="Project Owner başvurusu"><PlaceholderDashboard title="Project Owner Başvuru Ekranı Hazırlanıyor" /></ProtectedRoute>} />
             <Route path="/developer/apply" element={<ProtectedRoute feature="Developer başvurusu"><PlaceholderDashboard title="Developer Başvuru Ekranı Hazırlanıyor" /></ProtectedRoute>} />

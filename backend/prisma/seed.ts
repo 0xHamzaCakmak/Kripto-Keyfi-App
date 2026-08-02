@@ -10,7 +10,7 @@ export async function seedAdmin(client: SeedClient, input: { email: string; pass
   if (existing) return { created: false, id: existing.id };
   const passwordHash = await hashPassword(input.password);
   const user = await client.user.create({
-    data: { email, passwordHash, name: input.name.trim(), role: UserRole.ADMIN, status: UserStatus.ACTIVE },
+    data: { email, username: 'admin', passwordHash, name: input.name.trim(), role: UserRole.ADMIN, status: UserStatus.ACTIVE, emailVerifiedAt: new Date() },
     select: { id: true },
   });
   return { created: true, id: user.id };
@@ -39,4 +39,3 @@ if (process.env.NODE_ENV !== 'test') {
     process.exitCode = 1;
   });
 }
-

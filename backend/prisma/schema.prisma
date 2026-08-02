@@ -14,8 +14,28 @@ enum UserRole {
 
 enum UserStatus {
   ACTIVE
+  PENDING
   PASSIVE
   SUSPENDED
+  DELETED
+}
+
+enum UserCapabilityType {
+  CREATOR
+  AUTHOR
+  PROJECT_OWNER
+  DEVELOPER
+}
+
+enum UserCapabilityStatus {
+  NOT_APPLIED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AuthProvider {
+  GOOGLE
 }
 
 enum ExchangeProvider {
@@ -156,11 +176,19 @@ enum TradingBotSignalStatus {
 model User {
   id                  String               @id @default(cuid())
   email               String               @unique
-  passwordHash        String
+  passwordHash        String?
   name                String?
+  username            String               @unique @db.VarChar(30)
+  avatarUrl           String?              @db.VarChar(500)
+  bio                 String?              @db.VarChar(500)
+  emailVerifiedAt     DateTime?
+  termsAcceptedAt     DateTime?
+  privacyAcceptedAt   DateTime?
   role                UserRole             @default(USER)
   status              UserStatus           @default(ACTIVE)
   mustChangePassword  Boolean              @default(false)
+  profileCompleted    Boolean              @default(false)
+  onboardingCompleted Boolean              @default(false)
   lastLoginAt         DateTime?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
@@ -175,8 +203,71 @@ model User {
   tradingBots         TradingBot[]
   tradingBotDecisions TradingBotDecision[]
   tradingBotSignals   TradingBotSignal[]
+  identities          UserIdentity[]
+  profileRoles        UserProfileRole[]
+  capabilities        UserCapability[]
 
   @@map("users")
+}
+
+model UserCapability {
+  id         String               @id @default(cuid())
+  userId     String
+  type       UserCapabilityType
+  status     UserCapabilityStatus @default(PENDING)
+  appliedAt  DateTime             @default(now())
+  approvedAt DateTime?
+  rejectedAt DateTime?
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([type, status])
+  @@map("user_capabilities")
+}
+
+model UserIdentity {
+  id              String       @id @default(cuid())
+  userId          String
+  provider        AuthProvider
+  providerSubject String       @db.VarChar(255)
+  emailAtLink     String       @db.VarChar(320)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId, provider])
+  @@map("user_identities")
+}
+
+model ProfileRole {
+  id          String            @id @default(cuid())
+  slug        String            @unique @db.VarChar(60)
+  name        String            @db.VarChar(100)
+  description String?           @db.VarChar(500)
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  users       UserProfileRole[]
+
+  @@map("profile_roles")
+}
+
+model UserProfileRole {
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role ProfileRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_profile_roles")
 }
 
 model ExchangeAccount {

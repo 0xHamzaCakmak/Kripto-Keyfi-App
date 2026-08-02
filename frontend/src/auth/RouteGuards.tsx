@@ -1,21 +1,23 @@
 import { Navigate, useLocation } from 'react-router-dom';
-import { LoginRequiredPage } from '../components/Auth';
-import { getAuthState } from '../services/authService';
 import { useAuth } from './AuthContext';
 
-export function ProtectedRoute({ children, feature }: { children: React.ReactNode; feature: string }) {
-  const { user, loading } = useAuth();
-  const currentUser = user ?? getAuthState();
-  if (loading && !currentUser) return <div className="py-20 text-center text-on-surface-variant">Oturum doğrulanıyor...</div>;
-  return currentUser ? <>{children}</> : <LoginRequiredPage feature={feature} />;
+function AuthSkeleton() {
+  return <div className="mx-auto max-w-xl space-y-3 py-20" aria-label="Oturum doğrulanıyor"><div className="h-7 animate-pulse rounded-xl bg-surface-high" /><div className="h-24 animate-pulse rounded-2xl bg-surface" /></div>;
+}
+
+export function ProtectedRoute({ children }: { children: React.ReactNode; feature?: string }) {
+  const { user, status } = useAuth();
+  const location = useLocation();
+  if (status === 'initializing' || status === 'refreshing') return <AuthSkeleton />;
+  if (!user) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
+  return <>{children}</>;
 }
 
 export function AdminRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, status } = useAuth();
   const location = useLocation();
-  const currentUser = user ?? getAuthState();
-  if (loading && !currentUser) return <div className="py-20 text-center text-on-surface-variant">Oturum doğrulanıyor...</div>;
-  if (!currentUser) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
-  if (currentUser.backendRole !== 'ADMIN') return <Navigate to="/" replace />;
+  if (status === 'initializing' || status === 'refreshing') return <AuthSkeleton />;
+  if (!user) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
+  if (user.backendRole !== 'ADMIN') return <Navigate to="/" replace />;
   return <>{children}</>;
 }

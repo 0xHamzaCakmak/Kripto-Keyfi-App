@@ -17,6 +17,7 @@ const envSchema = z.object({
   INITIAL_ADMIN_EMAIL: z.string().email(),
   INITIAL_ADMIN_PASSWORD: z.string().min(12),
   INITIAL_ADMIN_NAME: z.string().trim().min(1),
+  GOOGLE_CLIENT_ID: z.string().trim().default(''),
   TRADING_CREDENTIALS_MASTER_KEY: z.string().regex(/^[a-fA-F0-9]{64}$/, 'must be a 32-byte hexadecimal key'),
   TRADING_ENGINE_SHADOW_COMPARE_ENABLED: booleanString.default('false'),
   TRADING_ENGINE_EXECUTION_ENABLED: booleanString.default('false'),

@@ -6,7 +6,7 @@ export const apiUrl = import.meta.env.VITE_API_URL || '/api';
 let accessToken: string | null = null;
 let refreshPromise: Promise<string> | null = null;
 
-export const api = axios.create({ baseURL: apiUrl, withCredentials: true });
+export const api = axios.create({ baseURL: apiUrl, withCredentials: true, timeout: 15_000 });
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
@@ -25,11 +25,13 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const config = error.config as RetryConfig | undefined;
-    const isAuthRequest = config?.url?.includes('/auth/login') || config?.url?.includes('/auth/refresh');
+    const isAuthRequest = ['/auth/login', '/auth/register', '/auth/google', '/auth/refresh']
+      .some((path) => config?.url?.includes(path));
     if (error.response?.status !== 401 || !config || config._retry || isAuthRequest) throw error;
     config._retry = true;
 
-    refreshPromise ??= axios.post<{ data: { accessToken: string } }>(`${apiUrl}/auth/refresh`, {}, { withCredentials: true })
+    if (!refreshPromise) window.dispatchEvent(new Event('kriptokeyfi-session-refreshing'));
+    refreshPromise ??= axios.post<{ data: { accessToken: string } }>(`${apiUrl}/auth/refresh`, {}, { withCredentials: true, timeout: 15_000 })
       .then((response) => {
         const token = response.data.data.accessToken;
         setAccessToken(token);
@@ -50,8 +52,13 @@ api.interceptors.response.use(
 );
 
 export function getApiErrorMessage(error: unknown, fallback: string) {
-  if (axios.isAxiosError<{ error?: { message?: string } }>(error)) {
-    return error.response?.data?.error?.message || fallback;
+  if (axios.isAxiosError<{ error?: { message?: string; details?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] } } }>(error)) {
+    const apiError = error.response?.data?.error;
+    const fieldMessage = apiError?.details?.fieldErrors
+      ? Object.values(apiError.details.fieldErrors).flat().find(Boolean)
+      : undefined;
+    const formMessage = apiError?.details?.formErrors?.find(Boolean);
+    return fieldMessage || formMessage || apiError?.message || fallback;
   }
   return error instanceof Error ? error.message : fallback;
 }

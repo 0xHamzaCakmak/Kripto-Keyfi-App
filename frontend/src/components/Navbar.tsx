@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, Bell, UserCircle2, Menu, X, ShieldCheck, Award, LogOut, Settings } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { getCurrentUser } from '../services/userService';
-import { getAuthState, logout, MockAuthUser } from '../services/authService';
+import { logout, MockAuthUser } from '../services/authService';
+import { useAuth } from '../auth/AuthContext';
+import { UserAvatar } from './UserAvatar';
 
 const MOCK_WALLET = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D';
 
@@ -15,8 +16,7 @@ export default function Navbar() {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
-  const [authUser, setAuthUser] = useState<MockAuthUser | null>(() => getAuthState());
-  const user = getCurrentUser();
+  const { user: authUser, status: authStatus, error: authError } = useAuth();
 
   const navLinks = [
     { name: 'Anasayfa', path: '/' },
@@ -32,16 +32,7 @@ export default function Navbar() {
   useEffect(() => {
     setIsMobileMenuOpen(false);
     setIsAccountOpen(false);
-    setAuthUser(getAuthState());
   }, [location.pathname]);
-
-  useEffect(() => {
-    function syncAuth() {
-      setAuthUser(getAuthState());
-    }
-    window.addEventListener('kripto-keyfi-auth-change', syncAuth);
-    return () => window.removeEventListener('kripto-keyfi-auth-change', syncAuth);
-  }, []);
 
   useEffect(() => {
     document.body.style.overflow = isMobileMenuOpen ? 'hidden' : '';
@@ -104,7 +95,11 @@ export default function Navbar() {
                 type="text"
               />
             </div>
-            {!authUser ? (
+            {(authStatus === 'initializing' || authStatus === 'refreshing') && !authUser ? (
+              <div className="h-10 w-32 animate-pulse rounded-full bg-surface-high" aria-label="Kullanıcı yükleniyor" />
+            ) : authStatus === 'error' && !authUser ? (
+              <span title={authError || undefined} className="rounded-full border border-error/20 bg-error/10 px-3 py-2 text-[10px] font-bold text-error">Oturum servisi erişilemiyor</span>
+            ) : !authUser ? (
               <div className="flex items-center gap-2">
                 <Link to="/login" className="hidden rounded-full bg-surface-high px-4 py-2 text-sm font-bold text-on-surface hover:bg-surface-highest sm:inline-flex">Giriş Yap</Link>
                 <Link to="/register" className="hero-gradient rounded-full px-4 py-2 text-sm font-bold text-background">Ücretsiz Katıl</Link>
@@ -116,9 +111,9 @@ export default function Navbar() {
                   onClick={() => setIsAccountOpen((open) => !open)}
                   className="hero-gradient text-background font-bold text-sm px-3 py-2 rounded-full hover:shadow-[0_0_20px_rgba(141,172,255,0.4)] transition-all active:scale-95 duration-200 inline-flex items-center gap-2 md:px-4 md:gap-3"
                 >
-                  <span className="hidden sm:inline">{authUser.isWalletConnected && authUser.walletAddress ? shortenWallet(authUser.walletAddress) : authUser.username}</span>
-                  <span className="w-8 h-8 rounded-full bg-background/20 flex items-center justify-center border border-white/20 overflow-hidden">
-                    <img src={authUser.avatar || user.avatar} alt={authUser.username} className="h-full w-full object-cover" />
+                  <span className="hidden max-w-36 truncate sm:inline">{authUser.isWalletConnected && authUser.walletAddress ? shortenWallet(authUser.walletAddress) : authUser.fullName || authUser.username || authUser.email.split('@')[0]}</span>
+                  <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-background/20">
+                    <UserAvatar avatarUrl={authUser.avatar} displayName={authUser.fullName} username={authUser.username} email={authUser.email} className="h-full w-full text-[10px]" />
                   </span>
                 </button>
                 {isAccountOpen && <AccountCenterMenu authUser={authUser} />}
@@ -163,7 +158,7 @@ export default function Navbar() {
                   <p className="text-sm text-on-surface-variant">{authUser.isWalletConnected && authUser.walletAddress ? shortenWallet(authUser.walletAddress) : 'Cüzdan bağlı değil'}</p>
                 </div>
                 <span className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-background/40 text-primary">
-                  <img src={authUser.avatar} alt={authUser.username} className="h-full w-full object-cover" />
+                  <UserAvatar avatarUrl={authUser.avatar} displayName={authUser.fullName} username={authUser.username} email={authUser.email} className="h-full w-full text-[10px]" />
                 </span>
               </div>
             ) : (
@@ -200,7 +195,6 @@ export default function Navbar() {
 }
 
 function AccountCenterMenu({ authUser }: { authUser: MockAuthUser }) {
-  const user = getCurrentUser();
   const roleLinks = [
     { id: 'creator', label: 'Creator Dashboard', to: '/creator/dashboard', applyTo: '/creator/apply' },
     { id: 'author', label: 'Author Dashboard', to: '/author/dashboard', applyTo: '/identity' },
@@ -209,83 +203,75 @@ function AccountCenterMenu({ authUser }: { authUser: MockAuthUser }) {
   ];
 
   return (
-    <div className="absolute right-0 top-14 z-[80] w-[min(92vw,380px)] rounded-[28px] border border-outline/10 bg-surface p-4 shadow-2xl shadow-black/40">
-      <div className="mb-4 rounded-2xl bg-surface-high p-4">
-        <div className="flex items-center gap-3">
-          <img src={authUser.avatar || user.avatar} alt={authUser.username} className="h-12 w-12 rounded-2xl bg-background" />
+    <div className="absolute right-0 top-12 z-[80] max-h-[calc(100vh-5rem)] w-[min(92vw,350px)] overflow-y-auto overscroll-contain rounded-2xl border border-outline/10 bg-surface p-3 shadow-2xl shadow-black/40">
+      <div className="mb-2 rounded-xl bg-surface-high p-3">
+        <div className="flex items-center gap-2">
+          <UserAvatar avatarUrl={authUser.avatar} displayName={authUser.fullName} username={authUser.username} email={authUser.email} className="h-9 w-9 rounded-xl text-xs" />
           <div className="min-w-0">
-            <p className="truncate font-headline text-lg font-extrabold text-white">{authUser.fullName}</p>
-            <p className="text-xs text-on-surface-variant">@{authUser.username} / {authUser.email}</p>
+            <p className="truncate font-headline text-sm font-extrabold text-white">{authUser.fullName}</p>
+            <p className="truncate text-[10px] text-on-surface-variant">@{authUser.username} / {authUser.email}</p>
             {authUser.isWalletConnected && authUser.walletAddress ? (
               <p className="mt-1 text-xs text-secondary">{shortenWallet(authUser.walletAddress)}</p>
             ) : (
-              <Link to="/connect-wallet" className="mt-2 inline-flex rounded-lg bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">Cüzdan Bağla</Link>
+              <Link to="/connect-wallet" className="mt-1 inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-[9px] font-bold text-primary">Cüzdan Bağla</Link>
             )}
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-surface p-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Trust</p>
-            <p className="font-headline text-xl font-black text-secondary">{authUser.trustScore}</p>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="rounded-lg bg-surface p-2">
+            <p className="text-[8px] font-bold uppercase tracking-widest text-on-surface-variant">Trust</p>
+            <p className="text-[10px] font-bold leading-5 text-on-surface-variant">Henüz oluşmadı</p>
           </div>
-          <div className="rounded-xl bg-surface p-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Reputation</p>
-            <p className="font-headline text-xl font-black text-primary">{authUser.reputationScore}</p>
+          <div className="rounded-lg bg-surface p-2">
+            <p className="text-[8px] font-bold uppercase tracking-widest text-on-surface-variant">Reputation</p>
+            <p className="text-[10px] font-bold leading-5 text-on-surface-variant">Henüz oluşmadı</p>
           </div>
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        {user.roles.filter((role) => role.status === 'verified').map((role) => (
-          <span key={role.id} className="rounded-lg bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">{role.label}</span>
-        ))}
+      <div className="mb-2 flex flex-wrap gap-1">
+        {authUser.roles.length ? authUser.roles.map((role) => (
+          <span key={role} className="rounded-md bg-primary/10 px-2 py-0.5 text-[9px] font-bold text-primary">{role}</span>
+        )) : <span className="rounded-md bg-surface-high px-2 py-1 text-[9px] font-bold text-on-surface-variant">Standart Kullanıcı</span>}
       </div>
 
-      <div className="mb-4 grid gap-2">
+      <div className="mb-2 grid gap-1">
         {[
-          ['Hesap Kimliği', authUser.isEmailVerified || authUser.isGoogleConnected ? 'Tamamlandı' : 'Eksik'],
-          ['Web3 Kimliği', authUser.isWalletConnected ? 'Tamamlandı' : 'Eksik'],
-          ['Profesyonel Kimlik', authUser.pendingRoles.length ? 'Onay bekleniyor' : 'Eksik']
+          ['Hesap Profili', authUser.profileCompleted ? 'Tamamlandı' : 'Eksik'],
+          ['Cüzdan ve Web3', authUser.isWalletConnected ? 'Tamamlandı' : 'Bağlanmadı'],
+          ['Profesyonel Profil', authUser.capabilities.some((item) => item.status === 'APPROVED') ? 'Tamamlandı' : authUser.capabilities.some((item) => item.status === 'PENDING') ? 'İnceleniyor' : 'Eksik']
         ].map(([label, status]) => (
-          <div key={label} className="flex items-center justify-between rounded-xl bg-surface-high/50 px-3 py-2 text-xs">
+          <div key={label} className="flex items-center justify-between rounded-lg bg-surface-high/50 px-2 py-1 text-[10px]">
             <span className="font-bold text-on-surface">{label}</span>
-            <span className={cn('rounded-lg px-2 py-1 font-bold', status === 'Tamamlandı' ? 'bg-secondary/10 text-secondary' : status === 'Onay bekleniyor' ? 'bg-primary/10 text-primary' : 'bg-surface-highest text-on-surface-variant')}>{status}</span>
+            <span className={cn('rounded-md px-1.5 py-0.5 text-[9px] font-bold', status === 'Tamamlandı' ? 'bg-secondary/10 text-secondary' : status === 'İnceleniyor' ? 'bg-primary/10 text-primary' : 'bg-surface-highest text-on-surface-variant')}>{status}</span>
           </div>
         ))}
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1">
         {authUser.backendRole === 'ADMIN' && <MenuLink to="/admin" label="Admin Paneli" icon={ShieldCheck} />}
-        <MenuLink to={`/u/${user.username}`} label="Public Profile'a git" icon={UserCircle2} />
-        <MenuLink to="/assets" label="My Assets" icon={Award} />
-        <MenuLink to="/identity" label="Identity Center" icon={ShieldCheck} />
-        {roleLinks.map((item) => {
-          const role = user.roles.find((current) => current.id === item.id);
-          const verified = role?.status === 'verified';
-          const pending = role?.status === 'pending' || role?.status === 'verification_pending' || role?.status === 'admin_review';
-          return (
-            <Link key={item.id} to={verified ? item.to : item.applyTo} className="flex items-center justify-between rounded-xl px-3 py-3 text-sm font-bold text-on-surface-variant hover:bg-surface-high hover:text-white">
-              <span>{item.label}</span>
-              <span className={cn('rounded-lg px-2 py-1 text-[10px]', verified ? 'bg-secondary/10 text-secondary' : pending ? 'bg-primary/10 text-primary' : 'bg-surface-highest text-on-surface-variant')}>
-                {verified ? 'Verified' : pending ? 'Onay bekleniyor' : 'Başvur'}
-              </span>
-            </Link>
-          );
-        })}
-        <MenuLink to="/settings/security" label="Security" icon={ShieldCheck} />
-        <MenuLink to="/settings/wallets" label="Settings" icon={Settings} />
-        <button onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold text-error hover:bg-error/10">
-          <LogOut size={16} /> Sign Out
+        <MenuLink to="/profile" label="Profilim" icon={UserCircle2} />
+        <UpcomingMenuItem label="My Assets" icon={Award} />
+        <UpcomingMenuItem label="Identity Center" icon={ShieldCheck} />
+        {roleLinks.map((item) => <UpcomingMenuItem key={item.id} label={item.label} />)}
+        <UpcomingMenuItem label="Security" icon={ShieldCheck} />
+        <UpcomingMenuItem label="Settings" icon={Settings} />
+        <button onClick={logout} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-error hover:bg-error/10">
+          <LogOut size={14} /> Çıkış Yap
         </button>
       </div>
     </div>
   );
 }
 
+function UpcomingMenuItem({ label, icon: Icon }: { label: string; icon?: React.ComponentType<{ size?: number }> }) {
+  return <button type="button" disabled title="Bu özellik hazırlanıyor" className="flex w-full cursor-not-allowed items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-xs font-bold text-on-surface-variant opacity-65"><span className="flex items-center gap-2">{Icon && <Icon size={14} />}{label}</span><span className="rounded-md bg-surface-highest px-1.5 py-0.5 text-[9px]">Yakında</span></button>;
+}
+
 function MenuLink({ to, label, icon: Icon }: { to: string; label: string; icon: React.ComponentType<{ size?: number }> }) {
   return (
-    <Link to={to} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold text-on-surface-variant hover:bg-surface-high hover:text-white">
-      <Icon size={16} />
+    <Link to={to} className="flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-bold text-on-surface-variant hover:bg-surface-high hover:text-white">
+      <Icon size={14} />
       {label}
     </Link>
   );

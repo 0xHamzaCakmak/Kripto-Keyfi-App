@@ -12,21 +12,35 @@ import {
 import { ARTICLES, MESSAGES, PROJECTS } from '../constants';
 import { HomeUpDownWidget } from './Games';
 import { cn } from '../lib/utils';
+import { useAuth } from '../auth/AuthContext';
 
 const stats = [
-  { label: 'Active Users', value: '42.8k', icon: Users },
-  { label: 'Listed Projects', value: '1,248', icon: Rocket },
-  { label: 'Tracked Assets', value: '18.4k', icon: Wallet },
-  { label: 'Daily Signals', value: '6.2k', icon: BarChart3 },
+  { label: 'Active Users', value: 'Yakında', icon: Users },
+  { label: 'Listed Projects', value: 'Yakında', icon: Rocket },
+  { label: 'Tracked Assets', value: 'Yakında', icon: Wallet },
+  { label: 'Daily Signals', value: 'Yakında', icon: BarChart3 },
 ];
 
 export default function Home() {
+  const { user } = useAuth();
   const featuredProjects = PROJECTS.slice(0, 3);
   const latestArticles = ARTICLES.slice(0, 2);
+  const pendingActions = user ? [
+    ...(!user.profileCompleted ? [{ label: 'Profilini tamamla', to: '/profile' }] : []),
+    ...(!user.username ? [{ label: 'Kullanıcı adını belirle', to: '/profile' }] : []),
+    ...(!user.isEmailVerified ? [{ label: 'E-posta adresini doğrula', to: '/profile' }] : []),
+    ...(!user.isWalletConnected ? [{ label: 'Cüzdanını bağla', to: '/connect-wallet' }] : []),
+  ] : [];
 
   return (
     <div className="grid grid-cols-12 gap-6">
       <div className="col-span-12 xl:col-span-9 space-y-6">
+        {user && (
+          <section className="flex flex-col justify-between gap-4 rounded-[24px] border border-primary/10 bg-primary/5 p-5 md:flex-row md:items-center">
+            <div><p className="text-[10px] font-bold uppercase tracking-[0.24em] text-primary">Hesabın</p><h2 className="mt-1 font-headline text-2xl font-black text-white">Hoş geldin, {user.fullName.split(' ')[0]}</h2><p className="mt-1 text-xs text-on-surface-variant">{pendingActions.length ? 'Hesabında tamamlayabileceğin işlemler var.' : 'Hesap profilin güncel.'}</p></div>
+            {pendingActions.length > 0 && <div className="flex flex-wrap gap-2">{pendingActions.map((action) => <Link key={action.label} to={action.to} className="rounded-xl bg-surface-high px-3 py-2 text-xs font-bold text-primary hover:bg-surface-highest">{action.label}</Link>)}</div>}
+          </section>
+        )}
         <section className="relative overflow-hidden rounded-[32px] bg-surface border border-outline/5 p-8 md:p-10 min-h-[360px] flex flex-col justify-between">
           <div className="absolute inset-0">
             <img
@@ -71,14 +85,16 @@ export default function Home() {
             {stats.map((stat) => (
               <div key={stat.label} className="rounded-2xl bg-surface-high/80 border border-outline/5 p-4 backdrop-blur">
                 <stat.icon className="mb-3 text-primary" size={18} />
-                <p className="font-headline text-2xl font-extrabold text-white">{stat.value}</p>
+                <div className="mb-1 flex items-center gap-2"><p className="font-headline text-sm font-extrabold text-white">{stat.value}</p><span className="rounded bg-primary/10 px-1.5 py-0.5 text-[8px] font-bold text-primary">VERİ BEKLENİYOR</span></div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{stat.label}</p>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <section className="space-y-3">
+          <div className="flex items-center justify-between"><h2 className="font-headline text-lg font-bold text-white">Keşfedilecek örnek projeler</h2><span className="rounded-lg bg-primary/10 px-2 py-1 text-[9px] font-bold text-primary">ÖRNEK VERİ</span></div>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {featuredProjects.map((project) => (
             <motion.article
               key={project.id}
@@ -101,12 +117,13 @@ export default function Home() {
               <p className="mt-3 line-clamp-2 text-sm leading-6 text-on-surface-variant">{project.description}</p>
             </motion.article>
           ))}
+          </div>
         </section>
 
         <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="rounded-[24px] bg-surface border border-outline/5 p-6">
             <div className="mb-6 flex items-center justify-between">
-              <h2 className="font-headline text-xl font-bold text-white">Latest Content</h2>
+              <div className="flex items-center gap-2"><h2 className="font-headline text-xl font-bold text-white">Latest Content</h2><span className="rounded bg-primary/10 px-1.5 py-0.5 text-[8px] font-bold text-primary">ÖRNEK İÇERİK</span></div>
               <Link to="/insights" className="text-sm font-bold text-primary hover:underline">View All</Link>
             </div>
             <div className="space-y-4">
@@ -146,7 +163,7 @@ export default function Home() {
               </span>
               <div>
                 <h2 className="font-headline text-sm font-bold text-white">Global Chat</h2>
-                <p className="text-[10px] font-medium text-secondary">1,204 online</p>
+                <p className="text-[10px] font-medium text-secondary">Demo sohbet akışı</p>
               </div>
             </div>
           </header>
