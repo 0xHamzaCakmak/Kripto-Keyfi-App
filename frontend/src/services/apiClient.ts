@@ -1,6 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-export const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+// Use the same origin by default so production requests pass through the
+// web server's /api reverse proxy instead of pointing visitors at localhost.
+export const apiUrl = import.meta.env.VITE_API_URL || '/api';
 let accessToken: string | null = null;
 let refreshPromise: Promise<string> | null = null;
 
