@@ -119,35 +119,23 @@ export default function Navbar() {
                 {isAccountOpen && <AccountCenterMenu authUser={authUser} />}
               </div>
             )}
-            <button type="button" className="text-primary hover:opacity-80 transition-opacity md:hidden">
+            <button type="button" aria-label="Bildirimleri aç" className="text-primary hover:opacity-80 transition-opacity md:hidden">
               <Bell size={20} />
             </button>
           </div>
         </div>
       </nav>
 
-      <div
-        className={cn(
-          "md:hidden fixed inset-0 z-40 transition-all duration-300",
-          isMobileMenuOpen ? "pointer-events-auto" : "pointer-events-none"
-        )}
-        aria-hidden={!isMobileMenuOpen}
-      >
+      {isMobileMenuOpen && <div className="md:hidden fixed inset-0 z-40">
         <button
           type="button"
           aria-label="Close navigation overlay"
           onClick={() => setIsMobileMenuOpen(false)}
-          className={cn(
-            "absolute inset-0 bg-background/70 backdrop-blur-sm transition-opacity duration-300",
-            isMobileMenuOpen ? "opacity-100" : "opacity-0"
-          )}
+          className="absolute inset-0 bg-background/70 backdrop-blur-sm"
         />
 
         <aside
-          className={cn(
-            "absolute left-2 top-2 bottom-2 w-[min(88vw,360px)] overflow-y-auto rounded-[32px] border border-yellow-400/70 bg-surface px-5 pt-24 pb-8 shadow-2xl shadow-yellow-500/10 transition-transform duration-300",
-            isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-          )}
+          className="absolute left-2 top-2 bottom-2 w-[min(88vw,360px)] overflow-y-auto rounded-[32px] border border-yellow-400/70 bg-surface px-5 pt-24 pb-8 shadow-2xl shadow-yellow-500/10"
         >
           <div className="mb-6 rounded-[28px] border border-yellow-400/30 bg-surface-high p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-on-surface-variant">{authUser ? 'Account' : 'Guest'}</p>
@@ -189,7 +177,7 @@ export default function Navbar() {
             ))}
           </div>
         </aside>
-      </div>
+      </div>}
     </>
   );
 }

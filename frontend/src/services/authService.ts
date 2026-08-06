@@ -62,6 +62,8 @@ export type MockAuthUser = {
 
 let authState: MockAuthUser | null = null;
 let restorePromise: Promise<MockAuthUser> | null = null;
+const SESSION_HINT_KEY = 'kriptokeyfi:backend-session';
+const markBackendSession = (active: boolean) => active ? localStorage.setItem(SESSION_HINT_KEY, '1') : localStorage.removeItem(SESSION_HINT_KEY);
 
 function fromApiUser(apiUser: ApiUser): MockAuthUser {
   return {
@@ -106,6 +108,7 @@ async function readMe() {
 export async function loginWithEmail(email: string, password: string) {
   const response = await api.post<{ data: { accessToken: string; user: ApiUser } }>('/auth/login', { email, password });
   setAccessToken(response.data.data.accessToken);
+  markBackendSession(true);
   return publish(fromApiUser(response.data.data.user))!;
 }
 
@@ -115,6 +118,7 @@ export async function registerWithEmail(data: {
 }) {
   const response = await api.post<{ data: { accessToken: string; user: ApiUser } }>('/auth/register', data);
   setAccessToken(response.data.data.accessToken);
+  markBackendSession(true);
   return publish(fromApiUser(response.data.data.user))!;
 }
 
@@ -123,15 +127,18 @@ export async function loginWithGoogle(credential: string, termsAccepted = false,
     credential, termsAccepted, privacyAccepted,
   });
   setAccessToken(response.data.data.accessToken);
+  markBackendSession(true);
   return publish(fromApiUser(response.data.data.user))!;
 }
 
 export async function restoreSession() {
+  if (localStorage.getItem(SESSION_HINT_KEY) !== '1') return Promise.reject({ response: { status: 401 } });
   restorePromise ??= api.post<{ data: { accessToken: string } }>('/auth/refresh')
     .then(async (response) => {
       setAccessToken(response.data.data.accessToken);
       return readMe();
     })
+    .catch((error) => { if (typeof error === 'object' && error && 'response' in error && (error as { response?: { status?: number } }).response?.status === 401) markBackendSession(false); throw error; })
     .finally(() => { restorePromise = null; });
   return restorePromise;
 }
@@ -144,6 +151,7 @@ export async function updateMyProfile(input: { displayName: string; username: st
 export async function logout() {
   try { await api.post('/auth/logout'); } finally {
     setAccessToken(null);
+    markBackendSession(false);
     publish(null);
   }
 }

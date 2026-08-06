@@ -173,6 +173,40 @@ enum TradingBotSignalStatus {
   EXPIRED
 }
 
+enum NewsIntegrationType {
+  RSS
+  API
+}
+
+enum NewsPublicationStatus {
+  PENDING
+  PUBLISHED
+  ARCHIVED
+  REJECTED
+}
+
+enum NewsAiStatus {
+  WAITING
+  PROCESSING
+  READY
+  REVIEW_REQUIRED
+  FAILED
+}
+
+enum NewsAnalyticsEventType {
+  NEWS_SUMMARY_VIEW
+  NEWS_SOURCE_CLICK
+  RELATED_NEWS_CLICK
+  CATEGORY_CLICK
+  WEB_VITAL
+}
+
+enum NewsRelationType {
+  RELATED
+  ACADEMY
+  VIDEO
+}
+
 model User {
   id                  String               @id @default(cuid())
   email               String               @unique
@@ -206,8 +240,209 @@ model User {
   identities          UserIdentity[]
   profileRoles        UserProfileRole[]
   capabilities        UserCapability[]
+  savedNews           NewsSavedArticle[]
 
   @@map("users")
+}
+
+model NewsSource {
+  id                   String              @id @default(cuid())
+  name                 String              @db.VarChar(120)
+  slug                 String              @unique @db.VarChar(80)
+  websiteUrl           String              @db.VarChar(500)
+  feedUrl              String?             @db.VarChar(500)
+  apiConfig            Json?
+  integrationType      NewsIntegrationType
+  language             String              @default("tr") @db.VarChar(12)
+  category             String?             @db.VarChar(80)
+  logoUrl              String?             @db.VarChar(500)
+  isActive             Boolean             @default(false)
+  isTrusted            Boolean             @default(false)
+  autoPublish          Boolean             @default(false)
+  aiEnabled            Boolean             @default(true)
+  minimumManualReviews Int                 @default(20)
+  commercialUseAllowed Boolean             @default(false)
+  excerptAllowed       Boolean             @default(false)
+  imageUseAllowed      Boolean             @default(false)
+  attributionRequired  Boolean             @default(true)
+  termsUrl             String?             @db.VarChar(500)
+  lastTermsCheckedAt   DateTime?
+  lastFetchedAt        DateTime?
+  lastSuccessAt        DateTime?
+  lastError            String?             @db.VarChar(500)
+  failureCount         Int                 @default(0)
+  nextFetchAt          DateTime?
+  fetchIntervalMinutes Int                 @default(30)
+  priority             Int                 @default(100)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  articles             NewsArticle[]
+
+  @@index([isActive, nextFetchAt, priority])
+  @@map("news_sources")
+}
+
+model NewsArticle {
+  id                    String                @id @default(cuid())
+  sourceId              String?
+  providerNewsId        String?               @db.VarChar(191)
+  slug                  String                @unique @db.VarChar(191)
+  originalUrl           String                @unique @db.VarChar(700)
+  canonicalUrl          String?               @db.VarChar(700)
+  title                 String                @db.VarChar(500)
+  excerpt               String?               @db.Text
+  titleTr               String?               @db.VarChar(500)
+  summaryTr             String?               @db.Text
+  localizedAt           DateTime?
+  localizationError     String?               @db.VarChar(500)
+  localizationAttempts  Int                   @default(0)
+  aiStatus              NewsAiStatus          @default(WAITING)
+  localizationStartedAt DateTime?
+  manualEditedAt        DateTime?
+  coverImageUrl         String?               @db.VarChar(1000)
+  coverImageAlt         String?               @db.VarChar(500)
+  category              String?               @db.VarChar(80)
+  authorName            String?               @db.VarChar(160)
+  language              String                @default("tr") @db.VarChar(12)
+  publishedAt           DateTime
+  sourceUpdatedAt       DateTime?
+  ingestedAt            DateTime              @default(now())
+  status                NewsPublicationStatus @default(PENDING)
+  isExternal            Boolean               @default(true)
+  isFeatured            Boolean               @default(false)
+  isBreaking            Boolean               @default(false)
+  isEditorPick          Boolean               @default(false)
+  archivedAt            DateTime?
+  editorialReviewedAt   DateTime?
+  titleFingerprint      String                @db.VarChar(64)
+  storyKey              String?               @db.VarChar(120)
+  readingTimeMinutes    Int                   @default(1)
+  viewCount             Int                   @default(0)
+  source                NewsSource?           @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  tags                  NewsArticleTag[]
+  coins                 NewsArticleCoin[]
+  relationsFrom         NewsArticleRelation[] @relation("news_relation_from")
+  relationsTo           NewsArticleRelation[] @relation("news_relation_to")
+  aiSummary             NewsAiSummary?
+  savedBy               NewsSavedArticle[]
+  analyticsEvents       NewsAnalyticsEvent[]
+
+  @@unique([sourceId, providerNewsId])
+  @@index([status, publishedAt])
+  @@index([sourceId, editorialReviewedAt])
+  @@index([isExternal, publishedAt])
+  @@index([storyKey])
+  @@map("news_articles")
+}
+
+model NewsAnalyticsEvent {
+  id               String                 @id @default(cuid())
+  type             NewsAnalyticsEventType
+  articleId        String?
+  sourceSlug       String?                @db.VarChar(80)
+  category         String?                @db.VarChar(80)
+  summaryWordCount Int?
+  durationMs       Int?
+  scrollDepth      Int?
+  targetArticleId  String?                @db.VarChar(191)
+  metricName       String?                @db.VarChar(20)
+  metricValue      Decimal?               @db.Decimal(12, 3)
+  pageType         String?                @db.VarChar(40)
+  createdAt        DateTime               @default(now())
+  article          NewsArticle?           @relation(fields: [articleId], references: [id], onDelete: SetNull)
+
+  @@index([type, createdAt])
+  @@index([articleId, createdAt])
+  @@index([metricName, createdAt])
+  @@map("news_analytics_events")
+}
+
+model NewsWorkerHealth {
+  id               String    @id @db.VarChar(40)
+  lastRunAt        DateTime?
+  lastSuccessfulAt DateTime?
+  pendingCount     Int       @default(0)
+  processingCount  Int       @default(0)
+  errorCount       Int       @default(0)
+  rateLimitCount   Int       @default(0)
+  lastError        String?   @db.VarChar(500)
+  updatedAt        DateTime  @updatedAt
+
+  @@map("news_worker_health")
+}
+
+model NewsTag {
+  id       String           @id @default(cuid())
+  slug     String           @unique @db.VarChar(100)
+  name     String           @db.VarChar(100)
+  articles NewsArticleTag[]
+
+  @@map("news_tags")
+}
+
+model NewsArticleTag {
+  articleId String
+  tagId     String
+  article   NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       NewsTag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@index([tagId])
+  @@map("news_article_tags")
+}
+
+model NewsArticleCoin {
+  articleId String
+  symbol    String      @db.VarChar(30)
+  name      String?     @db.VarChar(100)
+  article   NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, symbol])
+  @@index([symbol])
+  @@map("news_article_coins")
+}
+
+model NewsArticleRelation {
+  fromArticleId String
+  toArticleId   String
+  type          NewsRelationType
+  fromArticle   NewsArticle      @relation("news_relation_from", fields: [fromArticleId], references: [id], onDelete: Cascade)
+  toArticle     NewsArticle      @relation("news_relation_to", fields: [toArticleId], references: [id], onDelete: Cascade)
+
+  @@id([fromArticleId, toArticleId, type])
+  @@index([toArticleId, type])
+  @@map("news_article_relations")
+}
+
+model NewsAiSummary {
+  articleId     String      @id
+  whyItMatters  String?     @db.Text
+  marketImpact  String?     @db.Text
+  watchOuts     String?     @db.Text
+  confidence    Decimal?    @db.Decimal(5, 4)
+  needsReview   Boolean     @default(false)
+  wordCount     Int?
+  qualityFlags  Json?
+  provider      String?     @db.VarChar(80)
+  model         String?     @db.VarChar(120)
+  promptVersion String?     @db.VarChar(80)
+  inputHash     String?     @db.VarChar(64)
+  generatedAt   DateTime?
+  article       NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@map("news_ai_summaries")
+}
+
+model NewsSavedArticle {
+  userId    String
+  articleId String
+  createdAt DateTime    @default(now())
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article   NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, articleId])
+  @@index([articleId])
+  @@map("news_saved_articles")
 }
 
 model UserCapability {

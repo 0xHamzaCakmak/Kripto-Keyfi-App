@@ -1,38 +1,62 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Routes, Route, useLocation } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import Navbar from './components/Navbar';
-import TickerTape from './components/TickerTape';
-import Home from './components/Home';
-import Ecosystem from './components/Ecosystem';
-import Chat from './components/Chat';
+import PrivacyConsent from './components/PrivacyConsent';
 import Insights, { SavedNewsPage } from './components/Insights';
-import ArticleDetail from './components/ArticleDetail';
-import GamesPage, { UpDownGamePage } from './components/Games';
-import WhaleGuessPage from './components/WhaleGuess';
-import TransferVolumeGuessPage from './components/TransferVolumeGuess';
-import ScamOrSafePage from './components/ScamOrSafe';
-import GasFeeChallengePage from './components/GasFeeChallenge';
-import { PlaceholderDashboard } from './components/Profile';import TokenAirdropManager from './components/TokenAirdropManager';import VideoCenter, { ChannelProfile, SavedVideosPage, VideoDetail } from './components/Videos';
-import AcademyHome, { AcademyArticleDetail, AcademySeriesDetail, AcademySeriesList, GlossaryDetail, GlossaryPage, ReadingList } from './components/Academy';
-import { ConnectWalletPage, ForgotPasswordPage, LoginPage, OnboardingPage, RegisterPage } from './components/Auth';
-import AdminDashboard from './components/AdminDashboard';
-import AdminLayout from './components/AdminLayout';
-import TradingBotDashboard from './components/TradingBotDashboard';
-import TradingBots from './components/TradingBots';
-import TradingBotGuide from './components/TradingBotGuide';
-import ExchangeAccounts from './components/ExchangeAccounts';
-import ManualTrading from './components/ManualTrading';
-import { OpenOrdersPage, OpenPositionsPage } from './components/TradingActivity';
-import { GridBotsPage, TradingProfitLossPage, TradingRiskManagementPage, TradingSystemStatusPage } from './components/TradingAdminPhases';
 import { AdminRoute, ProtectedRoute } from './auth/RouteGuards';
-import UserProfilePage from './components/UserProfilePage';
+
+const Home = lazy(() => import('./components/Home'));
+const Ecosystem = lazy(() => import('./components/Ecosystem'));
+const Chat = lazy(() => import('./components/Chat'));
+const TickerTape = lazy(() => import('./components/TickerTape'));
+const ArticleDetail = lazy(() => import('./components/ArticleDetail'));
+const GamesPage = lazy(() => import('./components/Games'));
+const UpDownGamePage = lazy(() => import('./components/Games').then((module) => ({ default: module.UpDownGamePage })));
+const WhaleGuessPage = lazy(() => import('./components/WhaleGuess'));
+const TransferVolumeGuessPage = lazy(() => import('./components/TransferVolumeGuess'));
+const ScamOrSafePage = lazy(() => import('./components/ScamOrSafe'));
+const GasFeeChallengePage = lazy(() => import('./components/GasFeeChallenge'));
+const PlaceholderDashboard = lazy(() => import('./components/Profile').then((module) => ({ default: module.PlaceholderDashboard })));
+const TokenAirdropManager = lazy(() => import('./components/TokenAirdropManager'));
+const VideoCenter = lazy(() => import('./components/Videos'));
+const ChannelProfile = lazy(() => import('./components/Videos').then((module) => ({ default: module.ChannelProfile })));
+const SavedVideosPage = lazy(() => import('./components/Videos').then((module) => ({ default: module.SavedVideosPage })));
+const VideoDetail = lazy(() => import('./components/Videos').then((module) => ({ default: module.VideoDetail })));
+const AcademyHome = lazy(() => import('./components/Academy'));
+const AcademyArticleDetail = lazy(() => import('./components/Academy').then((module) => ({ default: module.AcademyArticleDetail })));
+const AcademySeriesDetail = lazy(() => import('./components/Academy').then((module) => ({ default: module.AcademySeriesDetail })));
+const AcademySeriesList = lazy(() => import('./components/Academy').then((module) => ({ default: module.AcademySeriesList })));
+const GlossaryDetail = lazy(() => import('./components/Academy').then((module) => ({ default: module.GlossaryDetail })));
+const GlossaryPage = lazy(() => import('./components/Academy').then((module) => ({ default: module.GlossaryPage })));
+const ReadingList = lazy(() => import('./components/Academy').then((module) => ({ default: module.ReadingList })));
+const LoginPage = lazy(() => import('./components/Auth').then((module) => ({ default: module.LoginPage })));
+const RegisterPage = lazy(() => import('./components/Auth').then((module) => ({ default: module.RegisterPage })));
+const ForgotPasswordPage = lazy(() => import('./components/Auth').then((module) => ({ default: module.ForgotPasswordPage })));
+const OnboardingPage = lazy(() => import('./components/Auth').then((module) => ({ default: module.OnboardingPage })));
+const ConnectWalletPage = lazy(() => import('./components/Auth').then((module) => ({ default: module.ConnectWalletPage })));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const AdminLayout = lazy(() => import('./components/AdminLayout'));
+const TradingBotDashboard = lazy(() => import('./components/TradingBotDashboard'));
+const TradingBots = lazy(() => import('./components/TradingBots'));
+const TradingBotGuide = lazy(() => import('./components/TradingBotGuide'));
+const AdminNewsSources = lazy(() => import('./components/AdminNewsSources'));
+const ExchangeAccounts = lazy(() => import('./components/ExchangeAccounts'));
+const ManualTrading = lazy(() => import('./components/ManualTrading'));
+const OpenOrdersPage = lazy(() => import('./components/TradingActivity').then((module) => ({ default: module.OpenOrdersPage })));
+const OpenPositionsPage = lazy(() => import('./components/TradingActivity').then((module) => ({ default: module.OpenPositionsPage })));
+const GridBotsPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.GridBotsPage })));
+const TradingProfitLossPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingProfitLossPage })));
+const TradingRiskManagementPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingRiskManagementPage })));
+const TradingSystemStatusPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingSystemStatusPage })));
+const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 
 export default function App() {
   return (
     <Router>
       <div className="min-h-screen bg-background text-on-surface">
         <Navbar />
-        <main className="pt-24 pb-20 px-8 max-w-[1600px] mx-auto">
-          <Routes>
+        <main className="mx-auto max-w-[1600px] px-4 pb-20 pt-24 sm:px-6 lg:px-8">
+          <Suspense fallback={<div className="h-72 animate-pulse rounded-3xl bg-surface-high" aria-label="Sayfa yükleniyor" />}><Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
@@ -48,6 +72,7 @@ export default function App() {
               <Route path="trading/profit-loss" element={<TradingProfitLossPage />} />
               <Route path="trading/risk" element={<TradingRiskManagementPage />} />
               <Route path="trading/system" element={<TradingSystemStatusPage />} />
+              <Route path="news/sources" element={<AdminNewsSources />} />
             </Route>
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -81,13 +106,14 @@ export default function App() {
             <Route path="/developer/dashboard" element={<ProtectedRoute feature="Developer Dashboard"><PlaceholderDashboard title="Developer Dashboard" /></ProtectedRoute>} />
             <Route path="/settings/security" element={<ProtectedRoute feature="Security Settings"><PlaceholderDashboard title="Security Settings" /></ProtectedRoute>} />
             <Route path="/settings/wallets" element={<ProtectedRoute feature="Wallet Settings"><PlaceholderDashboard title="Wallet Settings" /></ProtectedRoute>} />
-            <Route path="/blog" element={<Insights />} />
-            <Route path="/blog/category/:category" element={<Insights />} />
-            <Route path="/blog/tag/:tag" element={<Insights />} />
-            <Route path="/blog/:slug" element={<ArticleDetail />} />
+            <Route path="/blog/*" element={<LegacyNewsRedirect />} />
             <Route path="/saved-news" element={<SavedNewsPage />} />
-            <Route path="/insights" element={<Insights />} />
-            <Route path="/insights/:id" element={<ArticleDetail />} />
+            <Route path="/insights/*" element={<LegacyNewsRedirect />} />
+            <Route path="/haberler" element={<Insights />} />
+            <Route path="/haberler/kategori/:category" element={<Insights />} />
+            <Route path="/haberler/etiket/:tag" element={<Insights />} />
+            <Route path="/haberler/konu/:topic" element={<Insights />} />
+            <Route path="/haberler/:slug" element={<ArticleDetail />} />
             <Route path="/videos" element={<VideoCenter />} />
             <Route path="/videos/category/:category" element={<VideoCenter />} />
             <Route path="/videos/:id" element={<VideoDetail />} />
@@ -105,10 +131,20 @@ export default function App() {
             <Route path="/academy/glossary/:slug" element={<GlossaryDetail />} />
             <Route path="/academy/reading-list" element={<ReadingList />} />
             <Route path="/token-airdrop-manager" element={<TokenAirdropManager />} />
-          </Routes>
+          </Routes></Suspense>
         </main>
-        <TickerTape />
+        <Suspense fallback={null}><TickerTape /></Suspense>
+        <PrivacyConsent />
       </div>
     </Router>
   );
+}
+
+function LegacyNewsRedirect() {
+  const { pathname } = useLocation();
+  const path = pathname.replace(/^\/(?:blog|insights)\/?/, '');
+  if (!path) return <Navigate to="/haberler" replace />;
+  if (path.startsWith('category/')) return <Navigate to={`/haberler/kategori/${path.slice('category/'.length)}`} replace />;
+  if (path.startsWith('tag/')) return <Navigate to={`/haberler/etiket/${path.slice('tag/'.length)}`} replace />;
+  return <Navigate to={`/haberler/${path}`} replace />;
 }

@@ -15,6 +15,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Radio,
   ShieldAlert,
   SlidersHorizontal,
   X,
@@ -26,6 +27,7 @@ import { logout } from '../services/authService';
 
 const primaryLinks = [
   { label: 'Genel Bakış', to: '/admin', icon: LayoutDashboard, end: true },
+  { label: 'Haber Yönetimi', to: '/admin/news/sources', icon: Radio, end: true },
   { label: 'Trading Bot', to: '/admin/trading', icon: Bot, end: true },
   { label: 'Borsa Hesapları', to: '/admin/trading/accounts', icon: Building2 },
 ];

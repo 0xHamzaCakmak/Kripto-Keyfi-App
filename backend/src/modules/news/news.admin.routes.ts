@@ -1,0 +1,20 @@
+import { UserRole } from '@prisma/client';
+import { Router } from 'express';
+import { authenticate } from '../../middleware/authenticate.js';
+import { authorize } from '../../middleware/authorize.js';
+import { validateRequest } from '../../middleware/validate-request.js';
+import { asyncHandler } from '../../utils/async-handler.js';
+import * as controller from './news.controller.js';
+import { analyticsReportQuerySchema, articleIdParamsSchema, createNewsSourceBodySchema, listAdminNewsQuerySchema, sourceIdParamsSchema, updateArticleContentBodySchema, updateArticleStatusBodySchema, updateNewsSourceBodySchema } from './news.schema.js';
+
+export const adminNewsRouter = Router();
+adminNewsRouter.use(authenticate, authorize(UserRole.ADMIN));
+adminNewsRouter.get('/sources', asyncHandler(controller.listSources));
+adminNewsRouter.post('/sources', validateRequest({ body: createNewsSourceBodySchema }), asyncHandler(controller.createSource));
+adminNewsRouter.patch('/sources/:sourceId', validateRequest({ params: sourceIdParamsSchema, body: updateNewsSourceBodySchema }), asyncHandler(controller.updateSource));
+adminNewsRouter.get('/articles', validateRequest({ query: listAdminNewsQuerySchema }), asyncHandler(controller.listAdminArticles));
+adminNewsRouter.patch('/articles/:articleId', validateRequest({ params: articleIdParamsSchema, body: updateArticleStatusBodySchema }), asyncHandler(controller.updateArticleStatus));
+adminNewsRouter.patch('/articles/:articleId/content', validateRequest({ params: articleIdParamsSchema, body: updateArticleContentBodySchema }), asyncHandler(controller.updateArticleContent));
+adminNewsRouter.post('/articles/:articleId/relocalize', validateRequest({ params: articleIdParamsSchema }), asyncHandler(controller.relocalizeArticle));
+adminNewsRouter.get('/operations', asyncHandler(controller.newsOperations));
+adminNewsRouter.get('/analytics/report', validateRequest({ query: analyticsReportQuerySchema }), asyncHandler(controller.analyticsReport));

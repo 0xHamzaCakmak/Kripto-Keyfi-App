@@ -3,13 +3,17 @@ import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './database/prisma.js';
 import { logger } from './utils/logger.js';
+import { scheduleNewsSync } from './modules/news/news.worker.js';
+import { ensureDefaultNewsCatalog } from './modules/news/news.catalog.js';
 
 let server: Server | undefined;
 let shuttingDown = false;
+let stopNewsSync: (() => void) | undefined;
 
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
+  stopNewsSync?.();
   logger.info({ signal }, 'graceful shutdown started');
   server?.close((error) => {
     void prisma.$disconnect().then(() => {
@@ -25,6 +29,7 @@ async function shutdown(signal: string) {
 async function start() {
   try {
     await prisma.$connect();
+    await ensureDefaultNewsCatalog();
     logger.info('database connection established');
     const app = createApp();
     server = await new Promise<Server>((resolve, reject) => {
@@ -33,6 +38,7 @@ async function start() {
       listener.once('error', reject);
     });
     logger.info({ port: env.PORT }, 'KriptoKeyfi API listening');
+    if (env.NEWS_SYNC_ENABLED) stopNewsSync = scheduleNewsSync();
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : undefined;
     logger.fatal({ err: error instanceof Error ? { name: error.name, message: error.message, ...(code ? { code } : {}) } : error }, code === 'EADDRINUSE' ? `Port ${env.PORT} is already in use; stop the existing backend process before starting another.` : 'application startup failed');

@@ -21,7 +21,17 @@
     "acceptance:paper": "tsx scripts/prepare-paper-acceptance.ts",
     "acceptance:paper-lifecycle": "tsx scripts/run-paper-lifecycle-acceptance.ts",
     "acceptance:bot-signals": "tsx scripts/verify-bot-signal-acceptance.ts",
-    "acceptance:ai-observer-server": "tsx scripts/ai-observer-acceptance-server.ts"
+    "acceptance:ai-observer-server": "tsx scripts/ai-observer-acceptance-server.ts",
+    "news:bootstrap": "tsx scripts/bootstrap-news.ts",
+    "news:localize": "tsx scripts/localize-news.ts",
+    "news:verify-groq": "tsx scripts/verify-groq-news.ts",
+    "news:localize-one": "tsx scripts/localize-one-news.ts",
+    "news:backfill-ai": "tsx scripts/backfill-news-ai.ts",
+    "news:report-stage3": "tsx scripts/report-news-stage3.ts",
+    "news:refresh-images": "tsx scripts/refresh-news-images.ts",
+    "news:backfill-clusters": "tsx scripts/backfill-news-story-clusters.ts",
+    "news:monitor": "tsx scripts/monitor-news-production.ts",
+    "security:secrets": "tsx scripts/check-repository-secrets.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

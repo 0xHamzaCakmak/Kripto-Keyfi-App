@@ -185,33 +185,35 @@ export interface NewsComment {
   likes: number;
 }
 
-export interface NewsContentBlock {
-  id: string;
-  heading: string;
-  body: string;
-}
-
 export interface NewsArticle {
   id: string;
   slug: string;
   title: string;
-  excerpt: string;
-  content: NewsContentBlock[];
-  coverImage: string;
-  category: string;
-  tags: string[];
-  authorName: string;
-  authorAvatar: string;
-  sourceName: string;
-  sourceUrl: string;
+  excerpt: string | null;
+  originalTitle: string;
+  isLocalized: boolean;
+  localizationPending: boolean;
+  aiStatus: 'WAITING' | 'PROCESSING' | 'READY' | 'REVIEW_REQUIRED' | 'FAILED';
+  localizationError: string | null;
+  localizationAttempts: number;
+  manualEditedAt: string | null;
+  coverImageUrl: string | null;
+  coverImageAlt: string | null;
+  category: string | null;
+  authorName: string | null;
+  source: { name: string; slug: string; websiteUrl: string; logoUrl: string | null; attributionRequired: boolean } | null;
   publishedAt: string;
-  updatedAt: string;
-  readingTime: string;
-  viewCount: string;
+  sourceUpdatedAt: string | null;
+  readingTimeMinutes: number;
+  viewCount: number;
   isFeatured: boolean;
   isBreaking: boolean;
   isEditorPick: boolean;
-  comments: NewsComment[];
+  archivedAt: string | null;
+  tags: { name: string; slug: string }[];
+  coins: { symbol: string; name: string | null }[];
+  originalUrl: string;
+  aiSummary: { whyItMatters: string | null; marketImpact: string | null; watchOuts: string | null; confidence: number | null; needsReview: boolean; wordCount: number | null; generatedAt: string | null; qualityFlags: string[]; provider: string | null; model: string | null } | null;
 }
 
 export interface ChatCoin {

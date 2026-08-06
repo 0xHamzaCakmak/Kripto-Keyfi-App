@@ -23,6 +23,16 @@ const envSchema = z.object({
   TRADING_ENGINE_EXECUTION_ENABLED: booleanString.default('false'),
   TRADING_ENGINE_URL: z.string().url().default('http://127.0.0.1:8081'),
   TRADING_ENGINE_TOKEN: z.string().default(''),
+  NEWS_AI_PROVIDER: z.enum(['groq', 'disabled']).default('groq'),
+  NEWS_AI_ENABLED: booleanString.default('true'),
+  NEWS_AI_AUTO_PROCESS: booleanString.default('false'),
+  NEWS_AI_AUTO_PUBLISH_ENABLED: booleanString.default('false'),
+  NEWS_SYNC_ENABLED: booleanString.default('true'),
+  NEWS_AI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(4).default(2),
+  GROQ_API_KEY: z.string().trim().default(''),
+  GROQ_API_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
+  GROQ_PRIMARY_MODEL: z.string().trim().default('qwen/qwen3.6-27b'),
+  GROQ_FALLBACK_MODEL: z.string().trim().default('openai/gpt-oss-120b'),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production' && !value.COOKIE_SECURE) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['COOKIE_SECURE'], message: 'must be true in production' });

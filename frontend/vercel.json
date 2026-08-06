@@ -1,0 +1,10 @@
+{
+  "redirects": [
+    { "source": "/blog", "destination": "/haberler", "permanent": true },
+    { "source": "/blog/category/:slug", "destination": "/haberler/kategori/:slug", "permanent": true },
+    { "source": "/blog/tag/:slug", "destination": "/haberler/etiket/:slug", "permanent": true },
+    { "source": "/blog/:slug", "destination": "/haberler/:slug", "permanent": true },
+    { "source": "/insights", "destination": "/haberler", "permanent": true },
+    { "source": "/insights/:slug", "destination": "/haberler/:slug", "permanent": true }
+  ]
+}

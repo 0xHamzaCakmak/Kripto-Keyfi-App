@@ -1,6 +1,5 @@
 import { ASSETS, VIDEOS } from '../constants';
 import { ACADEMY_ARTICLES } from '../constants';
-import { getLatestNews } from './newsService';
 import { getEcosystemProjects } from './ecosystemService';
 import { getCurrentUser } from './userService';
 
@@ -28,7 +27,8 @@ export function getUserPortfolio() {
 
 export function getSavedContent() {
   return {
-    news: getLatestNews().slice(0, 3),
+    // News are loaded asynchronously from the backend in the News module.
+    news: [],
     academy: ACADEMY_ARTICLES.slice(0, 3),
     videos: VIDEOS.slice(0, 3),
     projects: getEcosystemProjects().slice(0, 3)

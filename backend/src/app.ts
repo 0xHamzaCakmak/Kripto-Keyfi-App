@@ -11,6 +11,8 @@ import { errorHandler } from './middleware/error-handler.js';
 import { notFound } from './middleware/not-found.js';
 import { adminRouter } from './modules/admin/admin.routes.js';
 import { authRouter } from './modules/auth/auth.routes.js';
+import { adminNewsRouter } from './modules/news/news.admin.routes.js';
+import { newsRouter } from './modules/news/news.routes.js';
 import { userRouter } from './modules/users/user.routes.js';
 
 export function createApp() {
@@ -38,7 +40,9 @@ export function createApp() {
   });
   app.use(`${API_PREFIX}/auth`, authRouter);
   app.use(`${API_PREFIX}/users`, userRouter);
+  app.use(`${API_PREFIX}/news`, newsRouter);
   app.use(`${API_PREFIX}/admin`, adminRouter);
+  app.use(`${API_PREFIX}/admin/news`, adminNewsRouter);
   app.use(notFound);
   app.use(errorHandler);
   return app;

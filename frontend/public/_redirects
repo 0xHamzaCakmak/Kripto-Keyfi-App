@@ -1,0 +1,6 @@
+/blog /haberler 301
+/blog/category/* /haberler/kategori/:splat 301
+/blog/tag/* /haberler/etiket/:splat 301
+/blog/* /haberler/:splat 301
+/insights /haberler 301
+/insights/* /haberler/:splat 301
