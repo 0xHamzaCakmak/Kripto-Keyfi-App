@@ -1,6 +1,7 @@
 import type { NewsLocalizationInput, NewsLocalizationOutput } from './news-localization-provider.js';
 
 const words = (value: string) => value.toLocaleLowerCase('tr-TR').match(/[\p{L}\p{N}]+/gu) ?? [];
+export const hasEncodingArtifacts = (value: string) => /\uFFFD|(?:Ã.|Â.|â(?:€|™|œ|ž)|Ä.|Å.)/.test(value);
 
 function ngrams(value: string, size = 4) {
   const tokens = words(value);
@@ -36,6 +37,7 @@ export function evaluateNewsLocalization(input: NewsLocalizationInput, output: N
   if (editorialWords < 90) flags.push('EDITORIAL_TOO_SHORT');
   if (/(?:https?:\/\/|www\.)/i.test(`${output.summaryTr} ${output.whyItMatters} ${output.marketImpact} ${output.watchOuts}`)) flags.push('UNEXPECTED_URL');
   if (/(?:```|^#{1,6}\s|\*\*)/m.test(`${output.summaryTr}\n${output.whyItMatters}`)) flags.push('MARKDOWN_OUTPUT');
+  if (hasEncodingArtifacts(`${output.titleTr} ${output.summaryTr} ${output.whyItMatters} ${output.marketImpact} ${output.watchOuts}`)) flags.push('ENCODING_ARTIFACT');
   if (input.language.toLocaleLowerCase('tr-TR').startsWith('tr') && overlap(input.excerpt ?? '', output.summaryTr) > 0.78) flags.push('HIGH_SOURCE_OVERLAP');
 
   const needsReview = output.needsReview || flags.length > 0;

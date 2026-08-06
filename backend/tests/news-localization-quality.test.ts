@@ -32,4 +32,13 @@ describe('evaluateNewsLocalization', () => {
     );
     expect(short.flags).toContain('SUMMARY_TOO_SHORT');
   });
+
+  it('blocks AI output that still contains encoding artifacts', () => {
+    const result = evaluateNewsLocalization(
+      { ...input, excerpt: Array(50).fill('kaynak bilgisi').join(' ') },
+      { ...output, summaryTr: 'Uniswap, Robinhood Chain �zerinde yeni bir token platformu a�tı ve ayrıntılar kullanıcılarla paylaşıldı.' },
+    );
+    expect(result.flags).toContain('ENCODING_ARTIFACT');
+    expect(result.output.needsReview).toBe(true);
+  });
 });

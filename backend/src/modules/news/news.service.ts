@@ -7,6 +7,9 @@ import { ApiError } from '../../utils/api-error.js';
 import { presentNewsArticle } from './news.presenter.js';
 import type { createNewsSourceBodySchema, listAdminNewsQuerySchema, listNewsQuerySchema, updateArticleContentBodySchema, updateArticleStatusBodySchema, updateNewsSourceBodySchema } from './news.schema.js';
 import { localizeNewsArticle } from './news-localization.service.js';
+import { cleanFeedText } from './news-localization.service.js';
+import { createNewsLocalizationProvider } from './localization/news-localization-provider.factory.js';
+import { evaluateNewsLocalization } from './localization/news-localization-quality.js';
 
 const articleInclude = { source: { select: { name: true, slug: true, websiteUrl: true, logoUrl: true, attributionRequired: true } }, tags: { include: { tag: { select: { name: true, slug: true } } } }, coins: { select: { symbol: true, name: true } }, aiSummary: { select: { whyItMatters: true, marketImpact: true, watchOuts: true, confidence: true, needsReview: true, wordCount: true, generatedAt: true, qualityFlags: true, provider: true, model: true } } } satisfies Prisma.NewsArticleInclude;
 export type NewsSourceInput = z.infer<typeof createNewsSourceBodySchema>;
@@ -93,6 +96,43 @@ export async function relocalizeArticle(id: string) {
   const localized = await localizeNewsArticle(id, { force: true });
   const updated = await prisma.newsArticle.findUniqueOrThrow({ where: { id }, include: articleInclude });
   return { localized, article: { ...presentNewsArticle(updated), editorialReviewedAt: updated.editorialReviewedAt?.toISOString() ?? null } };
+}
+
+export async function createArticleAiDraft(id: string) {
+  const article = await prisma.newsArticle.findUnique({
+    where: { id },
+    select: {
+      title: true, excerpt: true, language: true, category: true, publishedAt: true,
+      source: { select: { name: true } },
+      tags: { select: { tag: { select: { name: true } } } },
+    },
+  });
+  if (!article) throw new ApiError(404, 'News article not found', 'NEWS_NOT_FOUND');
+  const provider = createNewsLocalizationProvider();
+  if (!provider?.configured) throw new ApiError(503, 'AI news provider is not configured', 'NEWS_AI_UNAVAILABLE');
+  const input = {
+    title: cleanFeedText(article.title) ?? article.title,
+    excerpt: cleanFeedText(article.excerpt),
+    language: article.language,
+    sourceName: article.source?.name ?? 'Bilinmeyen kaynak',
+    category: article.category,
+    publishedAt: article.publishedAt,
+    existingTags: article.tags.map(({ tag }) => tag.name),
+  };
+  const localized = await provider.localize(input);
+  const quality = evaluateNewsLocalization(input, localized);
+  return {
+    titleTr: quality.output.titleTr,
+    summaryTr: quality.output.summaryTr,
+    whyItMatters: quality.output.whyItMatters,
+    marketImpact: quality.output.marketImpact,
+    watchOuts: quality.output.watchOuts,
+    tags: quality.output.tags,
+    needsReview: quality.output.needsReview,
+    qualityFlags: quality.flags,
+    provider: quality.output.provider,
+    model: quality.output.model,
+  };
 }
 
 export async function updateArticleStatus(id: string, input: ArticleStatusUpdate) {

@@ -16,5 +16,6 @@ export async function listAdminArticles(req: Request, res: Response) { return su
 export async function updateArticleStatus(req: Request, res: Response) { return success(res, { article: await newsService.updateArticleStatus(req.params.articleId as string, req.body) }); }
 export async function updateArticleContent(req: Request, res: Response) { return success(res, { article: await newsService.updateArticleContent(req.params.articleId as string, req.body) }); }
 export async function relocalizeArticle(req: Request, res: Response) { return success(res, await newsService.relocalizeArticle(req.params.articleId as string)); }
+export async function createArticleAiDraft(req: Request, res: Response) { return success(res, { draft: await newsService.createArticleAiDraft(req.params.articleId as string) }); }
 export async function newsOperations(_req: Request, res: Response) { return success(res, await getNewsOperations()); }
 export async function analyticsReport(req: Request, res: Response) { return success(res, await analyticsService.getNewsAnalyticsReport(req.query as never)); }

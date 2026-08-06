@@ -33,6 +33,7 @@ Kurallar:
 - Airdrop, Staking, Gas Fee, Whale/Balina, Bullish, Bearish, Smart Contract/Akıllı Sözleşme,
   Liquidity/Likidite, DeFi, Layer-2, ETF ve token sembollerini sektör kullanımına uygun koru.
 - Başlığı yalın, doğru ve clickbait içermeyen Türkçe ile yaz.
+- Girdide �, Ã, Â veya bozulmuş Türkçe karakterler varsa bağlamdan doğru Türkçe karakterleri kur; bu bozuk karakterleri çıktıya taşıma.
 - summary_tr yalnızca verilen bilgilerin 2-4 cümlelik doğrulanmış Türkçe özetidir; eksik ayrıntı ekleme.
 - Kısa açıklama 40 kelimeden azsa summary_tr en fazla 2 cümle olmalı; yorum ve çıkarımları yalnızca diğer alanlara yaz.
 - why_it_matters 60-120 kelimelik özgün editoryal bağlamdır. Genel sektör bilgisini kullanabilirsin ama olası sonuçları "olabilir", "gösterebilir" gibi koşullu dille belirt.

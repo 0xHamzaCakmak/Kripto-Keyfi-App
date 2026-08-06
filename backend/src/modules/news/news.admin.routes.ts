@@ -16,5 +16,6 @@ adminNewsRouter.get('/articles', validateRequest({ query: listAdminNewsQuerySche
 adminNewsRouter.patch('/articles/:articleId', validateRequest({ params: articleIdParamsSchema, body: updateArticleStatusBodySchema }), asyncHandler(controller.updateArticleStatus));
 adminNewsRouter.patch('/articles/:articleId/content', validateRequest({ params: articleIdParamsSchema, body: updateArticleContentBodySchema }), asyncHandler(controller.updateArticleContent));
 adminNewsRouter.post('/articles/:articleId/relocalize', validateRequest({ params: articleIdParamsSchema }), asyncHandler(controller.relocalizeArticle));
+adminNewsRouter.post('/articles/:articleId/ai-draft', validateRequest({ params: articleIdParamsSchema }), asyncHandler(controller.createArticleAiDraft));
 adminNewsRouter.get('/operations', asyncHandler(controller.newsOperations));
 adminNewsRouter.get('/analytics/report', validateRequest({ query: analyticsReportQuerySchema }), asyncHandler(controller.analyticsReport));

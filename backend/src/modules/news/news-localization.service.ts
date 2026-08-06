@@ -15,7 +15,7 @@ const PROMPT_VERSION = 'news-editorial-v3';
 
 const slugify = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('tr-TR').replace(/ı/g, 'i').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'haber';
 const repairMojibake = (value: string) => /(?:Ã.|Ä.|Å.|â€)/.test(value) ? Buffer.from(value, 'latin1').toString('utf8') : value;
-const cleanFeedText = (value: string | null) => value
+export const cleanFeedText = (value: string | null) => value
   ? repairMojibake(value)
     .replace(/Devam(?:ı|i)\s*(?:nı)?\s*Oku\s*:?[^]*?(?:yazısı|yazisi)\s+ilk\s+önce[^]*$/i, '')
     .replace(/The post .*? appeared first on .*?\.?$/i, '')

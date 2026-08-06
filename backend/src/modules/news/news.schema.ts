@@ -1,5 +1,6 @@
 import { NewsAiStatus, NewsAnalyticsEventType, NewsIntegrationType, NewsPublicationStatus } from '@prisma/client';
 import { z } from 'zod';
+import { hasEncodingArtifacts } from './localization/news-localization-quality.js';
 
 const httpsUrl = z.string().url().refine((value) => new URL(value).protocol === 'https:', 'HTTPS URL required');
 const slug = z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(100);
@@ -16,6 +17,8 @@ export const createNewsSourceBodySchema = sourceBaseSchema.superRefine((value, c
 export const updateNewsSourceBodySchema = sourceBaseSchema.partial();
 export const articleIdParamsSchema = z.object({ articleId: z.string().cuid() });
 export const updateArticleStatusBodySchema = z.object({ status: z.nativeEnum(NewsPublicationStatus).optional(), isFeatured: z.boolean().optional(), isBreaking: z.boolean().optional(), isEditorPick: z.boolean().optional() });
-export const updateArticleContentBodySchema = z.object({ titleTr: z.string().trim().min(5).max(500), summaryTr: z.string().trim().min(20).max(4_000), whyItMatters: z.string().trim().max(1_500).nullable(), marketImpact: z.string().trim().max(1_200).nullable(), watchOuts: z.string().trim().max(1_000).nullable(), tags: z.array(z.string().trim().min(1).max(60)).max(8) });
+const cleanEditorialText = (minimum: number, maximum: number) => z.string().trim().min(minimum).max(maximum).refine((value) => !hasEncodingArtifacts(value), 'Metinde bozuk karakter kodlaması var; AI ile düzeltin veya karakterleri elle düzenleyin');
+const optionalEditorialText = (maximum: number) => cleanEditorialText(0, maximum).nullable();
+export const updateArticleContentBodySchema = z.object({ titleTr: cleanEditorialText(5, 500), summaryTr: cleanEditorialText(20, 4_000), whyItMatters: optionalEditorialText(1_500), marketImpact: optionalEditorialText(1_200), watchOuts: optionalEditorialText(1_000), tags: z.array(cleanEditorialText(1, 60)).max(8) });
 export const newsAnalyticsEventBodySchema = z.object({ type: z.nativeEnum(NewsAnalyticsEventType), articleId: z.string().cuid().optional(), sourceSlug: slug.max(80).optional(), category: z.string().trim().max(80).regex(/^[\p{L}\p{N}\s()&.-]+$/u).optional(), summaryWordCount: z.number().int().min(0).max(5_000).optional(), durationMs: z.number().int().min(0).max(3_600_000).optional(), scrollDepth: z.number().int().min(0).max(100).optional(), targetArticleId: z.string().trim().max(191).regex(/^[a-z0-9-]+$/).optional(), metricName: z.enum(['LCP', 'CLS', 'INP']).optional(), metricValue: z.number().min(0).max(1_000_000).optional(), pageType: z.enum(['news-detail', 'news-list', 'other']).optional() }).strict().superRefine((value, context) => { if (value.type === NewsAnalyticsEventType.WEB_VITAL && (!value.metricName || value.metricValue === undefined)) context.addIssue({ code: z.ZodIssueCode.custom, message: 'Web vital events require metricName and metricValue' }); if (value.type !== NewsAnalyticsEventType.WEB_VITAL && !value.articleId && value.type !== NewsAnalyticsEventType.CATEGORY_CLICK) context.addIssue({ code: z.ZodIssueCode.custom, message: 'News engagement events require articleId' }); });
 export const analyticsReportQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });

@@ -3,6 +3,31 @@ import { ApiError } from '../../../utils/api-error.js';
 import type { NewsProvider, NormalizedNewsItem } from './news-provider.js';
 
 const stripHtml = (value: string) => value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+const encodingArtifactScore = (value: string) =>
+  (value.match(/\uFFFD/g)?.length ?? 0) * 20
+  + (value.match(/(?:Ã.|Â.|â(?:€|™|œ|ž)|Ä.|Å.)/g)?.length ?? 0) * 5;
+
+function decodeXmlBytes(bytes: Uint8Array, charset: string) {
+  try {
+    return new TextDecoder(charset, { fatal: false }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+export async function decodeFeedResponse(response: Response) {
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const headerCharset = response.headers.get('content-type')?.match(/charset\s*=\s*["']?([^;"'\s]+)/i)?.[1];
+  const prefix = new TextDecoder('latin1').decode(bytes.slice(0, 256));
+  const xmlCharset = prefix.match(/<\?xml[^>]+encoding\s*=\s*["']([^"']+)["']/i)?.[1];
+  const candidates = [...new Set([headerCharset, xmlCharset, 'utf-8', 'windows-1254', 'iso-8859-9'].filter((value): value is string => Boolean(value)))];
+  const decoded = candidates
+    .map((charset, priority) => ({ value: decodeXmlBytes(bytes, charset), priority }))
+    .filter((item): item is { value: string; priority: number } => item.value !== null)
+    .sort((left, right) => encodingArtifactScore(left.value) - encodingArtifactScore(right.value) || left.priority - right.priority);
+  return decoded[0]?.value ?? new TextDecoder().decode(bytes);
+}
+
 export const decodeFeedText = (value: string) => value
   .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
   .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number.parseInt(code, 10)))
@@ -30,7 +55,7 @@ export class RssNewsProvider implements NewsProvider {
     if (!source.feedUrl) throw new ApiError(400, 'RSS source has no feed URL', 'NEWS_SOURCE_INVALID');
     const response = await fetch(source.feedUrl, { headers: { accept: 'application/rss+xml, application/xml, text/xml' }, signal: AbortSignal.timeout(12_000) });
     if (!response.ok) throw new ApiError(502, `Source returned HTTP ${response.status}`, 'NEWS_SOURCE_FETCH_FAILED');
-    const xml = await response.text();
+    const xml = await decodeFeedResponse(response);
     const entries = xml.match(/<item(?:\s[^>]*)?>[\s\S]*?<\/item>|<entry(?:\s[^>]*)?>[\s\S]*?<\/entry>/gi) ?? [];
     const items: NormalizedNewsItem[] = [];
     for (const entry of entries) {
