@@ -86,6 +86,32 @@ export default function AdminNewsSources() {
   useEffect(() => {
     void load();
   }, [aiFilter]);
+  useEffect(() => {
+    let active = true;
+    let requestInFlight = false;
+    const refreshQueue = async () => {
+      if (!active || requestInFlight || document.visibilityState !== 'visible') return;
+      requestInFlight = true;
+      try {
+        const [articleItems, operationData] = await Promise.all([getAdminNewsArticles(aiFilter), getNewsOperations()]);
+        if (!active) return;
+        setPendingArticles(articleItems);
+        setOperations(operationData);
+      } catch {
+        // Polling hatalarında mevcut veriyi koru; kullanıcı işlemlerindeki hatalar ayrıca gösterilir.
+      } finally {
+        requestInFlight = false;
+      }
+    };
+    const timer = window.setInterval(() => void refreshQueue(), 8_000);
+    const handleVisibility = () => { if (document.visibilityState === 'visible') void refreshQueue(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [aiFilter]);
   const eligible =
     form.isTrusted &&
     form.commercialUseAllowed &&
@@ -215,7 +241,7 @@ export default function AdminNewsSources() {
             <h2 className="mt-1 font-headline text-2xl font-bold text-white">AI İçerik İşlemleri</h2>
             <p className="mt-2 text-sm text-on-surface-variant">İşlem durumunu filtreleyin; kalite kontrolü, manuel düzenleme ve yeniden özetleme işlemlerini buradan yönetin.</p>
           </div>
-          <span className="w-fit rounded-full bg-primary/10 px-3 py-1 text-sm font-bold text-primary">{pendingArticles.length} kayıt</span>
+          <div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-secondary/10 px-3 py-1 text-xs font-bold text-secondary">Canlı · 8 sn</span><span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-bold text-primary">{pendingArticles.length} kayıt</span></div>
         </div>
         <div className="mt-5 flex flex-wrap gap-2">{aiFilters.map(([value,label]) => <button key={value} onClick={() => setAiFilter(value)} className={aiFilter === value ? 'rounded-xl bg-primary px-3 py-2 text-xs font-black text-background' : 'rounded-xl bg-surface-high px-3 py-2 text-xs font-bold text-on-surface-variant'}>{label} <span className="ml-1 opacity-70">{operations?.statuses[value] ?? 0}</span></button>)}</div>
         <div className="mt-5 grid gap-3">
