@@ -42,8 +42,9 @@ export async function listNews(query: NewsListQuery) {
     ...(and.length ? { AND: and } : {}),
   };
   const articles = await prisma.newsArticle.findMany({ where, include: articleInclude, orderBy: [{ publishedAt: 'desc' }, { id: 'desc' }], take: query.limit + 1, ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}) });
-  const next = articles.length > query.limit ? articles.pop() : undefined;
-  return { articles: articles.map(presentNewsArticle), nextCursor: next?.id ?? null };
+  const hasMore = articles.length > query.limit;
+  if (hasMore) articles.pop();
+  return { articles: articles.map(presentNewsArticle), nextCursor: hasMore ? articles.at(-1)?.id ?? null : null };
 }
 
 export async function getNewsBySlug(slug: string, userId?: string, trackView = true) {

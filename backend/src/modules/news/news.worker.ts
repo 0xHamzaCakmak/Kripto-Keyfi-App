@@ -2,6 +2,7 @@ import { NewsPublicationStatus } from '@prisma/client';
 import type { NewsIntegrationType, Prisma, NewsSource } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
+import { uploadImage } from '../../storage/r2-image.js';
 import { logger } from '../../utils/logger.js';
 import { applyExternalRetention, titleFingerprint } from './news.service.js';
 import { ApiNewsProvider } from './sources/api-news-provider.js';
@@ -18,17 +19,22 @@ function retryDelay(failures: number) { return Math.min(24 * 60, 5 * 2 ** Math.m
 
 async function ingest(source: NewsSource, item: NormalizedNewsItem) {
   const fingerprint = titleFingerprint(item.title);
-  const duplicate = await prisma.newsArticle.findFirst({ where: { OR: [ ...(item.providerNewsId ? [{ AND: [{ sourceId: source.id }, { providerNewsId: item.providerNewsId }] }] : []), { originalUrl: item.originalUrl }, { titleFingerprint: fingerprint, sourceId: source.id } ] }, select: { id: true, coverImageUrl: true } });
-  if (duplicate) {
-    if (!duplicate.coverImageUrl && source.imageUseAllowed && item.coverImageUrl) await prisma.newsArticle.update({ where: { id: duplicate.id }, data: { coverImageUrl: item.coverImageUrl, ...(item.coverImageAlt ? { coverImageAlt: item.coverImageAlt } : {}) } });
-    return;
-  }
+  const duplicate = await prisma.newsArticle.findFirst({ where: { OR: [ ...(item.providerNewsId ? [{ AND: [{ sourceId: source.id }, { providerNewsId: item.providerNewsId }] }] : []), { originalUrl: item.originalUrl }, { titleFingerprint: fingerprint, sourceId: source.id } ] }, select: { id: true } });
+  if (duplicate) return;
   const slug = await uniqueSlug(item.title);
+  let coverImageUrl: string | undefined;
+  if (source.imageUseAllowed && item.coverImageUrl) {
+    try {
+      coverImageUrl = await uploadImage(item.coverImageUrl, `haberler/${slug}.webp`);
+    } catch (error) {
+      logger.warn({ source: source.slug, articleSlug: slug, err: error }, 'news cover image could not be copied to R2');
+    }
+  }
   // Every external article enters the editorial pipeline first. Localization quality
   // and the source review threshold decide whether it can be auto-published.
   const data: Prisma.NewsArticleCreateInput = { source: { connect: { id: source.id } }, slug, originalUrl: item.originalUrl, title: item.title.slice(0, 500), language: item.language ?? source.language, publishedAt: item.publishedAt, status: NewsPublicationStatus.PENDING, titleFingerprint: fingerprint };
   const category = item.category ?? source.category;
-  if (item.providerNewsId) data.providerNewsId = item.providerNewsId; if (item.canonicalUrl) data.canonicalUrl = item.canonicalUrl; if (source.excerptAllowed && item.excerpt) data.excerpt = item.excerpt.slice(0, 1_500); if (source.imageUseAllowed && item.coverImageUrl) data.coverImageUrl = item.coverImageUrl; if (source.imageUseAllowed && item.coverImageAlt) data.coverImageAlt = item.coverImageAlt; if (category) data.category = category; if (item.authorName) data.authorName = item.authorName; if (item.sourceUpdatedAt) data.sourceUpdatedAt = item.sourceUpdatedAt; const cluster = item.storyKey ?? storyClusterKey(item.title); if (cluster) data.storyKey = cluster; if (item.tags?.length) data.tags = { create: item.tags.slice(0, 8).map((name) => ({ tag: { connectOrCreate: { where: { slug: slugify(name) }, create: { name: name.slice(0, 100), slug: slugify(name) } } } })) }; if (item.coins?.length) data.coins = { create: item.coins.slice(0, 12).map((coin) => coin.name ? ({ symbol: coin.symbol.toUpperCase().slice(0, 30), name: coin.name.slice(0, 100) }) : ({ symbol: coin.symbol.toUpperCase().slice(0, 30) })) }; await prisma.newsArticle.create({ data });
+  if (item.providerNewsId) data.providerNewsId = item.providerNewsId; if (item.canonicalUrl) data.canonicalUrl = item.canonicalUrl; if (source.excerptAllowed && item.excerpt) data.excerpt = item.excerpt.slice(0, 1_500); if (coverImageUrl) data.coverImageUrl = coverImageUrl; if (source.imageUseAllowed && item.coverImageAlt) data.coverImageAlt = item.coverImageAlt; if (category) data.category = category; if (item.authorName) data.authorName = item.authorName; if (item.sourceUpdatedAt) data.sourceUpdatedAt = item.sourceUpdatedAt; const cluster = item.storyKey ?? storyClusterKey(item.title); if (cluster) data.storyKey = cluster; if (item.tags?.length) data.tags = { create: item.tags.slice(0, 8).map((name) => ({ tag: { connectOrCreate: { where: { slug: slugify(name) }, create: { name: name.slice(0, 100), slug: slugify(name) } } } })) }; if (item.coins?.length) data.coins = { create: item.coins.slice(0, 12).map((coin) => coin.name ? ({ symbol: coin.symbol.toUpperCase().slice(0, 30), name: coin.name.slice(0, 100) }) : ({ symbol: coin.symbol.toUpperCase().slice(0, 30) })) }; await prisma.newsArticle.create({ data });
 }
 
 async function syncSource(source: NewsSource) {

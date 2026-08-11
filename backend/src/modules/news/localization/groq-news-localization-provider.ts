@@ -5,7 +5,7 @@ import type {
   NewsLocalizationProvider,
 } from './news-localization-provider.js';
 
-const responseSchema = z.object({
+export const newsLocalizationResponseSchema = z.object({
   title_tr: z.string().trim().min(5).max(500),
   summary_tr: z.string().trim().min(20).max(2_000),
   why_it_matters: z.string().trim().min(40).max(1_500),
@@ -23,7 +23,7 @@ const groqEnvelopeSchema = z.object({
   })).min(1),
 });
 
-const SYSTEM_PROMPT = `Sen profesyonel bir Web3, kripto para ve blokzincir editörüsün.
+export const NEWS_LOCALIZATION_SYSTEM_PROMPT = `Sen profesyonel bir Web3, kripto para ve blokzincir editörüsün.
 Sana yalnızca kaynağın yayımlanmasına izin verdiği haber başlığı ve kısa açıklama verilecek.
 Bu sınırlı bilgiyi doğal, doğru ve profesyonel Türkçe ile aktar.
 
@@ -45,6 +45,40 @@ Kurallar:
 - Çeviri kokan, kaynakta olmayan veya "bu makalede" gibi ifadeler kullanma.
 - Yalnızca şu anahtarları içeren JSON nesnesini döndür: {"title_tr":"...","summary_tr":"...","why_it_matters":"...","market_impact":"...","watch_outs":"...","confidence":0.0,"needs_review":true,"tags":[],"related_coins":[]}.
 - Anahtar adlarını değiştirme; markdown veya açıklama ekleme.`;
+
+export function newsLocalizationUserPrompt(input: NewsLocalizationInput) {
+  const sanitize = (value: string, maxLength: number) => value
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200D\uFEFF]/g, '')
+    .replace(/(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior)\s+instructions?/gi, '[talimat kaldırıldı]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+  return `<untrusted_news_data>\nKaynak: ${sanitize(input.sourceName, 120)}\nOrijinal dil: ${sanitize(input.language, 12)}\nKategori: ${sanitize(input.category ?? 'Belirtilmedi', 80)}\nYayın tarihi: ${input.publishedAt.toISOString()}\nMevcut etiketler: ${input.existingTags.map((tag) => sanitize(tag, 60)).join(', ')}\nBaşlık: ${sanitize(input.title, 500)}\nİzin verilen kısa açıklama: ${sanitize(input.excerpt ?? 'Kısa açıklama sağlanmadı.', 1_500)}\n</untrusted_news_data>`;
+}
+
+export function normalizeNewsLocalizationOutput(
+  localized: z.infer<typeof newsLocalizationResponseSchema>,
+  input: NewsLocalizationInput,
+  provider: string,
+  model: string,
+): NewsLocalizationOutput {
+  const sourceWordCount = (input.excerpt ?? '').trim().split(/\s+/).filter(Boolean).length;
+  const limitedInput = sourceWordCount < 40;
+  return {
+    titleTr: localized.title_tr,
+    summaryTr: localized.summary_tr,
+    whyItMatters: localized.why_it_matters,
+    marketImpact: localized.market_impact,
+    watchOuts: localized.watch_outs,
+    confidence: limitedInput ? Math.min(localized.confidence, 0.65) : localized.confidence,
+    needsReview: limitedInput || localized.needs_review,
+    tags: [...new Set(localized.tags.map((tag) => tag.slice(0, 60)).filter(Boolean))].slice(0, 8),
+    relatedCoins: [...new Set(localized.related_coins.map((coin) => coin.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20)).filter(Boolean))].slice(0, 8),
+    provider,
+    model,
+  };
+}
 
 type GroqProviderConfig = {
   apiKey: string;
@@ -88,13 +122,6 @@ export class GroqNewsLocalizationProvider implements NewsLocalizationProvider {
   }
 
   private async requestModel(model: string, input: NewsLocalizationInput): Promise<NewsLocalizationOutput> {
-    const sanitize = (value: string, maxLength: number) => value
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200D\uFEFF]/g, '')
-      .replace(/(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior)\s+instructions?/gi, '[talimat kaldırıldı]')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, maxLength);
     const response = await this.fetcher(`${this.config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -110,11 +137,8 @@ export class GroqNewsLocalizationProvider implements NewsLocalizationProvider {
             : { temperature: 0.3 }),
         max_completion_tokens: 1_600,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          {
-            role: 'user',
-            content: `<untrusted_news_data>\nKaynak: ${sanitize(input.sourceName, 120)}\nOrijinal dil: ${sanitize(input.language, 12)}\nKategori: ${sanitize(input.category ?? 'Belirtilmedi', 80)}\nYayın tarihi: ${input.publishedAt.toISOString()}\nMevcut etiketler: ${input.existingTags.map((tag) => sanitize(tag, 60)).join(', ')}\nBaşlık: ${sanitize(input.title, 500)}\nİzin verilen kısa açıklama: ${sanitize(input.excerpt ?? 'Kısa açıklama sağlanmadı.', 1_500)}\n</untrusted_news_data>`,
-          },
+          { role: 'system', content: NEWS_LOCALIZATION_SYSTEM_PROMPT },
+          { role: 'user', content: newsLocalizationUserPrompt(input) },
         ],
         response_format: responseFormatFor(model),
       }),
@@ -131,22 +155,8 @@ export class GroqNewsLocalizationProvider implements NewsLocalizationProvider {
       );
     }
     const envelope = groqEnvelopeSchema.parse(payload);
-    const localized = responseSchema.parse(JSON.parse(envelope.choices[0]!.message.content));
-    const sourceWordCount = (input.excerpt ?? '').trim().split(/\s+/).filter(Boolean).length;
-    const limitedInput = sourceWordCount < 40;
-    return {
-      titleTr: localized.title_tr,
-      summaryTr: localized.summary_tr,
-      whyItMatters: localized.why_it_matters,
-      marketImpact: localized.market_impact,
-      watchOuts: localized.watch_outs,
-      confidence: limitedInput ? Math.min(localized.confidence, 0.65) : localized.confidence,
-      needsReview: limitedInput || localized.needs_review,
-      tags: [...new Set(localized.tags.map((tag) => tag.slice(0, 60)).filter(Boolean))].slice(0, 8),
-      relatedCoins: [...new Set(localized.related_coins.map((coin) => coin.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20)).filter(Boolean))].slice(0, 8),
-      provider: this.name,
-      model,
-    };
+    const localized = newsLocalizationResponseSchema.parse(JSON.parse(envelope.choices[0]!.message.content));
+    return normalizeNewsLocalizationOutput(localized, input, this.name, model);
   }
 
   private async callModel(model: string, input: NewsLocalizationInput): Promise<NewsLocalizationOutput> {

@@ -1,6 +1,7 @@
 import { NewsIntegrationType } from '@prisma/client';
 import { prisma } from '../src/database/prisma.js';
 import { RssNewsProvider } from '../src/modules/news/sources/rss-news-provider.js';
+import { uploadImage } from '../src/storage/r2-image.js';
 
 const provider = new RssNewsProvider();
 const sources = await prisma.newsSource.findMany({
@@ -26,10 +27,11 @@ for (const source of sources) {
             ...(item.providerNewsId ? [{ providerNewsId: item.providerNewsId }] : []),
           ],
         },
-        select: { id: true },
+        select: { id: true, slug: true },
       });
       if (!article) continue;
-      await prisma.newsArticle.update({ where: { id: article.id }, data: { coverImageUrl: item.coverImageUrl, coverImageAlt: item.coverImageAlt ?? item.title.slice(0, 500) } });
+      const coverImageUrl = await uploadImage(item.coverImageUrl, `haberler/${article.slug}.webp`);
+      await prisma.newsArticle.update({ where: { id: article.id }, data: { coverImageUrl, coverImageAlt: item.coverImageAlt ?? item.title.slice(0, 500) } });
       updated += 1;
     }
   } catch (error) {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Bookmark, Eye, Mail, Search, Share2 } from 'lucide-react';
 import type { NewsArticle } from '../types';
@@ -43,19 +43,51 @@ function Hero({ article }: { article: NewsArticle }) {
 export default function Insights() {
   const { category: categorySlug, tag: tagSlug, topic: topicSlug } = useParams();
   const [news, setNews] = useState<NewsArticle[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
+  const filterKey = JSON.stringify([categorySlug, tagSlug, topicSlug, query.trim()]);
+  const filterKeyRef = useRef(filterKey);
+  filterKeyRef.current = filterKey;
 
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setNextCursor(null);
     getNews({ q: query.trim().length > 1 ? query.trim() : undefined, category: categorySlug, tag: tagSlug, topic: topicSlug })
-      .then((result) => { if (active) { setNews(result.articles); setError(''); } })
+      .then((result) => { if (active) { setNews(result.articles); setNextCursor(result.nextCursor); setError(''); } })
       .catch(() => active && setError('Haber akışı şu anda alınamadı.'))
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [categorySlug, query, tagSlug, topicSlug]);
+
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return;
+    const requestedFilterKey = filterKeyRef.current;
+    setLoadingMore(true);
+    try {
+      const result = await getNews({
+        q: query.trim().length > 1 ? query.trim() : undefined,
+        category: categorySlug,
+        tag: tagSlug,
+        topic: topicSlug,
+        cursor: nextCursor,
+      });
+      if (filterKeyRef.current !== requestedFilterKey) return;
+      setNews((current) => {
+        const existingIds = new Set(current.map((article) => article.id));
+        return [...current, ...result.articles.filter((article) => !existingIds.has(article.id))];
+      });
+      setNextCursor(result.nextCursor);
+      setError('');
+    } catch {
+      setError('Daha fazla haber şu anda alınamadı.');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   const tagCounts = useMemo(() => {
     const values = new Map<string, { name: string; slug: string; count: number }>();
@@ -77,7 +109,7 @@ export default function Insights() {
   {topicHubs.length > 0 && <nav aria-label="Yoğun konu merkezleri" className="flex flex-wrap items-center gap-2"><span className="mr-1 text-[10px] font-black uppercase tracking-wider text-on-surface-variant">Konu merkezleri</span>{topicHubs.map((tag) => <Link key={tag.slug} to={`/haberler/konu/${tag.slug}`} className="rounded-lg border border-outline/10 bg-surface px-3 py-2 text-xs font-bold text-primary">{tag.name} <span className="text-on-surface-variant">({tag.count})</span></Link>)}</nav>}
   {breaking.length > 0 && <div className="flex overflow-hidden rounded-xl border border-error/25 bg-error/10"><span className="shrink-0 bg-error px-4 py-3 text-xs font-black uppercase text-background">Son Dakika</span><div className="animate-marquee flex items-center gap-10 whitespace-nowrap px-5 text-sm font-bold text-white">{[...breaking,...breaking].map((item,index) => <Link key={`${item.id}-${index}`} to={articlePath(item)}>{item.title}</Link>)}</div></div>}
   {error && <div className="rounded-2xl border border-error/30 bg-error/10 p-4 text-on-surface">{error}</div>}
-  {loading ? <div className="h-[430px] animate-pulse rounded-[28px] bg-surface-high"/> : hero ? <><section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]"><Hero article={hero}/><aside className="rounded-[28px] border border-outline/10 bg-[#11110f] p-5"><h2 className="font-headline text-2xl font-extrabold text-white">Editörün Seçtikleri</h2><div className="mt-5 space-y-4">{editorPicks.map((item) => <Link key={item.id} to={articlePath(item)} className="group flex gap-3 rounded-2xl bg-[#171614] p-3 hover:bg-surface-high"><NewsImage article={item} className="h-20 w-24 shrink-0 rounded-xl"/><div><p className="text-[10px] font-black uppercase tracking-wider text-secondary">{item.source?.name}</p><h3 className="mt-1 line-clamp-2 text-sm font-extrabold text-white">{item.title}</h3><p className="mt-2 text-xs text-[#8e98b4]">{item.readingTimeMinutes} dk</p></div></Link>)}</div></aside></section><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]"><main><h2 className="mb-5 font-headline text-3xl font-extrabold text-white">Son Haberler</h2><div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">{grid.map((article) => <NewsCard key={article.id} article={article}/>)}</div></main><aside className="space-y-6"><section className="rounded-[28px] border border-outline/10 bg-[#11110f] p-6"><h2 className="font-headline text-2xl font-extrabold text-white">En Çok Okunan Haberler</h2><div className="mt-5 space-y-3">{popular.map((item,index) => <Link key={item.id} to={articlePath(item)} className="flex gap-3 rounded-2xl bg-[#171614] p-4"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 font-black text-primary">{index+1}</span><div><p className="text-sm font-bold text-white">{item.title}</p><p className="mt-1 text-xs text-[#8e98b4]">{item.viewCount} okuma</p></div></Link>)}</div></section><section className="rounded-[28px] border border-outline/10 bg-[#11110f] p-6"><h2 className="font-headline text-2xl font-extrabold text-white">Popüler Etiketler</h2><div className="mt-5 flex flex-wrap gap-2">{popularTags.map((tag) => <Link key={tag.slug} to={`/haberler/etiket/${tag.slug}`} className="rounded-lg bg-[#1a1917] px-3 py-2 text-xs font-bold text-primary">#{tag.name}</Link>)}</div></section><section className="rounded-[28px] border border-primary/20 bg-primary/5 p-6"><Mail className="text-primary"/><h2 className="mt-5 font-headline text-2xl font-extrabold text-white">Haftalık Kripto Özeti</h2><p className="mt-3 text-sm leading-6 text-[#9ca7c3]">Haftanın önemli kripto haberlerini ve güvenlik uyarılarını e-posta kutuna al.</p><input placeholder="E-posta adresi" className="mt-5 w-full rounded-xl bg-[#1a1917] px-4 py-3 text-sm text-white"/><button className="mt-3 w-full rounded-xl bg-primary px-4 py-3 text-sm font-black text-background">Abone Ol</button></section></aside></div></> : <div className="rounded-3xl bg-surface p-10 text-center text-on-surface-variant">Bu sayfada yayımlanmış yeterli haber bulunamadı.</div>}</div>;
+  {loading ? <div className="h-[430px] animate-pulse rounded-[28px] bg-surface-high"/> : hero ? <><section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]"><Hero article={hero}/><aside className="rounded-[28px] border border-outline/10 bg-[#11110f] p-5"><h2 className="font-headline text-2xl font-extrabold text-white">Editörün Seçtikleri</h2><div className="mt-5 space-y-4">{editorPicks.map((item) => <Link key={item.id} to={articlePath(item)} className="group flex gap-3 rounded-2xl bg-[#171614] p-3 hover:bg-surface-high"><NewsImage article={item} className="h-20 w-24 shrink-0 rounded-xl"/><div><p className="text-[10px] font-black uppercase tracking-wider text-secondary">{item.source?.name}</p><h3 className="mt-1 line-clamp-2 text-sm font-extrabold text-white">{item.title}</h3><p className="mt-2 text-xs text-[#8e98b4]">{item.readingTimeMinutes} dk</p></div></Link>)}</div></aside></section><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]"><main><h2 className="mb-5 font-headline text-3xl font-extrabold text-white">Son Haberler</h2><div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">{grid.map((article) => <NewsCard key={article.id} article={article}/>)}</div>{nextCursor && <button type="button" disabled={loadingMore} onClick={() => void loadMore()} className="mt-8 w-full rounded-2xl border border-primary/30 bg-primary/10 px-6 py-4 text-sm font-black text-primary transition hover:bg-primary/20 disabled:cursor-wait disabled:opacity-60">{loadingMore ? 'Haberler yükleniyor…' : 'Daha fazla haber yükle'}</button>}</main><aside className="space-y-6"><section className="rounded-[28px] border border-outline/10 bg-[#11110f] p-6"><h2 className="font-headline text-2xl font-extrabold text-white">En Çok Okunan Haberler</h2><div className="mt-5 space-y-3">{popular.map((item,index) => <Link key={item.id} to={articlePath(item)} className="flex gap-3 rounded-2xl bg-[#171614] p-4"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 font-black text-primary">{index+1}</span><div><p className="text-sm font-bold text-white">{item.title}</p><p className="mt-1 text-xs text-[#8e98b4]">{item.viewCount} okuma</p></div></Link>)}</div></section><section className="rounded-[28px] border border-outline/10 bg-[#11110f] p-6"><h2 className="font-headline text-2xl font-extrabold text-white">Popüler Etiketler</h2><div className="mt-5 flex flex-wrap gap-2">{popularTags.map((tag) => <Link key={tag.slug} to={`/haberler/etiket/${tag.slug}`} className="rounded-lg bg-[#1a1917] px-3 py-2 text-xs font-bold text-primary">#{tag.name}</Link>)}</div></section><section className="rounded-[28px] border border-primary/20 bg-primary/5 p-6"><Mail className="text-primary"/><h2 className="mt-5 font-headline text-2xl font-extrabold text-white">Haftalık Kripto Özeti</h2><p className="mt-3 text-sm leading-6 text-[#9ca7c3]">Haftanın önemli kripto haberlerini ve güvenlik uyarılarını e-posta kutuna al.</p><input placeholder="E-posta adresi" className="mt-5 w-full rounded-xl bg-[#1a1917] px-4 py-3 text-sm text-white"/><button className="mt-3 w-full rounded-xl bg-primary px-4 py-3 text-sm font-black text-background">Abone Ol</button></section></aside></div></> : <div className="rounded-3xl bg-surface p-10 text-center text-on-surface-variant">Bu sayfada yayımlanmış yeterli haber bulunamadı.</div>}</div>;
 }
 
 export function SavedNewsPage() {

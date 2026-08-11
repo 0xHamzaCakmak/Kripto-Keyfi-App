@@ -49,6 +49,25 @@ VITE_API_URL=http://localhost:4000/api
 
 Backend `.env` içinde `FRONTEND_URL=http://localhost:3000` olmalıdır. Frontend'in kesin development portu mevcut npm scriptine göre 3000, backend portu örnekte 4000'dir. CORS sadece `FRONTEND_URL` origin'ine ve credential'lı isteklere izin verir.
 
+## Cloudflare R2 görsel depolama
+
+Backend ortamında `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` ve bucket/custom domain'in public taban adresi olan `R2_PUBLIC_URL` birlikte tanımlanmalıdır. Production ortamında bu değerler zorunludur. Frontend build ortamında aynı public adresi `VITE_R2_PUBLIC_URL` olarak verin.
+
+Yeni haber görselleri bellekte WebP kalite 88'e dönüştürülür ve `haberler/{slug}.webp` anahtarıyla R2'ye yüklenir. Kaynak indirme limiti 10 MB'dir ve yalnızca JPEG, PNG ve WebP kabul edilir; sunucunun yerel dosya sistemine görsel yazılmaz.
+
+Eski haberleri önce salt-okunur modda listeleyin, çıktıyı kontrol ettikten sonra açık execute bayrağıyla taşıyın:
+
+```bash
+npm run news:migrate-images-r2 -- --dry-run
+npm run news:migrate-images-r2 -- --execute
+```
+
+Migration'ı en yeni uygun haberlerle sınırlamak için `--limit=N` kullanın. Örneğin `--limit=20`, `publishedAt` alanına göre en yeni 20 kaydı seçer.
+
+## Haber AI sağlayıcı yedekleme
+
+`NEWS_AI_PROVIDER=multi` ve `NEWS_AI_PROVIDER_ORDER=groq,deepseek` ile haber yerelleştirme sıralı sağlayıcı yedeklemesi kullanır. Groq kota veya servis hatası verirse DeepSeek denenir. `DEEPSEEK_API_KEY` boş bırakılırsa bu sağlayıcı otomatik atlanır; model ve API taban adresleri `.env` üzerinden değiştirilebilir.
+
 ## Komutlar
 
 ```bash
@@ -95,4 +114,3 @@ Test kapsamı seed idempotency, başarılı/başarısız login, pasif kullanıc�
 - İlk admin şifresini dağıtım sonrasında değiştirin; `.env` ve secret'ları loglamayın.
 - Reverse proxy üzerinde ek request-size, timeout ve rate-limit politikaları değerlendirin.
 - Migration'ı `npx prisma migrate deploy` ile çalıştırın; seed'i yalnızca kontrollü ilk kurulumda çalıştırın.
-

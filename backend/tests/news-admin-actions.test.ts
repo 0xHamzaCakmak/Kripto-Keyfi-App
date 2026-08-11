@@ -24,7 +24,7 @@ vi.mock('../src/database/prisma.js', () => ({ prisma: prismaMock }));
 vi.mock('../src/modules/news/news-localization.service.js', () => ({ localizeNewsArticle: vi.fn(), cleanFeedText: (value: string | null) => value }));
 vi.mock('../src/modules/news/localization/news-localization-provider.factory.js', () => ({ createNewsLocalizationProvider: () => ({ configured: true, localize: providerLocalize }) }));
 
-const { createArticleAiDraft, listAdminArticles, updateArticleStatus } = await import('../src/modules/news/news.service.js');
+const { createArticleAiDraft, listAdminArticles, listNews, updateArticleStatus } = await import('../src/modules/news/news.service.js');
 
 function articleFixture() {
   return {
@@ -128,5 +128,20 @@ describe('admin news editorial actions', () => {
     expect(draft.titleTr).toBe('Düzeltilmiş Türkçe başlık');
     expect(transaction.newsArticle.update).not.toHaveBeenCalled();
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('public news pagination', () => {
+  it('uses the last returned article as the next cursor without skipping a record', async () => {
+    const first = { ...articleFixture(), id: 'article-1', slug: 'article-1' };
+    const second = { ...articleFixture(), id: 'article-2', slug: 'article-2' };
+    const lookahead = { ...articleFixture(), id: 'article-3', slug: 'article-3' };
+    prismaMock.newsArticle.findMany.mockResolvedValueOnce([first, second, lookahead]);
+
+    const result = await listNews({ limit: 2 });
+
+    expect(result.articles.map((article) => article.id)).toEqual(['article-1', 'article-2']);
+    expect(result.nextCursor).toBe('article-2');
+    expect(prismaMock.newsArticle.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 3 }));
   });
 });

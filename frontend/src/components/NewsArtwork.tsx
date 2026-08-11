@@ -4,7 +4,11 @@ import { cn } from '../lib/utils';
 
 const defaultImageHosts = ['cdn.sanity.io', 'coin-turk.com', 'www.coin-turk.com', 'www.coindesk.com', 'assets.coindesk.com', 'www.btchaber.com', 'btchaber.com'];
 const configuredImageHosts = (import.meta.env.VITE_NEWS_IMAGE_HOSTS ?? '').split(',').map((host) => host.trim().toLocaleLowerCase()).filter(Boolean);
-const allowedImageHosts = new Set([...defaultImageHosts, ...configuredImageHosts]);
+function configuredR2ImageHost() {
+  try { return new URL(import.meta.env.VITE_R2_PUBLIC_URL ?? '').hostname.toLocaleLowerCase(); }
+  catch { return ''; }
+}
+const allowedImageHosts = new Set([...defaultImageHosts, ...configuredImageHosts, configuredR2ImageHost()].filter(Boolean));
 function safeImageUrl(value: string | null) {
   if (!value) return null;
   if (value.startsWith('/')) return value;

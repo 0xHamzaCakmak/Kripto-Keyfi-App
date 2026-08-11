@@ -6,7 +6,7 @@ export type NewsList = { articles: NewsArticle[]; nextCursor: string | null };
 export type NewsDetail = { article: NewsArticle; related: NewsArticle[]; popular: NewsArticle[]; saved: boolean };
 export const NEWS_CATEGORIES = ['Tümü', 'Bitcoin', 'Ethereum', 'Altcoin', 'DeFi', 'Web3', 'Regülasyon', 'Güvenlik', 'Analiz'];
 
-export async function getNews(params: { q?: string; category?: string; tag?: string; topic?: string } = {}) {
+export async function getNews(params: { q?: string; category?: string; tag?: string; topic?: string; cursor?: string } = {}) {
   const response = await api.get<ApiResponse<NewsList>>('/news', { params: { ...params, limit: 18, category: params.category === 'Tümü' ? undefined : params.category } });
   return response.data.data;
 }
