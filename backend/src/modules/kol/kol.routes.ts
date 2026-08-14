@@ -1,0 +1,43 @@
+import { UserRole } from '@prisma/client';
+import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { authenticate } from '../../middleware/authenticate.js';
+import { authorize } from '../../middleware/authorize.js';
+import { validateRequest } from '../../middleware/validate-request.js';
+import { asyncHandler } from '../../utils/async-handler.js';
+import * as controller from './kol.controller.js';
+import { adminKOLSchema, adminKOLUpdateSchema, assignKOLSchema, audienceMetricSchema, campaignEventSchema, campaignStatusSchema, companySchema, createCampaignSchema, idParamsSchema, kolListQuerySchema, predictionEvaluationSchema, predictionIdParamsSchema, predictionSchema, riskEventSchema, scoreInputSchema, slugParamsSchema, socialAccountSchema } from './kol.schema.js';
+
+export const kolRouter = Router();
+kolRouter.get('/', validateRequest({ query: kolListQuerySchema }), asyncHandler(controller.list));
+kolRouter.post('/events', rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: 'draft-8', legacyHeaders: false }), validateRequest({ body: campaignEventSchema }), asyncHandler(controller.event));
+kolRouter.get('/me/dashboard', authenticate, asyncHandler(controller.kolDashboard));
+kolRouter.get('/companies', authenticate, asyncHandler(controller.companies));
+kolRouter.post('/companies', authenticate, validateRequest({ body: companySchema }), asyncHandler(controller.createCompany));
+kolRouter.get('/campaigns', authenticate, asyncHandler(controller.campaigns));
+kolRouter.post('/campaigns', authenticate, validateRequest({ body: createCampaignSchema }), asyncHandler(controller.createCampaign));
+kolRouter.get('/campaigns/:id', authenticate, validateRequest({ params: idParamsSchema }), asyncHandler(controller.campaignDetail));
+kolRouter.patch('/campaigns/:id/status', authenticate, validateRequest({ params: idParamsSchema, body: campaignStatusSchema }), asyncHandler(controller.campaignStatus));
+kolRouter.get('/campaigns/:id/matches', authenticate, validateRequest({ params: idParamsSchema }), asyncHandler(controller.campaignMatches));
+kolRouter.post('/campaigns/:id/influencers', authenticate, validateRequest({ params: idParamsSchema, body: assignKOLSchema }), asyncHandler(controller.assignKOL));
+kolRouter.get('/campaigns/:id/analytics', authenticate, validateRequest({ params: idParamsSchema }), asyncHandler(controller.analytics));
+kolRouter.get('/:slug', validateRequest({ params: slugParamsSchema }), asyncHandler(controller.detail));
+
+export const adminKOLRouter = Router();
+adminKOLRouter.use(authenticate, authorize(UserRole.ADMIN));
+adminKOLRouter.get('/', asyncHandler(controller.adminList));
+adminKOLRouter.get('/data-sources', asyncHandler(controller.adminDataSources));
+adminKOLRouter.post('/', validateRequest({ body: adminKOLSchema }), asyncHandler(controller.adminCreate));
+adminKOLRouter.get('/campaigns', asyncHandler(controller.adminCampaigns));
+adminKOLRouter.patch('/campaigns/:id/status', validateRequest({ params: idParamsSchema, body: campaignStatusSchema }), asyncHandler(controller.adminCampaignStatus));
+adminKOLRouter.patch('/:id', validateRequest({ params: idParamsSchema, body: adminKOLUpdateSchema }), asyncHandler(controller.adminUpdate));
+adminKOLRouter.post('/:id/social-accounts', validateRequest({ params: idParamsSchema, body: socialAccountSchema }), asyncHandler(controller.adminSocial));
+adminKOLRouter.post('/:id/scores', validateRequest({ params: idParamsSchema, body: scoreInputSchema }), asyncHandler(controller.adminScore));
+adminKOLRouter.post('/:id/recalculate', validateRequest({ params: idParamsSchema }), asyncHandler(controller.adminRecalculate));
+adminKOLRouter.post('/:id/predictions', validateRequest({ params: idParamsSchema, body: predictionSchema }), asyncHandler(controller.adminPrediction));
+adminKOLRouter.patch('/:id/predictions/:predictionId', validateRequest({ params: predictionIdParamsSchema, body: predictionEvaluationSchema }), asyncHandler(controller.adminEvaluate));
+adminKOLRouter.post('/:id/risk-events', validateRequest({ params: idParamsSchema, body: riskEventSchema }), asyncHandler(controller.adminRisk));
+adminKOLRouter.post('/:id/audience-metrics', validateRequest({ params: idParamsSchema, body: audienceMetricSchema }), asyncHandler(controller.adminAudience));
+
+export const kolTrackingRouter = Router();
+kolTrackingRouter.get('/:code', rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: 'draft-8', legacyHeaders: false }), asyncHandler(controller.redirect));

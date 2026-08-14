@@ -4,6 +4,7 @@ import {
   Bot,
   BookOpen,
   Building2,
+  BriefcaseBusiness,
   ChartNoAxesCombined,
   ChevronLeft,
   CircleDollarSign,
@@ -18,6 +19,8 @@ import {
   Radio,
   ShieldAlert,
   SlidersHorizontal,
+  UsersRound,
+  Target,
   X,
 } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -28,6 +31,9 @@ import { logout } from '../services/authService';
 const primaryLinks = [
   { label: 'Genel Bakış', to: '/admin', icon: LayoutDashboard, end: true },
   { label: 'Haber Yönetimi', to: '/admin/news/sources', icon: Radio, end: true },
+  { label: 'KOL Intelligence', to: '/admin/kols', icon: UsersRound, end: true },
+  { label: 'Prediction Review', to: '/admin/kols/predictions', icon: Target, end: true },
+  { label: 'KOL Kampanyaları', to: '/admin/kols/campaigns', icon: BriefcaseBusiness, end: true },
   { label: 'Trading Bot', to: '/admin/trading', icon: Bot, end: true },
   { label: 'Borsa Hesapları', to: '/admin/trading/accounts', icon: Building2 },
 ];

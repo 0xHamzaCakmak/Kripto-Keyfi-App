@@ -42,6 +42,12 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().trim().default(''),
   R2_BUCKET_NAME: z.string().trim().default(''),
   R2_PUBLIC_URL: z.union([z.literal(''), z.string().url()]).default(''),
+  SORSA_API_KEY: z.string().trim().default(''),
+  SORSA_API_BASE_URL: z.string().url().default('https://api.sorsa.io/v3'),
+  OKX_ONCHAIN_API_KEY: z.string().trim().default(''),
+  OKX_ONCHAIN_SECRET_KEY: z.string().trim().default(''),
+  OKX_ONCHAIN_PASSPHRASE: z.string().trim().default(''),
+  OKX_ONCHAIN_API_BASE_URL: z.string().url().default('https://web3.okx.com'),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production' && !value.COOKIE_SECURE) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['COOKIE_SECURE'], message: 'must be true in production' });
@@ -59,6 +65,11 @@ const envSchema = z.object({
   }
   if (value.NODE_ENV === 'production' && configuredR2Values !== r2Values.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['R2_ACCOUNT_ID'], message: 'R2 configuration is required in production' });
+  }
+  const okxValues = [value.OKX_ONCHAIN_API_KEY, value.OKX_ONCHAIN_SECRET_KEY, value.OKX_ONCHAIN_PASSPHRASE];
+  const configuredOkxValues = okxValues.filter(Boolean).length;
+  if (configuredOkxValues > 0 && configuredOkxValues < okxValues.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['OKX_ONCHAIN_API_KEY'], message: 'all OKX OnchainOS credentials must be configured together' });
   }
 });
 

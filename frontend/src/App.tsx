@@ -49,6 +49,16 @@ const TradingProfitLossPage = lazy(() => import('./components/TradingAdminPhases
 const TradingRiskManagementPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingRiskManagementPage })));
 const TradingSystemStatusPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingSystemStatusPage })));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
+const KOLExplorer = lazy(() => import('./components/KOLIntelligence'));
+const KOLProfile = lazy(() => import('./components/KOLIntelligence').then((module) => ({ default: module.KOLProfile })));
+const ScoreMethodology = lazy(() => import('./components/KOLIntelligence').then((module) => ({ default: module.ScoreMethodology })));
+const KOLDataSources = lazy(() => import('./components/KOLDataSources'));
+const CampaignsPage = lazy(() => import('./components/KOLWorkspaces'));
+const CampaignDetailPage = lazy(() => import('./components/CampaignDetailFull'));
+const KOLDashboardPage = lazy(() => import('./components/KOLWorkspaces').then((module) => ({ default: module.KOLDashboardPage })));
+const AdminKOLWorkspace = lazy(() => import('./components/KOLWorkspaces').then((module) => ({ default: module.AdminKOLWorkspace })));
+const AdminPredictionReview = lazy(() => import('./components/AdminPredictionReview'));
+const AdminCampaignManagement = lazy(() => import('./components/AdminCampaignManagement'));
 
 export default function App() {
   return (
@@ -73,6 +83,9 @@ export default function App() {
               <Route path="trading/risk" element={<TradingRiskManagementPage />} />
               <Route path="trading/system" element={<TradingSystemStatusPage />} />
               <Route path="news/sources" element={<AdminNewsSources />} />
+              <Route path="kols" element={<AdminKOLWorkspace />} />
+              <Route path="kols/predictions" element={<AdminPredictionReview />} />
+              <Route path="kols/campaigns" element={<AdminCampaignManagement />} />
             </Route>
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -93,6 +106,13 @@ export default function App() {
             <Route path="/ecosystem/launchpad" element={<Ecosystem />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/profile" element={<ProtectedRoute feature="Profil"><UserProfilePage /></ProtectedRoute>} />
+            <Route path="/kol-intelligence" element={<KOLExplorer />} />
+            <Route path="/kol-intelligence/methodology" element={<ScoreMethodology />} />
+            <Route path="/kol-intelligence/data-sources" element={<KOLDataSources />} />
+            <Route path="/kol/:slug" element={<KOLProfile />} />
+            <Route path="/company/campaigns" element={<ProtectedRoute feature="Kampanyalar"><CampaignsPage /></ProtectedRoute>} />
+            <Route path="/company/campaigns/:id" element={<ProtectedRoute feature="Kampanya detayı"><CampaignDetailPage /></ProtectedRoute>} />
+            <Route path="/kol/dashboard" element={<ProtectedRoute feature="KOL Dashboard"><KOLDashboardPage /></ProtectedRoute>} />
             <Route path="/identity" element={<ProtectedRoute feature="Profil"><UserProfilePage /></ProtectedRoute>} />
             <Route path="/u/:username" element={<PlaceholderDashboard title="Public profil hazırlanıyor" />} />
             <Route path="/creator/apply" element={<ProtectedRoute feature="Creator başvurusu"><PlaceholderDashboard title="Creator başvuru sistemi hazırlanıyor" /></ProtectedRoute>} />

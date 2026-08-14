@@ -14,6 +14,7 @@ import { authRouter } from './modules/auth/auth.routes.js';
 import { adminNewsRouter } from './modules/news/news.admin.routes.js';
 import { newsRouter } from './modules/news/news.routes.js';
 import { userRouter } from './modules/users/user.routes.js';
+import { adminKOLRouter, kolRouter, kolTrackingRouter } from './modules/kol/kol.routes.js';
 
 export function createApp() {
   const app = express();
@@ -41,8 +42,11 @@ export function createApp() {
   app.use(`${API_PREFIX}/auth`, authRouter);
   app.use(`${API_PREFIX}/users`, userRouter);
   app.use(`${API_PREFIX}/news`, newsRouter);
+  app.use(`${API_PREFIX}/kols`, kolRouter);
   app.use(`${API_PREFIX}/admin`, adminRouter);
+  app.use(`${API_PREFIX}/admin/kols`, adminKOLRouter);
   app.use(`${API_PREFIX}/admin/news`, adminNewsRouter);
+  app.use('/r', kolTrackingRouter);
   app.use(notFound);
   app.use(errorHandler);
   return app;

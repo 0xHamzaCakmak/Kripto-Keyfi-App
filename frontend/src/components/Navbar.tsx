@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { logout, MockAuthUser } from '../services/authService';
 import { useAuth } from '../auth/AuthContext';
 import { UserAvatar } from './UserAvatar';
+import { KOLMegaMenu, KOLMobileMenu } from './KOLMegaMenu';
 
 const MOCK_WALLET = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D';
 
@@ -32,7 +33,7 @@ export default function Navbar() {
   useEffect(() => {
     setIsMobileMenuOpen(false);
     setIsAccountOpen(false);
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     document.body.style.overflow = isMobileMenuOpen ? 'hidden' : '';
@@ -49,6 +50,8 @@ export default function Navbar() {
         ? location.pathname.startsWith('/games')
       : path === '/blog'
         ? location.pathname.startsWith('/blog') || location.pathname.startsWith('/insights')
+      : path === '/kol-intelligence'
+        ? location.pathname.startsWith('/kol-intelligence') || location.pathname.startsWith('/kol/')
       : location.pathname === path;
   }
 
@@ -62,11 +65,11 @@ export default function Navbar() {
               aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
               aria-expanded={isMobileMenuOpen}
               onClick={() => setIsMobileMenuOpen((open) => !open)}
-              className="md:hidden w-10 h-10 rounded-2xl border border-outline/10 bg-surface-high text-on-surface inline-flex items-center justify-center hover:bg-surface-highest transition-colors"
+              className="xl:hidden w-10 h-10 rounded-2xl border border-outline/10 bg-surface-high text-on-surface inline-flex items-center justify-center hover:bg-surface-highest transition-colors"
             >
               {isMobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
-            <div className="hidden md:flex items-center gap-8 font-headline font-medium text-sm tracking-tight">
+            <div className="hidden xl:flex items-center gap-5 2xl:gap-8 font-headline font-medium text-sm tracking-tight">
               {navLinks.map((link) => (
                 <Link
                   key={link.name}
@@ -81,6 +84,7 @@ export default function Navbar() {
                   {link.name}
                 </Link>
               ))}
+              <KOLMegaMenu active={isActivePath('/kol-intelligence')} />
             </div>
           </div>
 
@@ -126,7 +130,7 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {isMobileMenuOpen && <div className="md:hidden fixed inset-0 z-40">
+      {isMobileMenuOpen && <div className="xl:hidden fixed inset-0 z-40">
         <button
           type="button"
           aria-label="Close navigation overlay"
@@ -175,6 +179,7 @@ export default function Navbar() {
                 </span>
               </Link>
             ))}
+            <KOLMobileMenu />
           </div>
         </aside>
       </div>}

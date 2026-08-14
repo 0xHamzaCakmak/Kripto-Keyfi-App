@@ -207,6 +207,107 @@ enum NewsRelationType {
   VIDEO
 }
 
+enum KOLPlatform {
+  X
+  YOUTUBE
+  TELEGRAM
+  DISCORD
+  OTHER
+}
+
+enum KOLDataSourceType {
+  VERIFIED_CAMPAIGN
+  PLATFORM_API
+  ADMIN_MANUAL
+  INFLUENCER_REPORTED
+  COMPANY_REPORTED
+  ESTIMATED
+  THIRD_PARTY
+}
+
+enum KOLConfidenceLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum KOLPredictionDirection {
+  BULLISH
+  BEARISH
+  NEUTRAL
+}
+
+enum KOLPredictionResult {
+  PENDING
+  CORRECT
+  PARTIALLY_CORRECT
+  INCORRECT
+  EXPIRED
+  INVALID
+}
+
+enum KOLRiskEventType {
+  SCAM_PROMOTION
+  RUG_PROMOTION
+  MISLEADING_CLAIM
+  UNDISCLOSED_AD
+  DELETED_PROMOTION
+  FAKE_ENGAGEMENT
+  SUSPICIOUS_GROWTH
+  COMMUNITY_COMPLAINT
+  CONFLICT_OF_INTEREST
+  OTHER
+}
+
+enum KOLRiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum KOLVisibility {
+  INTERNAL
+  PUBLIC
+}
+
+enum CompanyMemberRole {
+  OWNER
+  MANAGER
+  ANALYST
+}
+
+enum CampaignStatus {
+  DRAFT
+  PLANNED
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum CampaignInfluencerStatus {
+  INVITED
+  ACCEPTED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum CampaignEventType {
+  IMPRESSION
+  CLICK
+  REGISTRATION
+  EMAIL_VERIFIED
+  KYC
+  DEPOSIT
+  TRADE
+  WALLET_CONNECT
+  PURCHASE
+  SUBSCRIPTION
+  CUSTOM_CONVERSION
+}
+
 model User {
   id                  String               @id @default(cuid())
   email               String               @unique
@@ -241,8 +342,289 @@ model User {
   profileRoles        UserProfileRole[]
   capabilities        UserCapability[]
   savedNews           NewsSavedArticle[]
+  companyMemberships  CompanyMember[]
+  kolProfile          KOL?                 @relation("kol_user")
+  kolAuditLogs        KOLAuditLog[]        @relation("kol_audit_actor")
 
   @@map("users")
+}
+
+model KOL {
+  id                  String               @id @default(cuid())
+  userId              String?              @unique
+  slug                String               @unique @db.VarChar(100)
+  displayName         String               @db.VarChar(160)
+  username            String               @db.VarChar(100)
+  avatarUrl           String?              @db.VarChar(700)
+  country             String               @db.VarChar(80)
+  language            String               @db.VarChar(16)
+  bio                 String?              @db.Text
+  isVerified          Boolean              @default(false)
+  isDemo              Boolean              @default(false)
+  isPublished         Boolean              @default(false)
+  categories          Json
+  useCaseScores       Json?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  user                User?                @relation("kol_user", fields: [userId], references: [id], onDelete: SetNull)
+  socialAccounts      KOLSocialAccount[]
+  scores              KOLScore[]
+  predictions         KOLPrediction[]
+  riskEvents          KOLRiskEvent[]
+  audienceMetrics     KOLAudienceMetric[]
+  campaignInfluencers CampaignInfluencer[]
+
+  @@index([isPublished, isVerified])
+  @@index([country, language])
+  @@map("kols")
+}
+
+model KOLSocialAccount {
+  id               String             @id @default(cuid())
+  kolId            String
+  platform         KOLPlatform
+  handle           String             @db.VarChar(160)
+  profileUrl       String?            @db.VarChar(700)
+  followerCount    BigInt             @default(0)
+  engagementRate   Decimal?           @db.Decimal(8, 4)
+  accountAgeDays   Int?
+  sourceType       KOLDataSourceType
+  verified         Boolean            @default(false)
+  verificationDate DateTime?
+  confidence       KOLConfidenceLevel @default(LOW)
+  sourceReference  String?            @db.VarChar(700)
+  measuredAt       DateTime
+  kol              KOL                @relation(fields: [kolId], references: [id], onDelete: Cascade)
+
+  @@unique([kolId, platform, handle])
+  @@index([platform, followerCount])
+  @@map("kol_social_accounts")
+}
+
+model KOLScore {
+  id                  String             @id @default(cuid())
+  kolId               String
+  overall             Decimal            @db.Decimal(5, 2)
+  trust               Decimal            @db.Decimal(5, 2)
+  audienceQuality     Decimal            @db.Decimal(5, 2)
+  engagementQuality   Decimal            @db.Decimal(5, 2)
+  marketKnowledge     Decimal            @db.Decimal(5, 2)
+  predictionAccuracy  Decimal            @db.Decimal(5, 2)
+  campaignPerformance Decimal            @db.Decimal(5, 2)
+  transparency        Decimal            @db.Decimal(5, 2)
+  risk                Decimal            @db.Decimal(5, 2)
+  confidence          KOLConfidenceLevel
+  sampleSize          Int                @default(0)
+  verifiedDataRatio   Decimal            @db.Decimal(5, 4)
+  methodologyVersion  String             @db.VarChar(40)
+  calculatedAt        DateTime           @default(now())
+  kol                 KOL                @relation(fields: [kolId], references: [id], onDelete: Cascade)
+
+  @@index([kolId, calculatedAt])
+  @@index([overall, confidence])
+  @@map("kol_scores")
+}
+
+model KOLPrediction {
+  id                String                 @id @default(cuid())
+  kolId             String
+  assetSymbol       String                 @db.VarChar(30)
+  platform          KOLPlatform
+  sourceUrl         String                 @db.VarChar(700)
+  sourceContent     String                 @db.Text
+  sourceContentHash String?                @db.VarChar(64)
+  sourceSnapshotRef String?                @db.VarChar(700)
+  publishedAt       DateTime
+  capturedAt        DateTime               @default(now())
+  direction         KOLPredictionDirection
+  referencePrice    Decimal                @db.Decimal(36, 18)
+  targetPrice       Decimal?               @db.Decimal(36, 18)
+  invalidationPrice Decimal?               @db.Decimal(36, 18)
+  timeHorizonDays   Int
+  confidence        Decimal?               @db.Decimal(5, 2)
+  evaluationDate    DateTime?
+  result            KOLPredictionResult    @default(PENDING)
+  evaluationNotes   String?                @db.Text
+  evaluatedByUserId String?
+  kol               KOL                    @relation(fields: [kolId], references: [id], onDelete: Cascade)
+
+  @@index([kolId, publishedAt])
+  @@index([result, evaluationDate])
+  @@map("kol_predictions")
+}
+
+model KOLRiskEvent {
+  id          String           @id @default(cuid())
+  kolId       String
+  type        KOLRiskEventType
+  severity    KOLRiskSeverity
+  title       String           @db.VarChar(220)
+  description String           @db.Text
+  evidenceUrl String?          @db.VarChar(700)
+  verified    Boolean          @default(false)
+  visibility  KOLVisibility    @default(INTERNAL)
+  occurredAt  DateTime
+  adminNotes  String?          @db.Text
+  createdAt   DateTime         @default(now())
+  kol         KOL              @relation(fields: [kolId], references: [id], onDelete: Cascade)
+
+  @@index([kolId, visibility, occurredAt])
+  @@index([type, severity])
+  @@map("kol_risk_events")
+}
+
+model KOLAudienceMetric {
+  id                     String             @id @default(cuid())
+  kolId                  String
+  platform               KOLPlatform
+  totalFollowers         BigInt
+  estimatedRealAudience  BigInt?
+  estimatedBotPercentage Decimal?           @db.Decimal(5, 2)
+  engagementRate         Decimal?           @db.Decimal(8, 4)
+  averageViews           BigInt?
+  averageComments        Int?
+  averageShares          Int?
+  averageLikes           Int?
+  suspiciousGrowth       Boolean            @default(false)
+  distribution           Json?
+  sourceType             KOLDataSourceType
+  verified               Boolean            @default(false)
+  confidence             KOLConfidenceLevel @default(LOW)
+  sourceReference        String?            @db.VarChar(700)
+  measuredAt             DateTime
+  kol                    KOL                @relation(fields: [kolId], references: [id], onDelete: Cascade)
+
+  @@index([kolId, platform, measuredAt])
+  @@map("kol_audience_metrics")
+}
+
+model Company {
+  id        String          @id @default(cuid())
+  name      String          @db.VarChar(180)
+  website   String?         @db.VarChar(500)
+  sector    String?         @db.VarChar(100)
+  country   String          @db.VarChar(80)
+  verified  Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  members   CompanyMember[]
+  campaigns Campaign[]
+
+  @@map("companies")
+}
+
+model CompanyMember {
+  companyId String
+  userId    String
+  role      CompanyMemberRole @default(ANALYST)
+  company   Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([companyId, userId])
+  @@index([userId])
+  @@map("company_members")
+}
+
+model Campaign {
+  id               String                 @id @default(cuid())
+  companyId        String
+  name             String                 @db.VarChar(180)
+  project          String                 @db.VarChar(180)
+  description      String?                @db.Text
+  goal             String                 @db.VarChar(80)
+  budget           Decimal                @db.Decimal(18, 2)
+  currency         String                 @db.VarChar(12)
+  countryTargets   Json
+  languageTargets  Json
+  audienceTargets  Json?
+  categories       Json
+  startDate        DateTime
+  endDate          DateTime
+  status           CampaignStatus         @default(DRAFT)
+  kpi              String                 @db.VarChar(80)
+  conversionTarget Int?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  company          Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  influencers      CampaignInfluencer[]
+  trackingLinks    CampaignTrackingLink[]
+  events           CampaignEvent[]
+
+  @@index([companyId, status])
+  @@map("campaigns")
+}
+
+model CampaignInfluencer {
+  id             String                   @id @default(cuid())
+  campaignId     String
+  kolId          String
+  agreedPrice    Decimal                  @db.Decimal(18, 2)
+  currency       String                   @db.VarChar(12)
+  deliverable    String                   @db.VarChar(120)
+  status         CampaignInfluencerStatus @default(INVITED)
+  startDate      DateTime?
+  completionDate DateTime?
+  notes          String?                  @db.Text
+  campaign       Campaign                 @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  kol            KOL                      @relation(fields: [kolId], references: [id], onDelete: Restrict)
+  trackingLinks  CampaignTrackingLink[]
+
+  @@unique([campaignId, kolId])
+  @@index([kolId, status])
+  @@map("campaign_influencers")
+}
+
+model CampaignTrackingLink {
+  id                   String             @id @default(cuid())
+  campaignId           String
+  campaignInfluencerId String
+  code                 String             @unique @db.VarChar(80)
+  destinationUrl       String             @db.VarChar(900)
+  isActive             Boolean            @default(true)
+  createdAt            DateTime           @default(now())
+  campaign             Campaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignInfluencer   CampaignInfluencer @relation(fields: [campaignInfluencerId], references: [id], onDelete: Cascade)
+  events               CampaignEvent[]
+
+  @@index([campaignId, campaignInfluencerId])
+  @@map("campaign_tracking_links")
+}
+
+model CampaignEvent {
+  id                BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  campaignId        String
+  trackingLinkId    String
+  eventType         CampaignEventType
+  attributionIdHash String?              @db.VarChar(64)
+  idempotencyKey    String               @unique @db.VarChar(191)
+  value             Decimal?             @db.Decimal(18, 2)
+  currency          String?              @db.VarChar(12)
+  source            String               @db.VarChar(80)
+  metadata          Json?
+  occurredAt        DateTime
+  createdAt         DateTime             @default(now())
+  campaign          Campaign             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  trackingLink      CampaignTrackingLink @relation(fields: [trackingLinkId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, eventType, occurredAt])
+  @@index([trackingLinkId, occurredAt])
+  @@map("campaign_events")
+}
+
+model KOLAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String   @db.VarChar(100)
+  entityType String   @db.VarChar(80)
+  entityId   String   @db.VarChar(120)
+  beforeData Json?
+  afterData  Json?
+  createdAt  DateTime @default(now())
+  actor      User     @relation("kol_audit_actor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("kol_audit_logs")
 }
 
 model NewsSource {
