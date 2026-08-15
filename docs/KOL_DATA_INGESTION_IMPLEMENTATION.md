@@ -233,3 +233,55 @@ Pilot tamamlanmış sayılabilmesi için:
 4. Türkiye pilot veri toplaması
 5. Admin inceleme ekranı
 6. Ölçüm kalitesi raporu ve skor pipeline entegrasyonu
+
+## 9. X profil verisi için maliyet ve sağlayıcı alternatifi
+
+Evet, daha ucuz veya sınırlı ücretsiz alternatifler var. Ancak OKX, URL’den istediğiniz herhangi bir X profilini sorgulamıyor.
+
+OKX OnchainOS şunu yapıyor:
+
+```text
+Token sözleşme adresi
+        ↓
+Bu token hakkında konuşan KOL’lar
+        ↓
+Handle, ad, avatar, takipçi, etkileşim,
+mention ve impression verileri
+```
+
+Yani “`x.com/Selcoin` profilini getir” değil, “bu token hakkında konuşan en etkili hesapları getir” sistemidir. Endpoint için `chainIndex` ve `tokenAddress` zorunlu. [OKX Top KOLs belgeleri](https://web3.okx.com/tr/onchainos/dev-docs/market/market-social-vibe-top-kols)
+
+En mantıklı seçenekler:
+
+| Sağlayıcı | Profil başı maliyet | Ücretsiz kullanım | URL/handle sorgusu |
+|---|---:|---|---|
+| Resmî X API | $0.010 | Yok | Evet |
+| TwitterAPI.io | yaklaşık $0.00018 | Başlangıçta $0.10 kredi | Evet |
+| SocialData | yaklaşık $0.00020 | Dakikada 3 ücretsiz istek belirtiliyor | Evet |
+| RapidAPI Twitter API | Sağlayıcıya bağlı | Örnekte ayda 35 istek | Evet |
+| OKX OnchainOS | Plan/kotaya bağlı | Market API’de aylık ücretsiz kota var | Hayır, token bazlı |
+
+Benim önerim TwitterAPI.io olur:
+
+- Resmî X API’den yaklaşık 55 kat daha ucuz.
+- 1.000 profil yaklaşık `$0.18`.
+- Yeni hesaba verilen `$0.10` deneme kredisi yaklaşık 555 profil sorgusuna yeter.
+- Aylık abonelik zorunlu değil.
+- Kullanıcı adıyla profil bilgisi çekebiliyor. [TwitterAPI.io fiyatlandırması](https://twitterapi.io/pricing)
+
+İkinci seçenek SocialData:
+
+- Profil başına yaklaşık `$0.0002`.
+- Belgelerinde dakikada 3 isteğe kadar ücretsiz kullanım belirtiliyor.
+- Ancak hesapta pozitif bakiye şartı da bulunuyor; dolayısıyla tam anlamıyla limitsiz ücretsiz değil. [SocialData fiyatlandırması](https://docs.socialdata.tools/getting-started/pricing/)
+
+En doğru mimari şu olur:
+
+- URL’den profil bulma: TwitterAPI.io
+- TwitterAPI.io çalışmazsa: SocialData
+- Token bazlı yeni KOL keşfi: OKX OnchainOS
+- Resmî X API: opsiyonel premium/yedek sağlayıcı
+
+Böylece resmî X API’deki `$0.01` profil maliyeti yerine yaklaşık `$0.00018` ödersiniz. Yalnız bunlar X’ten bağımsız üçüncü taraf servislerdir; ticari kullanım, veriyi saklama ve gösterme şartlarını ayrıca kabul etmek gerekir.
+
+Mevcut altyapıyı çoklu sağlayıcıya çevirebiliriz: önce TwitterAPI.io, sonra SocialData, sonra resmî X API. OKX’i ise ayrı “Token bazlı KOL keşfet” ekranında kullanmak daha doğru olur.
