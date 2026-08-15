@@ -20,7 +20,7 @@ Bu dosya, haberlerin KriptoKeyfi içinde Türkçe ve editoryal değer taşıyan 
 - [x] Backend ortam değişkenlerini ekle:
   - `NEWS_AI_PROVIDER=groq`
   - `GROQ_API_KEY=`
-  - `GROQ_PRIMARY_MODEL=qwen/qwen3.6-27b`
+  - `GROQ_PRIMARY_MODEL=openai/gpt-oss-20b`
   - `GROQ_FALLBACK_MODEL=openai/gpt-oss-120b`
   - `NEWS_AI_ENABLED=true`
   - `NEWS_AI_MAX_CONCURRENCY=2`
@@ -205,6 +205,7 @@ Bu dosya, haberlerin KriptoKeyfi içinde Türkçe ve editoryal değer taşıyan 
 
 - Groq free tier limitleri organizasyon ve modele göre değişir; kesin güncel değer Groq Console Limits ekranından izlenmelidir: https://console.groq.com/docs/rate-limits
 - `llama-3.3-70b-versatile` free/developer tier kapanış tarihi 16 Ağustos 2026'dır: https://console.groq.com/docs/deprecations
+- **15 Ağustos 2026 geçişi:** Birincil haber yerelleştirme modeli `openai/gpt-oss-20b`, model içi fallback `openai/gpt-oss-120b` olarak güncellendi. GPT-OSS modellerinde Groq strict JSON Schema çıktısı ve düşük reasoning seviyesi kullanılıyor. `qwen/qwen3.6-27b` kapanan model değildir; varsayılan zincir sadeleştirilerek GPT-OSS ailesine taşındı.
 - Groq yapılandırılmış JSON çıktıları: https://console.groq.com/docs/structured-outputs
 - Google, kullanıcıya ek değer katmadan çok sayıda AI sayfası üretmenin scaled content abuse kapsamına girebileceğini belirtir: https://developers.google.com/search/docs/fundamentals/using-gen-ai-content
 

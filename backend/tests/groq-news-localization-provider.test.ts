@@ -35,7 +35,7 @@ function createProvider(fetcher: typeof fetch) {
   return new GroqNewsLocalizationProvider({
     apiKey: 'test-groq-key',
     baseUrl: 'https://api.groq.com/openai/v1',
-    primaryModel: 'qwen/qwen3.6-27b',
+    primaryModel: 'openai/gpt-oss-20b',
     fallbackModel: 'openai/gpt-oss-120b',
     fetcher,
   });
@@ -49,16 +49,21 @@ describe('GroqNewsLocalizationProvider', () => {
     const result = await provider.localize(input);
 
     expect(result.provider).toBe('groq');
-    expect(result.model).toBe('qwen/qwen3.6-27b');
+    expect(result.model).toBe('openai/gpt-oss-20b');
     expect(result.titleTr).toContain('Bitcoin ETF');
     expect(result.whyItMatters).toContain('ETF');
-    expect(result.needsReview).toBe(true);
+    expect(result.needsReview).toBe(false);
     expect(result.confidence).toBeLessThanOrEqual(0.65);
     expect(fetcher).toHaveBeenCalledOnce();
     const [url, init] = fetcher.mock.calls[0]!;
     expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
     expect((init?.headers as Record<string, string>).Authorization).toBe('Bearer test-groq-key');
-    expect(JSON.parse(String(init?.body)).response_format.type).toBe('json_object');
+    const requestBody = JSON.parse(String(init?.body));
+    expect(requestBody.response_format.type).toBe('json_schema');
+    expect(requestBody.response_format.json_schema.strict).toBe(true);
+    expect(requestBody.response_format.json_schema.schema.additionalProperties).toBe(false);
+    expect(requestBody.reasoning_effort).toBe('low');
+    expect(requestBody.include_reasoning).toBe(false);
   });
 
   it('uses the configured fallback model when the primary model is unavailable', async () => {
@@ -73,7 +78,7 @@ describe('GroqNewsLocalizationProvider', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     const fallbackBody = JSON.parse(String(fetcher.mock.calls[1]![1]?.body));
     expect(fallbackBody.model).toBe('openai/gpt-oss-120b');
-    expect(fallbackBody.response_format.type).toBe('json_object');
+    expect(fallbackBody.response_format.type).toBe('json_schema');
   });
 
   it('does not retry with another model when the API key is rejected', async () => {
@@ -93,7 +98,7 @@ describe('GroqNewsLocalizationProvider', () => {
     const provider = new GroqNewsLocalizationProvider({
       apiKey: 'test-groq-key',
       baseUrl: 'https://api.groq.com/openai/v1',
-      primaryModel: 'qwen/qwen3.6-27b',
+      primaryModel: 'openai/gpt-oss-20b',
       fallbackModel: 'openai/gpt-oss-120b',
       fetcher,
       sleep,
@@ -101,7 +106,7 @@ describe('GroqNewsLocalizationProvider', () => {
 
     const result = await provider.localize(input);
 
-    expect(result.model).toBe('qwen/qwen3.6-27b');
+    expect(result.model).toBe('openai/gpt-oss-20b');
     expect(sleep).toHaveBeenCalledWith(1_500);
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
@@ -110,7 +115,7 @@ describe('GroqNewsLocalizationProvider', () => {
     const provider = new GroqNewsLocalizationProvider({
       apiKey: '',
       baseUrl: 'https://api.groq.com/openai/v1',
-      primaryModel: 'qwen/qwen3.6-27b',
+      primaryModel: 'openai/gpt-oss-20b',
       fallbackModel: 'openai/gpt-oss-120b',
     });
 
@@ -126,7 +131,7 @@ describe('GroqNewsLocalizationProvider', () => {
     const provider = new GroqNewsLocalizationProvider({
       apiKey: 'test-groq-key',
       baseUrl: 'https://api.groq.com/openai/v1',
-      primaryModel: 'qwen/qwen3.6-27b',
+      primaryModel: 'openai/gpt-oss-20b',
       fallbackModel: 'openai/gpt-oss-120b',
       timeoutMs: 10,
       fetcher,

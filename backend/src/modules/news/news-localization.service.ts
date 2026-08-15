@@ -6,12 +6,14 @@ import { logger } from '../../utils/logger.js';
 import { createNewsLocalizationProvider } from './localization/news-localization-provider.factory.js';
 import { evaluateNewsLocalization } from './localization/news-localization-quality.js';
 import type { NewsLocalizationInput, NewsLocalizationOutput } from './localization/news-localization-provider.js';
-import { canAutoPublishLocalizedNews } from './news-editorial-policy.js';
+import { canAutoPublishLocalizedNews, isSourceEligibleForAutoPublish } from './news-editorial-policy.js';
 import { markWorkerError } from './news-operations.service.js';
 import { shouldSkipNewsLocalization } from './news-localization-idempotency.js';
 
 const provider = createNewsLocalizationProvider();
 const PROMPT_VERSION = 'news-editorial-v3';
+const localizationRetryDelay = (attempts: number) => Math.min(6 * 60, 2 ** Math.min(Math.max(attempts, 1), 9));
+const nextLocalizationAttempt = (attempts: number) => new Date(Date.now() + localizationRetryDelay(attempts) * 60_000);
 
 const slugify = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('tr-TR').replace(/ı/g, 'i').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 100) || 'haber';
 const repairMojibake = (value: string) => /(?:Ã.|Ä.|Å.|â€)/.test(value) ? Buffer.from(value, 'latin1').toString('utf8') : value;
@@ -64,7 +66,7 @@ export async function localizeNewsArticle(articleId: string, options: { force?: 
   };
   const inputHash = createHash('sha256').update(JSON.stringify({ ...input, publishedAt: input.publishedAt.toISOString(), promptVersion: PROMPT_VERSION })).digest('hex');
   if (shouldSkipNewsLocalization({ force: options.force === true, manualEditedAt: article.manualEditedAt, aiEnabled: article.source?.aiEnabled !== false, existingInputHash: article.aiSummary?.inputHash ?? null, inputHash, titleTr: article.titleTr, summaryTr: article.summaryTr, hasAiSummary: Boolean(article.aiSummary) })) return false;
-  const lock = await prisma.newsArticle.updateMany({ where: { id: article.id, aiStatus: { not: NewsAiStatus.PROCESSING } }, data: { aiStatus: NewsAiStatus.PROCESSING, localizationStartedAt: new Date() } });
+  const lock = await prisma.newsArticle.updateMany({ where: { id: article.id, aiStatus: { not: NewsAiStatus.PROCESSING } }, data: { aiStatus: NewsAiStatus.PROCESSING, localizationStartedAt: new Date(), nextLocalizationAttemptAt: null } });
   if (!lock.count) return false;
 
   try {
@@ -80,14 +82,17 @@ export async function localizeNewsArticle(articleId: string, options: { force?: 
     const quality = evaluateNewsLocalization(input, localized);
     localized = quality.output;
     const localizedAt = new Date();
+    const publishWhileRetrying = env.NEWS_AI_AUTO_PUBLISH_ENABLED && Boolean(article.source && isSourceEligibleForAutoPublish(article.source));
+    const storedTitle = localized.needsReview ? (article.titleTr ?? title) : localized.titleTr;
+    const storedSummary = localized.needsReview ? (article.summaryTr ?? excerpt ?? title) : localized.summaryTr;
 
     await prisma.$transaction(async (transaction) => {
       await transaction.newsArticle.update({
         where: { id: article.id },
-        data: { title, excerpt, titleTr: localized.titleTr.slice(0, 500), summaryTr: localized.summaryTr.slice(0, 2_000), localizedAt, localizationError: null, localizationAttempts: { increment: 1 }, aiStatus: localized.needsReview ? NewsAiStatus.REVIEW_REQUIRED : NewsAiStatus.READY, localizationStartedAt: null, ...(options.force ? { manualEditedAt: null } : {}) },
+        data: { title, excerpt, titleTr: storedTitle.slice(0, 500), summaryTr: storedSummary.slice(0, 2_000), localizedAt, localizationError: null, localizationAttempts: { increment: 1 }, aiStatus: localized.needsReview ? NewsAiStatus.REVIEW_REQUIRED : NewsAiStatus.READY, localizationStartedAt: null, nextLocalizationAttemptAt: localized.needsReview ? nextLocalizationAttempt(article.localizationAttempts + 1) : null, ...(publishWhileRetrying ? { status: NewsPublicationStatus.PUBLISHED } : {}), ...(options.force ? { manualEditedAt: null } : {}) },
       });
 
-      const aiData = { whyItMatters: localized.whyItMatters, marketImpact: localized.marketImpact, watchOuts: localized.watchOuts, confidence: localized.confidence, needsReview: localized.needsReview, wordCount: quality.wordCount, qualityFlags: quality.flags, provider: localized.provider, model: localized.model, promptVersion: PROMPT_VERSION, inputHash, generatedAt: localizedAt };
+      const aiData = { whyItMatters: localized.needsReview ? '' : localized.whyItMatters, marketImpact: localized.needsReview ? '' : localized.marketImpact, watchOuts: localized.needsReview ? '' : localized.watchOuts, confidence: localized.confidence, needsReview: localized.needsReview, wordCount: quality.wordCount, qualityFlags: localized.needsReview ? [...quality.flags, 'SAFE_SOURCE_FALLBACK_PUBLISHED', 'BACKGROUND_RETRY_SCHEDULED'] : quality.flags, provider: localized.provider, model: localized.model, promptVersion: PROMPT_VERSION, inputHash, generatedAt: localizedAt };
       await transaction.newsAiSummary.upsert({ where: { articleId: article.id }, create: { article: { connect: { id: article.id } }, ...aiData }, update: aiData });
 
       if (localized.provider !== 'source') {
@@ -119,28 +124,52 @@ export async function localizeNewsArticle(articleId: string, options: { force?: 
     const stillExists = await prisma.newsArticle.findUnique({ where: { id: article.id }, select: { id: true } });
     if (!stillExists) return false;
     const failed = await prisma.newsArticle.update({ where: { id: article.id }, data: { localizationError: message, localizationAttempts: { increment: 1 }, localizationStartedAt: null }, select: { localizationAttempts: true } });
-    await prisma.newsArticle.update({ where: { id: article.id }, data: { aiStatus: failed.localizationAttempts >= 5 ? NewsAiStatus.FAILED : NewsAiStatus.WAITING } });
-    if (failed.localizationAttempts >= 5) {
-      const fallbackTitle = cleanFeedText(article.title) ?? article.title;
-      const fallbackSummary = cleanFeedText(article.excerpt) ?? fallbackTitle;
-      await prisma.$transaction([
-        prisma.newsArticle.update({ where: { id: article.id }, data: { titleTr: fallbackTitle.slice(0, 500), summaryTr: fallbackSummary.slice(0, 2_000), localizedAt: new Date(), aiStatus: NewsAiStatus.FAILED } }),
-        prisma.newsAiSummary.upsert({ where: { articleId: article.id }, create: { article: { connect: { id: article.id } }, needsReview: true, qualityFlags: ['LOCALIZATION_FAILED', 'SOURCE_EXCERPT_FALLBACK'], provider: provider?.name ?? 'disabled', promptVersion: PROMPT_VERSION }, update: { needsReview: true, qualityFlags: ['LOCALIZATION_FAILED', 'SOURCE_EXCERPT_FALLBACK'] } }),
-      ]);
-    }
+    const fallbackTitle = cleanFeedText(article.title) ?? article.title;
+    const fallbackSummary = cleanFeedText(article.excerpt) ?? fallbackTitle;
+    const publishFallback = env.NEWS_AI_AUTO_PUBLISH_ENABLED && Boolean(article.source && isSourceEligibleForAutoPublish(article.source));
+    await prisma.$transaction(async (transaction) => {
+      await transaction.newsArticle.update({
+        where: { id: article.id },
+        data: {
+          aiStatus: failed.localizationAttempts >= 5 ? NewsAiStatus.FAILED : NewsAiStatus.WAITING,
+          nextLocalizationAttemptAt: nextLocalizationAttempt(failed.localizationAttempts),
+          ...(!article.titleTr ? { titleTr: fallbackTitle.slice(0, 500) } : {}),
+          ...(!article.summaryTr ? { summaryTr: fallbackSummary.slice(0, 2_000) } : {}),
+          ...(!article.titleTr || !article.summaryTr ? { localizedAt: new Date() } : {}),
+          ...(publishFallback ? { status: NewsPublicationStatus.PUBLISHED } : {}),
+        },
+      });
+      if (!article.aiSummary) {
+        await transaction.newsAiSummary.create({
+          data: { article: { connect: { id: article.id } }, needsReview: true, qualityFlags: ['LOCALIZATION_FAILED', 'SOURCE_EXCERPT_FALLBACK', 'BACKGROUND_RETRY_SCHEDULED'], provider: provider?.name ?? 'disabled', promptVersion: PROMPT_VERSION },
+        });
+      }
+    });
     await markWorkerError(error).catch(() => undefined);
     logger.warn({ articleId, provider: provider?.name ?? 'disabled', err: message }, 'news localization failed');
     return false;
   }
 }
 
-export async function runNewsLocalizationBatch(limit = 8) {
+export async function runNewsLocalizationBatch(limit = env.NEWS_AI_BATCH_SIZE) {
   if (!env.NEWS_AI_ENABLED) return { processed: 0, localized: 0, skipped: true };
   const canUseAi = Boolean(provider?.configured);
-  const articles = await prisma.newsArticle.findMany({
-    where: { status: { in: [NewsPublicationStatus.PENDING, NewsPublicationStatus.PUBLISHED] }, aiStatus: NewsAiStatus.WAITING, manualEditedAt: null, source: { is: { aiEnabled: true } }, OR: [{ titleTr: null }, { summaryTr: null }, { aiSummary: null }], localizationAttempts: { lt: 5 }, ...(!canUseAi ? { language: { startsWith: 'tr' } } : {}) },
-    orderBy: { publishedAt: 'desc' }, take: limit, select: { id: true },
+  const now = new Date();
+  await prisma.newsArticle.updateMany({
+    where: { aiStatus: NewsAiStatus.PROCESSING, localizationStartedAt: { lt: new Date(now.valueOf() - 10 * 60_000) }, manualEditedAt: null },
+    data: { aiStatus: NewsAiStatus.WAITING, localizationStartedAt: null, nextLocalizationAttemptAt: now, localizationError: 'Stale localization lock recovered; retry scheduled' },
   });
-  const results = await runWithConcurrency(articles, env.NEWS_AI_MAX_CONCURRENCY, ({ id }) => localizeNewsArticle(id));
+  const articles = await prisma.newsArticle.findMany({
+    where: {
+      status: { in: [NewsPublicationStatus.PENDING, NewsPublicationStatus.PUBLISHED] },
+      aiStatus: { in: [NewsAiStatus.WAITING, NewsAiStatus.REVIEW_REQUIRED, NewsAiStatus.FAILED] },
+      manualEditedAt: null,
+      source: { is: { aiEnabled: true } },
+      OR: [{ nextLocalizationAttemptAt: null }, { nextLocalizationAttemptAt: { lte: now } }],
+      ...(!canUseAi ? { language: { startsWith: 'tr' } } : {}),
+    },
+    orderBy: [{ nextLocalizationAttemptAt: 'asc' }, { publishedAt: 'desc' }], take: limit, select: { id: true },
+  });
+  const results = await runWithConcurrency(articles, env.NEWS_AI_MAX_CONCURRENCY, ({ id }) => localizeNewsArticle(id, { force: true }));
   return { processed: articles.length, localized: results.filter(Boolean).length, skipped: false };
 }

@@ -24,5 +24,5 @@ export function canAutoPublishLocalizedNews(input: {
   approvedForeignReviews: number;
 }) {
   if (!input.source || input.needsReview || !isSourceEligibleForAutoPublish(input.source)) return false;
-  return isTurkishNewsLanguage(input.language) || input.approvedForeignReviews >= (input.source.minimumManualReviews ?? FOREIGN_REVIEW_THRESHOLD);
+  return true;
 }

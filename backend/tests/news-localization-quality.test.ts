@@ -5,10 +5,10 @@ const input = { title: 'Bitcoin ETF haberi', excerpt: 'Kısa bir kaynak açıkla
 const output = { titleTr: 'Bitcoin ETF gelişmesi', summaryTr: 'Bitcoin ETF tarafında yeni bir gelişme yaşandı ve ayrıntıların ilerleyen dönemde netleşmesi bekleniyor.', whyItMatters: 'Bu gelişme kurumsal yatırımcıların kripto ürünlerine yaklaşımını anlamak açısından önem taşıyabilir. Kalıcı bir eğilim için yeni verilerin gelmesi gerekir. Piyasa katılımcıları haberin uygulama tarafındaki sonuçlarını izleyecektir.', marketImpact: 'Gelişmenin doğrulanması halinde ilgili ürünlere yönelik ilgi artabilir ancak tek başına kalıcı fiyat hareketi anlamına gelmez. Likidite koşulları ayrıca değerlendirilmelidir.', watchOuts: 'Resmî açıklamalar, takip eden fon akışları ve piyasanın ilk tepkisi birlikte izlenmelidir.', confidence: 0.9, needsReview: false, tags: ['Bitcoin', 'ETF'], relatedCoins: ['BTC'], provider: 'groq', model: 'qwen/qwen3.6-27b' };
 
 describe('evaluateNewsLocalization', () => {
-  it('marks limited source input for review and caps confidence', () => {
+  it('keeps limited source input publishable while flagging it and capping confidence', () => {
     const result = evaluateNewsLocalization(input, output);
     expect(result.flags).toContain('SHORT_SOURCE_INPUT');
-    expect(result.output.needsReview).toBe(true);
+    expect(result.output.needsReview).toBe(false);
     expect(result.output.confidence).toBe(0.65);
   });
 
@@ -31,6 +31,7 @@ describe('evaluateNewsLocalization', () => {
       { ...output, summaryTr: 'Çok kısa özet.' },
     );
     expect(short.flags).toContain('SUMMARY_TOO_SHORT');
+    expect(short.output.needsReview).toBe(false);
   });
 
   it('blocks AI output that still contains encoding artifacts', () => {

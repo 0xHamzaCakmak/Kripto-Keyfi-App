@@ -16,17 +16,29 @@ const providers: Record<NewsIntegrationType, NewsProvider> = { RSS: new RssNewsP
 const slugify = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('tr-TR').replace(/ı/g, 'i').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 170) || 'haber';
 async function uniqueSlug(title: string) { const base = slugify(title); for (let suffix = 1; suffix < 10_000; suffix += 1) { const candidate = suffix === 1 ? base : `${base}-${suffix}`; if (!await prisma.newsArticle.findUnique({ where: { slug: candidate }, select: { id: true } })) return candidate; } throw new Error('Unable to generate unique news slug'); }
 function retryDelay(failures: number) { return Math.min(24 * 60, 5 * 2 ** Math.min(failures, 8)); }
+function imageRetryDelay(failures: number) { return Math.min(24 * 60, 2 ** Math.min(Math.max(failures, 1), 10)); }
 
 async function ingest(source: NewsSource, item: NormalizedNewsItem) {
   const fingerprint = titleFingerprint(item.title);
-  const duplicate = await prisma.newsArticle.findFirst({ where: { OR: [ ...(item.providerNewsId ? [{ AND: [{ sourceId: source.id }, { providerNewsId: item.providerNewsId }] }] : []), { originalUrl: item.originalUrl }, { titleFingerprint: fingerprint, sourceId: source.id } ] }, select: { id: true } });
-  if (duplicate) return;
+  const duplicate = await prisma.newsArticle.findFirst({ where: { OR: [ ...(item.providerNewsId ? [{ AND: [{ sourceId: source.id }, { providerNewsId: item.providerNewsId }] }] : []), { originalUrl: item.originalUrl }, { titleFingerprint: fingerprint, sourceId: source.id } ] }, select: { id: true, coverImageUrl: true, sourceImageUrl: true } });
+  if (duplicate) {
+    if (source.imageUseAllowed && item.coverImageUrl && (!duplicate.sourceImageUrl || !duplicate.coverImageUrl)) {
+      await prisma.newsArticle.update({ where: { id: duplicate.id }, data: { sourceImageUrl: item.coverImageUrl, ...(!duplicate.coverImageUrl ? { imageSyncNextAttemptAt: new Date() } : {}) } });
+    }
+    return;
+  }
   const slug = await uniqueSlug(item.title);
   let coverImageUrl: string | undefined;
+  let imageSyncError: string | undefined;
+  let imageSyncAttempts = 0;
+  let imageSyncNextAttemptAt: Date | undefined;
   if (source.imageUseAllowed && item.coverImageUrl) {
     try {
       coverImageUrl = await uploadImage(item.coverImageUrl, `haberler/${slug}.webp`);
     } catch (error) {
+      imageSyncAttempts = 1;
+      imageSyncError = error instanceof Error ? error.message.slice(0, 500) : 'Bilinmeyen R2 görsel yükleme hatası';
+      imageSyncNextAttemptAt = new Date(Date.now() + imageRetryDelay(imageSyncAttempts) * 60_000);
       logger.warn({ source: source.slug, articleSlug: slug, err: error }, 'news cover image could not be copied to R2');
     }
   }
@@ -34,7 +46,38 @@ async function ingest(source: NewsSource, item: NormalizedNewsItem) {
   // and the source review threshold decide whether it can be auto-published.
   const data: Prisma.NewsArticleCreateInput = { source: { connect: { id: source.id } }, slug, originalUrl: item.originalUrl, title: item.title.slice(0, 500), language: item.language ?? source.language, publishedAt: item.publishedAt, status: NewsPublicationStatus.PENDING, titleFingerprint: fingerprint };
   const category = item.category ?? source.category;
-  if (item.providerNewsId) data.providerNewsId = item.providerNewsId; if (item.canonicalUrl) data.canonicalUrl = item.canonicalUrl; if (source.excerptAllowed && item.excerpt) data.excerpt = item.excerpt.slice(0, 1_500); if (coverImageUrl) data.coverImageUrl = coverImageUrl; if (source.imageUseAllowed && item.coverImageAlt) data.coverImageAlt = item.coverImageAlt; if (category) data.category = category; if (item.authorName) data.authorName = item.authorName; if (item.sourceUpdatedAt) data.sourceUpdatedAt = item.sourceUpdatedAt; const cluster = item.storyKey ?? storyClusterKey(item.title); if (cluster) data.storyKey = cluster; if (item.tags?.length) data.tags = { create: item.tags.slice(0, 8).map((name) => ({ tag: { connectOrCreate: { where: { slug: slugify(name) }, create: { name: name.slice(0, 100), slug: slugify(name) } } } })) }; if (item.coins?.length) data.coins = { create: item.coins.slice(0, 12).map((coin) => coin.name ? ({ symbol: coin.symbol.toUpperCase().slice(0, 30), name: coin.name.slice(0, 100) }) : ({ symbol: coin.symbol.toUpperCase().slice(0, 30) })) }; await prisma.newsArticle.create({ data });
+  if (item.providerNewsId) data.providerNewsId = item.providerNewsId; if (item.canonicalUrl) data.canonicalUrl = item.canonicalUrl; if (source.excerptAllowed && item.excerpt) data.excerpt = item.excerpt.slice(0, 1_500); if (source.imageUseAllowed && item.coverImageUrl) data.sourceImageUrl = item.coverImageUrl; if (coverImageUrl) data.coverImageUrl = coverImageUrl; if (imageSyncError) data.imageSyncError = imageSyncError; if (imageSyncAttempts) data.imageSyncAttempts = imageSyncAttempts; if (imageSyncNextAttemptAt) data.imageSyncNextAttemptAt = imageSyncNextAttemptAt; if (source.imageUseAllowed && item.coverImageAlt) data.coverImageAlt = item.coverImageAlt; if (category) data.category = category; if (item.authorName) data.authorName = item.authorName; if (item.sourceUpdatedAt) data.sourceUpdatedAt = item.sourceUpdatedAt; const cluster = item.storyKey ?? storyClusterKey(item.title); if (cluster) data.storyKey = cluster; if (item.tags?.length) data.tags = { create: item.tags.slice(0, 8).map((name) => ({ tag: { connectOrCreate: { where: { slug: slugify(name) }, create: { name: name.slice(0, 100), slug: slugify(name) } } } })) }; if (item.coins?.length) data.coins = { create: item.coins.slice(0, 12).map((coin) => coin.name ? ({ symbol: coin.symbol.toUpperCase().slice(0, 30), name: coin.name.slice(0, 100) }) : ({ symbol: coin.symbol.toUpperCase().slice(0, 30) })) }; await prisma.newsArticle.create({ data });
+}
+
+export async function retryNewsImages(limit = env.NEWS_IMAGE_RETRY_BATCH_SIZE) {
+  const now = new Date();
+  const r2Prefix = `${env.R2_PUBLIC_URL.replace(/\/+$/, '')}/`;
+  const articles = await prisma.newsArticle.findMany({
+    where: {
+      sourceImageUrl: { not: null },
+      source: { is: { imageUseAllowed: true } },
+      OR: [{ coverImageUrl: null }, { NOT: { coverImageUrl: { startsWith: r2Prefix } } }],
+      AND: [{ OR: [{ imageSyncNextAttemptAt: null }, { imageSyncNextAttemptAt: { lte: now } }] }],
+    },
+    select: { id: true, slug: true, sourceImageUrl: true, imageSyncAttempts: true },
+    orderBy: [{ imageSyncNextAttemptAt: 'asc' }, { publishedAt: 'desc' }],
+    take: limit,
+  });
+  let uploaded = 0;
+  for (const article of articles) {
+    if (!article.sourceImageUrl) continue;
+    try {
+      const coverImageUrl = await uploadImage(article.sourceImageUrl, `haberler/${article.slug}.webp`);
+      await prisma.newsArticle.update({ where: { id: article.id }, data: { coverImageUrl, imageSyncError: null, imageSyncNextAttemptAt: null, imageSyncAttempts: { increment: 1 } } });
+      uploaded += 1;
+    } catch (error) {
+      const attempts = article.imageSyncAttempts + 1;
+      const message = error instanceof Error ? error.message.slice(0, 500) : 'Bilinmeyen R2 görsel yükleme hatası';
+      await prisma.newsArticle.update({ where: { id: article.id }, data: { imageSyncError: message, imageSyncAttempts: { increment: 1 }, imageSyncNextAttemptAt: new Date(Date.now() + imageRetryDelay(attempts) * 60_000) } });
+      logger.warn({ articleId: article.id, err: message }, 'news image R2 retry failed');
+    }
+  }
+  return { processed: articles.length, uploaded };
 }
 
 async function syncSource(source: NewsSource) {
@@ -42,5 +85,5 @@ async function syncSource(source: NewsSource) {
   catch (error) { const message = error instanceof Error ? error.message.slice(0, 500) : 'Unknown source error'; const failures = source.failureCount + 1; await prisma.newsSource.update({ where: { id: source.id }, data: { lastFetchedAt: new Date(), lastError: message, failureCount: failures, nextFetchAt: new Date(Date.now() + retryDelay(failures) * 60_000) } }); logger.warn({ source: source.slug, err: message }, 'news source sync failed'); }
 }
 
-export async function runNewsSync() { await markWorkerStarted(); try { const now = new Date(); const sources = await prisma.newsSource.findMany({ where: { isActive: true, isTrusted: true, commercialUseAllowed: true, excerptAllowed: true, lastTermsCheckedAt: { not: null }, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] }, orderBy: [{ priority: 'asc' }, { nextFetchAt: 'asc' }] }); const sourceResults = await Promise.allSettled(sources.map(syncSource)); const rejected = sourceResults.find((result): result is PromiseRejectedResult => result.status === 'rejected'); if (rejected) await markWorkerError(rejected.reason); if (env.NEWS_AI_AUTO_PROCESS) await runNewsLocalizationBatch(); await applyExternalRetention(); await markWorkerSucceeded(); } catch (error) { await markWorkerError(error); throw error; } }
+export async function runNewsSync() { await markWorkerStarted(); try { const now = new Date(); const sources = await prisma.newsSource.findMany({ where: { isActive: true, isTrusted: true, commercialUseAllowed: true, excerptAllowed: true, lastTermsCheckedAt: { not: null }, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] }, orderBy: [{ priority: 'asc' }, { nextFetchAt: 'asc' }] }); const sourceResults = await Promise.allSettled(sources.map(syncSource)); const rejected = sourceResults.find((result): result is PromiseRejectedResult => result.status === 'rejected'); if (rejected) await markWorkerError(rejected.reason); await retryNewsImages(); if (env.NEWS_AI_AUTO_PROCESS) await runNewsLocalizationBatch(); await applyExternalRetention(); await markWorkerSucceeded(); } catch (error) { await markWorkerError(error); throw error; } }
 export function scheduleNewsSync() { const timer = setInterval(() => { void runNewsSync().catch((error) => logger.error({ err: error }, 'news sync scheduler failed')); }, 60_000); timer.unref(); void runNewsSync().catch((error) => logger.error({ err: error }, 'initial news sync failed')); return () => clearInterval(timer); }

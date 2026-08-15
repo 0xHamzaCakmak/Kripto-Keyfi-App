@@ -3,6 +3,7 @@ import { NewsAiStatus, NewsPublicationStatus } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import type { z } from 'zod';
 import { prisma } from '../../database/prisma.js';
+import { env } from '../../config/env.js';
 import { ApiError } from '../../utils/api-error.js';
 import { presentNewsArticle } from './news.presenter.js';
 import type { createNewsSourceBodySchema, listAdminNewsQuerySchema, listNewsQuerySchema, updateArticleContentBodySchema, updateArticleStatusBodySchema, updateNewsSourceBodySchema } from './news.schema.js';
@@ -156,10 +157,11 @@ export async function updateArticleStatus(id: string, input: ArticleStatusUpdate
 }
 
 export async function applyExternalRetention() {
+  if (env.NEWS_EXTERNAL_RETENTION_LIMIT === 0) return 0;
   const removable = { isExternal: true, isFeatured: false, isEditorPick: false, isBreaking: false, savedBy: { none: {} } } satisfies Prisma.NewsArticleWhereInput;
-  const expired = await prisma.newsArticle.findMany({ where: removable, orderBy: { publishedAt: 'desc' }, skip: 300, select: { id: true } });
+  const expired = await prisma.newsArticle.findMany({ where: { ...removable, status: { not: NewsPublicationStatus.ARCHIVED } }, orderBy: { publishedAt: 'desc' }, skip: env.NEWS_EXTERNAL_RETENTION_LIMIT, select: { id: true } });
   if (!expired.length) return 0;
-  const result = await prisma.newsArticle.deleteMany({ where: { ...removable, id: { in: expired.map((article) => article.id) } } });
+  const result = await prisma.newsArticle.updateMany({ where: { ...removable, id: { in: expired.map((article) => article.id) } }, data: { status: NewsPublicationStatus.ARCHIVED, archivedAt: new Date() } });
   return result.count;
 }
 export function titleFingerprint(title: string) { return createHash('sha256').update(title.normalize('NFKD').replace(/[^\w\s]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()).digest('hex'); }

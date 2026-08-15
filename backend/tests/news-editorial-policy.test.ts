@@ -11,8 +11,8 @@ const trustedSource = {
 };
 
 describe('news editorial policy', () => {
-  it('keeps the first foreign articles in editorial review', () => {
-    expect(canAutoPublishLocalizedNews({ source: trustedSource, language: 'en', needsReview: false, approvedForeignReviews: FOREIGN_REVIEW_THRESHOLD - 1 })).toBe(false);
+  it('auto-publishes valid foreign articles without a manual warm-up threshold', () => {
+    expect(canAutoPublishLocalizedNews({ source: trustedSource, language: 'en', needsReview: false, approvedForeignReviews: FOREIGN_REVIEW_THRESHOLD - 1 })).toBe(true);
   });
 
   it('auto-publishes quality-approved news only after source requirements are met', () => {
@@ -22,9 +22,9 @@ describe('news editorial policy', () => {
     expect(canAutoPublishLocalizedNews({ source: { ...trustedSource, isTrusted: false }, language: 'tr', needsReview: false, approvedForeignReviews: 0 })).toBe(false);
   });
 
-  it('uses the review threshold configured for each source', () => {
+  it('does not let a legacy review threshold delay valid news', () => {
     const source = { ...trustedSource, minimumManualReviews: 5 };
-    expect(canAutoPublishLocalizedNews({ source, language: 'en', needsReview: false, approvedForeignReviews: 4 })).toBe(false);
+    expect(canAutoPublishLocalizedNews({ source, language: 'en', needsReview: false, approvedForeignReviews: 4 })).toBe(true);
     expect(canAutoPublishLocalizedNews({ source, language: 'en', needsReview: false, approvedForeignReviews: 5 })).toBe(true);
   });
 });

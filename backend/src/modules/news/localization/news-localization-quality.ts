@@ -40,12 +40,13 @@ export function evaluateNewsLocalization(input: NewsLocalizationInput, output: N
   if (hasEncodingArtifacts(`${output.titleTr} ${output.summaryTr} ${output.whyItMatters} ${output.marketImpact} ${output.watchOuts}`)) flags.push('ENCODING_ARTIFACT');
   if (input.language.toLocaleLowerCase('tr-TR').startsWith('tr') && overlap(input.excerpt ?? '', output.summaryTr) > 0.78) flags.push('HIGH_SOURCE_OVERLAP');
 
-  const needsReview = output.needsReview || flags.length > 0;
+  const blockingFlags = new Set(['SUMMARY_TOO_LONG', 'UNEXPECTED_URL', 'MARKDOWN_OUTPUT', 'ENCODING_ARTIFACT', 'HIGH_SOURCE_OVERLAP']);
+  const needsReview = output.needsReview || flags.some((flag) => blockingFlags.has(flag));
   return {
     output: {
       ...output,
       needsReview,
-      confidence: needsReview ? Math.min(output.confidence, 0.65) : output.confidence,
+      confidence: needsReview || sourceWords < 40 ? Math.min(output.confidence, 0.65) : output.confidence,
     },
     wordCount: summaryWords + editorialWords,
     flags,

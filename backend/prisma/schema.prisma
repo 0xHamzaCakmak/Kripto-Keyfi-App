@@ -665,55 +665,62 @@ model NewsSource {
 }
 
 model NewsArticle {
-  id                    String                @id @default(cuid())
-  sourceId              String?
-  providerNewsId        String?               @db.VarChar(191)
-  slug                  String                @unique @db.VarChar(191)
-  originalUrl           String                @unique @db.VarChar(700)
-  canonicalUrl          String?               @db.VarChar(700)
-  title                 String                @db.VarChar(500)
-  excerpt               String?               @db.Text
-  titleTr               String?               @db.VarChar(500)
-  summaryTr             String?               @db.Text
-  localizedAt           DateTime?
-  localizationError     String?               @db.VarChar(500)
-  localizationAttempts  Int                   @default(0)
-  aiStatus              NewsAiStatus          @default(WAITING)
-  localizationStartedAt DateTime?
-  manualEditedAt        DateTime?
-  coverImageUrl         String?               @db.VarChar(1000)
-  coverImageAlt         String?               @db.VarChar(500)
-  category              String?               @db.VarChar(80)
-  authorName            String?               @db.VarChar(160)
-  language              String                @default("tr") @db.VarChar(12)
-  publishedAt           DateTime
-  sourceUpdatedAt       DateTime?
-  ingestedAt            DateTime              @default(now())
-  status                NewsPublicationStatus @default(PENDING)
-  isExternal            Boolean               @default(true)
-  isFeatured            Boolean               @default(false)
-  isBreaking            Boolean               @default(false)
-  isEditorPick          Boolean               @default(false)
-  archivedAt            DateTime?
-  editorialReviewedAt   DateTime?
-  titleFingerprint      String                @db.VarChar(64)
-  storyKey              String?               @db.VarChar(120)
-  readingTimeMinutes    Int                   @default(1)
-  viewCount             Int                   @default(0)
-  source                NewsSource?           @relation(fields: [sourceId], references: [id], onDelete: SetNull)
-  tags                  NewsArticleTag[]
-  coins                 NewsArticleCoin[]
-  relationsFrom         NewsArticleRelation[] @relation("news_relation_from")
-  relationsTo           NewsArticleRelation[] @relation("news_relation_to")
-  aiSummary             NewsAiSummary?
-  savedBy               NewsSavedArticle[]
-  analyticsEvents       NewsAnalyticsEvent[]
+  id                        String                @id @default(cuid())
+  sourceId                  String?
+  providerNewsId            String?               @db.VarChar(191)
+  slug                      String                @unique @db.VarChar(191)
+  originalUrl               String                @unique @db.VarChar(700)
+  canonicalUrl              String?               @db.VarChar(700)
+  title                     String                @db.VarChar(500)
+  excerpt                   String?               @db.Text
+  titleTr                   String?               @db.VarChar(500)
+  summaryTr                 String?               @db.Text
+  localizedAt               DateTime?
+  localizationError         String?               @db.VarChar(500)
+  localizationAttempts      Int                   @default(0)
+  aiStatus                  NewsAiStatus          @default(WAITING)
+  localizationStartedAt     DateTime?
+  nextLocalizationAttemptAt DateTime?
+  manualEditedAt            DateTime?
+  coverImageUrl             String?               @db.VarChar(1000)
+  sourceImageUrl            String?               @db.VarChar(1000)
+  coverImageAlt             String?               @db.VarChar(500)
+  imageSyncError            String?               @db.VarChar(500)
+  imageSyncAttempts         Int                   @default(0)
+  imageSyncNextAttemptAt    DateTime?
+  category                  String?               @db.VarChar(80)
+  authorName                String?               @db.VarChar(160)
+  language                  String                @default("tr") @db.VarChar(12)
+  publishedAt               DateTime
+  sourceUpdatedAt           DateTime?
+  ingestedAt                DateTime              @default(now())
+  status                    NewsPublicationStatus @default(PENDING)
+  isExternal                Boolean               @default(true)
+  isFeatured                Boolean               @default(false)
+  isBreaking                Boolean               @default(false)
+  isEditorPick              Boolean               @default(false)
+  archivedAt                DateTime?
+  editorialReviewedAt       DateTime?
+  titleFingerprint          String                @db.VarChar(64)
+  storyKey                  String?               @db.VarChar(120)
+  readingTimeMinutes        Int                   @default(1)
+  viewCount                 Int                   @default(0)
+  source                    NewsSource?           @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  tags                      NewsArticleTag[]
+  coins                     NewsArticleCoin[]
+  relationsFrom             NewsArticleRelation[] @relation("news_relation_from")
+  relationsTo               NewsArticleRelation[] @relation("news_relation_to")
+  aiSummary                 NewsAiSummary?
+  savedBy                   NewsSavedArticle[]
+  analyticsEvents           NewsAnalyticsEvent[]
 
   @@unique([sourceId, providerNewsId])
   @@index([status, publishedAt])
   @@index([sourceId, editorialReviewedAt])
   @@index([isExternal, publishedAt])
   @@index([storyKey])
+  @@index([aiStatus, nextLocalizationAttemptAt])
+  @@index([imageSyncNextAttemptAt])
   @@map("news_articles")
 }
 

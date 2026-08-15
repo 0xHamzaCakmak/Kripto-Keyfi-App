@@ -66,7 +66,9 @@ Migration'ı en yeni uygun haberlerle sınırlamak için `--limit=N` kullanın. 
 
 ## Haber AI sağlayıcı yedekleme
 
-`NEWS_AI_PROVIDER=multi` ve `NEWS_AI_PROVIDER_ORDER=groq,deepseek` ile haber yerelleştirme sıralı sağlayıcı yedeklemesi kullanır. Groq kota veya servis hatası verirse DeepSeek denenir. `DEEPSEEK_API_KEY` boş bırakılırsa bu sağlayıcı otomatik atlanır; model ve API taban adresleri `.env` üzerinden değiştirilebilir.
+`NEWS_AI_PROVIDER=multi` ve `NEWS_AI_PROVIDER_ORDER=groq,deepseek` ile haber yerelleştirme sıralı sağlayıcı yedeklemesi kullanır. Groq zincirinde varsayılan model `openai/gpt-oss-20b`, model içi fallback `openai/gpt-oss-120b`'dir; ikisi de başarısız olursa DeepSeek denenir. `DEEPSEEK_API_KEY` boş bırakılırsa bu sağlayıcı otomatik atlanır; model ve API taban adresleri `.env` üzerinden değiştirilebilir.
+
+Üretim verisi göndermeden model bağlantısını doğrulamak için `npm run news:verify-groq-model` kullanılır. Bu komut yalnız sabit, sentetik bir haber girdisi gönderir.
 
 ## Komutlar
 
