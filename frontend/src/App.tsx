@@ -59,6 +59,9 @@ const KOLDashboardPage = lazy(() => import('./components/KOLWorkspaces').then((m
 const AdminKOLWorkspace = lazy(() => import('./components/KOLWorkspaces').then((module) => ({ default: module.AdminKOLWorkspace })));
 const AdminPredictionReview = lazy(() => import('./components/AdminPredictionReview'));
 const AdminCampaignManagement = lazy(() => import('./components/AdminCampaignManagement'));
+const KOLModuleOverview = lazy(() => import('./components/KOLModuleOverview'));
+const TradingModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.TradingModuleLayout })));
+const KolModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.KolModuleLayout })));
 
 export default function App() {
   return (
@@ -71,21 +74,31 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
               <Route index element={<AdminDashboard />} />
-              <Route path="trading" element={<TradingBotDashboard />} />
-              <Route path="trading/bots" element={<TradingBots />} />
-              <Route path="trading/bots/guide" element={<TradingBotGuide />} />
-              <Route path="trading/accounts" element={<ExchangeAccounts />} />
-              <Route path="trading/manual" element={<ManualTrading />} />
-              <Route path="trading/orders" element={<OpenOrdersPage />} />
-              <Route path="trading/positions" element={<OpenPositionsPage />} />
-              <Route path="trading/grid" element={<GridBotsPage />} />
-              <Route path="trading/profit-loss" element={<TradingProfitLossPage />} />
-              <Route path="trading/risk" element={<TradingRiskManagementPage />} />
-              <Route path="trading/system" element={<TradingSystemStatusPage />} />
+              <Route path="trading" element={<TradingModuleLayout />}>
+                <Route index element={<TradingBotDashboard />} />
+                <Route path="bots" element={<TradingBots />} />
+                <Route path="guide" element={<TradingBotGuide />} />
+                <Route path="manual" element={<ManualTrading />} />
+                <Route path="exchanges" element={<ExchangeAccounts />} />
+                <Route path="orders" element={<OpenOrdersPage />} />
+                <Route path="positions" element={<OpenPositionsPage />} />
+                <Route path="grid" element={<GridBotsPage />} />
+                <Route path="profit-loss" element={<TradingProfitLossPage />} />
+                <Route path="risk" element={<TradingRiskManagementPage />} />
+                <Route path="system" element={<TradingSystemStatusPage />} />
+                <Route path="accounts" element={<Navigate to="/admin/trading/exchanges" replace />} />
+                <Route path="bots/guide" element={<Navigate to="/admin/trading/guide" replace />} />
+              </Route>
               <Route path="news/sources" element={<AdminNewsSources />} />
-              <Route path="kols" element={<AdminKOLWorkspace />} />
-              <Route path="kols/predictions" element={<AdminPredictionReview />} />
-              <Route path="kols/campaigns" element={<AdminCampaignManagement />} />
+              <Route path="kol" element={<KolModuleLayout />}>
+                <Route index element={<KOLModuleOverview />} />
+                <Route path="intelligence" element={<AdminKOLWorkspace />} />
+                <Route path="predictions" element={<AdminPredictionReview />} />
+                <Route path="campaigns" element={<AdminCampaignManagement />} />
+              </Route>
+              <Route path="kols" element={<Navigate to="/admin/kol/intelligence" replace />} />
+              <Route path="kols/predictions" element={<Navigate to="/admin/kol/predictions" replace />} />
+              <Route path="kols/campaigns" element={<Navigate to="/admin/kol/campaigns" replace />} />
             </Route>
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />

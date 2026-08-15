@@ -1,26 +1,14 @@
 import { useEffect, useState } from 'react';
 import {
-  Activity,
   Bot,
-  BookOpen,
-  Building2,
-  BriefcaseBusiness,
-  ChartNoAxesCombined,
   ChevronLeft,
-  CircleDollarSign,
-  FileClock,
-  Gauge,
   LayoutDashboard,
-  ListChecks,
   LogOut,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
   Radio,
-  ShieldAlert,
-  SlidersHorizontal,
   UsersRound,
-  Target,
   X,
 } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -31,23 +19,8 @@ import { logout } from '../services/authService';
 const primaryLinks = [
   { label: 'Genel Bakış', to: '/admin', icon: LayoutDashboard, end: true },
   { label: 'Haber Yönetimi', to: '/admin/news/sources', icon: Radio, end: true },
-  { label: 'KOL Intelligence', to: '/admin/kols', icon: UsersRound, end: true },
-  { label: 'Prediction Review', to: '/admin/kols/predictions', icon: Target, end: true },
-  { label: 'KOL Kampanyaları', to: '/admin/kols/campaigns', icon: BriefcaseBusiness, end: true },
-  { label: 'Trading Bot', to: '/admin/trading', icon: Bot, end: true },
-  { label: 'Borsa Hesapları', to: '/admin/trading/accounts', icon: Building2 },
-];
-
-const phaseThreeLinks = [
-  { label: 'Botlarım', to: '/admin/trading/bots', icon: ListChecks, end: true },
-  { label: 'Bot Rehberi', to: '/admin/trading/bots/guide', icon: BookOpen, end: false },
-  { label: 'Manuel İşlem', to: '/admin/trading/manual', icon: SlidersHorizontal, end: false },
-  { label: 'Açık Pozisyonlar', to: '/admin/trading/positions', icon: ChartNoAxesCombined, end: false },
-  { label: 'Açık Emirler', to: '/admin/trading/orders', icon: FileClock, end: false },
-  { label: 'Grid Bot', to: '/admin/trading/grid', icon: Gauge, end: false },
-  { label: 'Kâr / Zarar', to: '/admin/trading/profit-loss', icon: CircleDollarSign, end: false },
-  { label: 'Risk Yönetimi', to: '/admin/trading/risk', icon: ShieldAlert, end: false },
-  { label: 'Sistem Durumu', to: '/admin/trading/system', icon: Activity, end: false },
+  { label: 'KOL Intelligence', to: '/admin/kol', icon: UsersRound },
+  { label: 'Trading Bot', to: '/admin/trading', icon: Bot },
 ];
 
 export default function AdminLayout() {
@@ -80,7 +53,7 @@ export default function AdminLayout() {
 
       <nav className="flex-1 space-y-6 overflow-y-auto p-3" aria-label="Admin menüsü">
         <div className="space-y-1">
-          {[...primaryLinks, ...phaseThreeLinks].map(({ label, to, icon: Icon, end }) => (
+          {primaryLinks.map(({ label, to, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end} title={collapsed ? label : undefined} className={({ isActive }) => cn('flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-bold transition-colors', collapsed && 'justify-center', isActive ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:bg-surface-high hover:text-white')}>
               <Icon size={19}/>{!collapsed && <span>{label}</span>}
             </NavLink>

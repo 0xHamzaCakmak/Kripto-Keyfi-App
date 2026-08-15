@@ -95,7 +95,7 @@ export default function TradingBotDashboard() {
       <article className="rounded-[28px] border border-outline/10 bg-surface p-6">
         <div className="flex items-center gap-3"><div className="rounded-2xl bg-secondary/10 p-3 text-secondary"><ShieldCheck size={22}/></div><div><p className="font-headline text-xl font-extrabold text-white">Hazır olan temel</p><p className="text-sm text-on-surface-variant">Bu sürümde tamamlanan korumalar</p></div></div>
         <div className="mt-6 space-y-3">{data?.completedFoundationItems.map((item) => <div key={item} className="flex items-center gap-3 rounded-2xl bg-surface-high p-4 text-sm font-semibold text-on-surface"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-secondary/15 text-secondary">✓</span>{labels[item] ?? item}</div>) ?? <LoadingRows/>}</div>
-        <Link to="/admin/trading/accounts" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-black text-background">Borsa hesaplarını yönet <ArrowRight size={17}/></Link>
+        <Link to="/admin/trading/exchanges" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-black text-background">Borsa hesaplarını yönet <ArrowRight size={17}/></Link>
       </article>
 
       <article className="rounded-[28px] border border-outline/10 bg-surface p-6">
