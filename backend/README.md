@@ -51,7 +51,7 @@ Backend `.env` içinde `FRONTEND_URL=http://localhost:3000` olmalıdır. Fronten
 
 ## Cloudflare R2 görsel depolama
 
-Backend ortamında `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` ve bucket/custom domain'in public taban adresi olan `R2_PUBLIC_URL` birlikte tanımlanmalıdır. Production ortamında bu değerler zorunludur. Frontend build ortamında aynı public adresi `VITE_R2_PUBLIC_URL` olarak verin.
+Backend ortamında `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` ve bucket/custom domain'in public taban adresi olan `R2_PUBLIC_URL` birlikte tanımlanmalıdır. Production ortamında bu değerler zorunludur. Frontend, `media.kriptokeyfi.com` ve Cloudflare `pub-*.r2.dev` adreslerini varsayılan olarak kabul eder. Farklı bir custom domain kullanılacaksa frontend build ortamında aynı public adresi `VITE_R2_PUBLIC_URL` olarak verin.
 
 Yeni haber görselleri bellekte WebP kalite 88'e dönüştürülür ve `haberler/{slug}.webp` anahtarıyla R2'ye yüklenir. Kaynak indirme limiti 10 MB'dir ve yalnızca JPEG, PNG ve WebP kabul edilir; sunucunun yerel dosya sistemine görsel yazılmaz.
 

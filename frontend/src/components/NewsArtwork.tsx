@@ -2,17 +2,21 @@ import { useEffect, useState } from 'react';
 import type { NewsArticle } from '../types';
 import { cn } from '../lib/utils';
 
-const defaultImageHosts = ['cdn.sanity.io', 'coin-turk.com', 'www.coin-turk.com', 'www.coindesk.com', 'assets.coindesk.com', 'www.btchaber.com', 'btchaber.com'];
+const defaultImageHosts = ['media.kriptokeyfi.com', 'cdn.sanity.io', 'coin-turk.com', 'www.coin-turk.com', 'www.coindesk.com', 'assets.coindesk.com', 'www.btchaber.com', 'btchaber.com'];
 const configuredImageHosts = (import.meta.env.VITE_NEWS_IMAGE_HOSTS ?? '').split(',').map((host) => host.trim().toLocaleLowerCase()).filter(Boolean);
 function configuredR2ImageHost() {
   try { return new URL(import.meta.env.VITE_R2_PUBLIC_URL ?? '').hostname.toLocaleLowerCase(); }
   catch { return ''; }
 }
 const allowedImageHosts = new Set([...defaultImageHosts, ...configuredImageHosts, configuredR2ImageHost()].filter(Boolean));
+function isAllowedImageHost(hostname: string) {
+  const normalizedHost = hostname.toLocaleLowerCase();
+  return allowedImageHosts.has(normalizedHost) || normalizedHost.endsWith('.r2.dev');
+}
 function safeImageUrl(value: string | null) {
   if (!value) return null;
   if (value.startsWith('/')) return value;
-  try { const url = new URL(value); return url.protocol === 'https:' && allowedImageHosts.has(url.hostname.toLocaleLowerCase()) ? url.toString() : null; }
+  try { const url = new URL(value); return url.protocol === 'https:' && isAllowedImageHost(url.hostname) ? url.toString() : null; }
   catch { return null; }
 }
 

@@ -17,7 +17,7 @@ Rapor: `docs/lighthouse-news-mobile-2026-08-07.json`. Lighthouse laboratuvar son
 
 - Haber detay hero görseli yüksek öncelikli yüklenir; kart ve ilgili haber görselleri lazy-load edilir.
 - Tüm görsellerde intrinsic ölçüler/aspect-ratio, async decoding ve yerel fallback bulunur.
-- Yalnızca `VITE_NEWS_IMAGE_HOSTS` ve kod içindeki doğrulanmış HTTPS host listesi kabul edilir.
+- Yalnızca `VITE_NEWS_IMAGE_HOSTS`, kod içindeki doğrulanmış HTTPS host listesi ve Cloudflare `*.r2.dev` public bucket adresleri kabul edilir. `media.kriptokeyfi.com` varsayılan listede yer alır.
 - Route bileşenleri lazy-load edilir. Ana chunk için 500 kB regresyonu build hatası kabul edilir.
 - Hostinger üzerinde ayrı bir görsel dönüştürme servisi bulunmadığı için üçüncü taraf görsel proxy'si açılmaz; SSRF, telif ve bant genişliği riski alınmaz. CDN destekleyen kaynaklarda WebP/AVIF ve responsive varyant entegrasyonu kaynak adapter'ında yapılır.
 
