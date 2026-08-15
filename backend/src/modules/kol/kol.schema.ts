@@ -43,6 +43,14 @@ export const adminKOLSchema = z.object({
 });
 
 export const adminKOLUpdateSchema = adminKOLSchema.partial().refine((value) => Object.keys(value).length > 0, 'At least one field is required');
+export const xProfileLookupSchema = z.object({
+  profileUrl: z.string().trim().min(6).max(700),
+});
+export const xProfileImportSchema = xProfileLookupSchema.extend({
+  categories: z.array(z.string().trim().min(2).max(80)).min(1).max(12),
+  country: z.string().trim().min(2).max(80).default('Türkiye'),
+  language: z.string().trim().min(2).max(16).default('TR'),
+});
 const scoreValue = z.number().min(0).max(100);
 
 export const socialAccountSchema = z.object({

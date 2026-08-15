@@ -6,7 +6,7 @@ import { authorize } from '../../middleware/authorize.js';
 import { validateRequest } from '../../middleware/validate-request.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import * as controller from './kol.controller.js';
-import { adminKOLSchema, adminKOLUpdateSchema, assignKOLSchema, audienceMetricSchema, campaignEventSchema, campaignStatusSchema, companySchema, createCampaignSchema, idParamsSchema, kolListQuerySchema, predictionEvaluationSchema, predictionIdParamsSchema, predictionSchema, riskEventSchema, scoreInputSchema, slugParamsSchema, socialAccountSchema } from './kol.schema.js';
+import { adminKOLSchema, adminKOLUpdateSchema, assignKOLSchema, audienceMetricSchema, campaignEventSchema, campaignStatusSchema, companySchema, createCampaignSchema, idParamsSchema, kolListQuerySchema, predictionEvaluationSchema, predictionIdParamsSchema, predictionSchema, riskEventSchema, scoreInputSchema, slugParamsSchema, socialAccountSchema, xProfileImportSchema, xProfileLookupSchema } from './kol.schema.js';
 
 export const kolRouter = Router();
 kolRouter.get('/', validateRequest({ query: kolListQuerySchema }), asyncHandler(controller.list));
@@ -27,6 +27,8 @@ export const adminKOLRouter = Router();
 adminKOLRouter.use(authenticate, authorize(UserRole.ADMIN));
 adminKOLRouter.get('/', asyncHandler(controller.adminList));
 adminKOLRouter.get('/data-sources', asyncHandler(controller.adminDataSources));
+adminKOLRouter.post('/profile-lookup', rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: 'draft-8', legacyHeaders: false }), validateRequest({ body: xProfileLookupSchema }), asyncHandler(controller.adminXProfileLookup));
+adminKOLRouter.post('/profile-import', rateLimit({ windowMs: 60_000, limit: 15, standardHeaders: 'draft-8', legacyHeaders: false }), validateRequest({ body: xProfileImportSchema }), asyncHandler(controller.adminXProfileImport));
 adminKOLRouter.post('/', validateRequest({ body: adminKOLSchema }), asyncHandler(controller.adminCreate));
 adminKOLRouter.get('/campaigns', asyncHandler(controller.adminCampaigns));
 adminKOLRouter.patch('/campaigns/:id/status', validateRequest({ params: idParamsSchema, body: campaignStatusSchema }), asyncHandler(controller.adminCampaignStatus));

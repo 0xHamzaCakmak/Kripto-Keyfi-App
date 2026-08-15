@@ -4,6 +4,11 @@ import type { KOL } from './kolService';
 export type Company = { id: string; name: string; website?: string; sector?: string; country: string; verified: boolean; _count?: { campaigns: number } };
 export type Campaign = { id: string; companyId: string; name: string; project: string; description?: string; goal: string; budget: number; currency: string; countryTargets: string[]; languageTargets: string[]; categories: string[]; startDate: string; endDate: string; status: string; kpi: string; company?: Company; influencers?: CampaignKOL[] };
 export type CampaignKOL = { id: string; agreedPrice: number; currency: string; deliverable: string; status: string; kol: KOL; trackingLinks: Array<{ id: string; code: string; destinationUrl: string; isActive: boolean }> };
+export type XProfilePreview = {
+  platform: 'X'; platformUserId: string; profileUrl: string; username: string; displayName: string; bio: string; location: string;
+  avatarUrl?: string; bannerUrl?: string; verified: boolean; protected: boolean; createdAt?: string; followersCount: number;
+  followingCount: number; contentCount: number; listedCount: number; fetchedAt: string;
+};
 
 const unwrap = <T>(response: { data: { data: T } }) => response.data.data;
 export const workspaceApi = {
@@ -18,6 +23,8 @@ export const workspaceApi = {
   setCampaignStatus: async (id: string, status: string) => unwrap(await api.patch<{ data: Campaign }>(`/kols/campaigns/${id}/status`, { status })),
   kolDashboard: async () => unwrap(await api.get<{ data: KOL & { campaignInfluencers: CampaignKOL[] } }>('/kols/me/dashboard')),
   adminKOLs: async () => unwrap(await api.get<{ data: KOL[] }>('/admin/kols')),
+  adminLookupXProfile: async (profileUrl: string) => unwrap(await api.post<{ data: XProfilePreview }>('/admin/kols/profile-lookup', { profileUrl })),
+  adminImportXProfile: async (input: { profileUrl: string; categories: string[]; country: string; language: string }) => unwrap(await api.post<{ data: KOL }>('/admin/kols/profile-import', input)),
   adminCampaigns: async () => unwrap(await api.get<{ data: Campaign[] }>('/admin/kols/campaigns')),
   adminCampaignStatus: async (id: string, status: string) => unwrap(await api.patch<{ data: Campaign }>(`/admin/kols/campaigns/${id}/status`, { status })),
   adminCreateKOL: async (input: Record<string, unknown>) => unwrap(await api.post<{ data: KOL }>('/admin/kols', input)),

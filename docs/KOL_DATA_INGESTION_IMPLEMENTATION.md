@@ -18,6 +18,7 @@ Sistem üç prensiple çalışır:
 
 | Kaynak | Kullanım | Erişim | Alınabilecek sinyaller | KriptoKeyfi kararı |
 |---|---|---|---|---|
+| [X API User Lookup](https://docs.x.com/x-api/users/lookup/quickstart/user-lookup) | Profil URL'sinden doğrulanabilir kullanıcı önizlemesi | Sunucu tarafında Bearer Token | Platform ID, ad, kullanıcı adı, bio, avatar, hesap tarihi, doğrulama ve public metrikler | Admin KOL ekleme akışının birincil profil kaynağı |
 | [OKX OnchainOS Top KOLs](https://web3.okx.com/tr/onchainos/dev-docs/market/market-social-vibe-top-kols) | Token bazlı KOL keşfi | İmzalı sunucu API'si | Handle, takipçi, etkileşim, bahsedilme, gösterim, ilk paylaşım URL'si | Otomatik keşif sağlayıcısı |
 | [Sorsa API](https://docs.sorsa.io/api-reference-guide) | X profil ve içerik zenginleştirme | `ApiKey` başlığı ile sunucu API'si | Profil, tweet, arama, mention, takipçi analizi, Sorsa Score | Otomatik zenginleştirme sağlayıcısı |
 | [Growing3](https://growing3.ai/product/influencer_insight_browser_extension) | Editör profil araştırması | Tarayıcı eklentisi / ürün arayüzü | Kitle büyüklüğü, etkileşim oranı, görüntülenme oranı, anahtar kelimeler | Editör destekli kontrol; API teyidine kadar otomatik kaynak değil |
@@ -98,6 +99,8 @@ Anahtarlar yalnız backend ortamında tutulur:
 ```env
 SORSA_API_KEY=""
 SORSA_API_BASE_URL="https://api.sorsa.io/v3"
+X_API_BEARER_TOKEN=""
+X_API_BASE_URL="https://api.x.com/2"
 OKX_ONCHAIN_API_KEY=""
 OKX_ONCHAIN_SECRET_KEY=""
 OKX_ONCHAIN_PASSPHRASE=""
@@ -180,9 +183,16 @@ Admin panelinde şu göstergeler bulunmalıdır:
 - [x] `/kol-intelligence/data-sources` bilgilendirme sayfası eklendi.
 - [x] Masaüstü ve mobil KOL Intelligence menüsüne “Veri Kaynakları” eklendi.
 - [x] Sahte/demo API cevabı üretmeme kuralı uygulandı.
+- [x] Admin paneline X profil URL'si ile kullanıcı bulma ve kaydetmeden önce önizleme akışı eklendi.
+- [x] X API kullanıcı yanıtı platform ID, profil ve public metrik alanlarına normalize edildi.
+- [x] Seçilen kategorilerle KOL ve sosyal hesap kaydı tek transaction içinde, audit log ile oluşturuluyor.
+- [x] Aynı X platform ID/handle için tekrar KOL oluşturulması engellendi.
+- [x] X doğrulama rozeti ile KriptoKeyfi profil doğrulaması birbirinden ayrıldı.
 
 ### Erişim gerektiren işler
 
+- [ ] X Developer hesabından Bearer Token alınıp production secret store'a `X_API_BEARER_TOKEN` olarak tanımlanacak.
+- [ ] Canlıda gerçek bir profil URL'siyle X User Lookup smoke testi yapılacak.
 - [ ] Sorsa paketi ve üretim API anahtarı alınacak.
 - [ ] Sorsa anahtarı backend secret store'a tanımlanıp `/info` smoke testi yapılacak.
 - [ ] OKX OnchainOS projesi ve üç erişim bilgisi alınacak.
@@ -223,4 +233,3 @@ Pilot tamamlanmış sayılabilmesi için:
 4. Türkiye pilot veri toplaması
 5. Admin inceleme ekranı
 6. Ölçüm kalitesi raporu ve skor pipeline entegrasyonu
-

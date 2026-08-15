@@ -17,6 +17,8 @@ export async function analytics(req: Request, res: Response) { return success(re
 export async function event(req: Request, res: Response) { return success(res, await service.ingestEvent(req.body), 202); }
 export async function redirect(req: Request, res: Response) { return res.redirect(302, await service.resolveTrackingRedirect(req.params.code as string)); }
 export async function adminList(req: Request, res: Response) { return success(res, await service.adminListKOLs()); }
+export async function adminXProfileLookup(req: Request, res: Response) { return success(res, await service.lookupXProfile(req.body.profileUrl)); }
+export async function adminXProfileImport(req: Request, res: Response) { return success(res, await service.importXProfile(req.user!.id, req.body), 201); }
 export async function adminCreate(req: Request, res: Response) { return success(res, await service.createKOL(req.user!.id, req.body), 201); }
 export async function adminCampaigns(_req: Request, res: Response) { return success(res, await service.adminListCampaigns()); }
 export async function adminCampaignStatus(req: Request, res: Response) { return success(res, await service.adminUpdateCampaignStatus(req.user!.id, req.params.id as string, req.body.status)); }

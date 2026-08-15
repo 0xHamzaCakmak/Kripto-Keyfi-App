@@ -4,6 +4,7 @@ import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import { calculateCampaignAnalytics } from './campaign-analytics.service.js';
 import { calculateKOLScore, calculatePredictionAccuracy, KOL_SCORE_METHODOLOGY_VERSION } from './kol-score.service.js';
+import { fetchXProfile } from './providers/x-profile.provider.js';
 
 const scoreSelect = { orderBy: { calculatedAt: 'desc' as const }, take: 1 };
 const jsonSafe = <T>(value: T): T => JSON.parse(JSON.stringify(value, (_key, item) => typeof item === 'bigint' ? item.toString() : item)) as T;
@@ -124,6 +125,72 @@ export async function createKOL(actorId: string, input: any) {
     const kol = await tx.kOL.create({ data: input });
     await tx.kOLAuditLog.create({ data: { actorId, action: 'KOL_CREATED', entityType: 'KOL', entityId: kol.id, afterData: input } });
     return kol;
+  });
+}
+
+export async function lookupXProfile(profileUrl: string) {
+  return fetchXProfile(profileUrl);
+}
+
+async function availableKOLSlug(username: string, platformUserId: string) {
+  const base = username.toLowerCase().replace(/_/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 90) || `x-${platformUserId}`;
+  const existing = await prisma.kOL.findUnique({ where: { slug: base }, select: { id: true } });
+  if (!existing) return base;
+  return `${base}-x-${platformUserId.slice(-6)}`.slice(0, 100);
+}
+
+export async function importXProfile(actorId: string, input: { profileUrl: string; categories: string[]; country: string; language: string }) {
+  const profile = await fetchXProfile(input.profileUrl);
+  const existingAccount = await prisma.kOLSocialAccount.findFirst({
+    where: { platform: 'X', OR: [{ platformUserId: profile.platformUserId }, { handle: `@${profile.username}` }] },
+    include: { kol: true },
+  });
+  if (existingAccount) throw new ApiError(409, `${existingAccount.kol.displayName} zaten KOL listesinde kayıtlı.`, 'KOL_ALREADY_IMPORTED');
+
+  const slug = await availableKOLSlug(profile.username, profile.platformUserId);
+  const measuredAt = new Date(profile.fetchedAt);
+  const platformCreatedAt = profile.createdAt ? new Date(profile.createdAt) : null;
+  const accountAgeDays = platformCreatedAt ? Math.max(0, Math.floor((measuredAt.getTime() - platformCreatedAt.getTime()) / 86_400_000)) : null;
+
+  return prisma.$transaction(async (tx) => {
+    const kol = await tx.kOL.create({
+      data: {
+        slug,
+        displayName: profile.displayName,
+        username: `@${profile.username}`,
+        avatarUrl: profile.avatarUrl ?? null,
+        country: input.country,
+        language: input.language,
+        bio: profile.bio || null,
+        categories: input.categories,
+        isVerified: false,
+        isPublished: false,
+        socialAccounts: {
+          create: {
+            platform: 'X',
+            platformUserId: profile.platformUserId,
+            handle: `@${profile.username}`,
+            profileUrl: profile.profileUrl,
+            followerCount: BigInt(profile.followersCount),
+            followingCount: BigInt(profile.followingCount),
+            contentCount: BigInt(profile.contentCount),
+            listedCount: BigInt(profile.listedCount),
+            platformVerified: profile.verified,
+            platformCreatedAt,
+            accountAgeDays,
+            sourceType: 'PLATFORM_API',
+            verified: true,
+            verificationDate: measuredAt,
+            confidence: 'HIGH',
+            sourceReference: profile.profileUrl,
+            measuredAt,
+          },
+        },
+      },
+      include: { socialAccounts: true, scores: scoreSelect },
+    });
+    await audit(tx, actorId, 'KOL_IMPORTED_FROM_X', 'KOL', kol.id, undefined, { profileUrl: profile.profileUrl, platformUserId: profile.platformUserId, categories: input.categories });
+    return jsonSafe(kol);
   });
 }
 

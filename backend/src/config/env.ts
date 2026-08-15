@@ -47,6 +47,8 @@ const envSchema = z.object({
   R2_PUBLIC_URL: z.union([z.literal(''), z.string().url()]).default(''),
   SORSA_API_KEY: z.string().trim().default(''),
   SORSA_API_BASE_URL: z.string().url().default('https://api.sorsa.io/v3'),
+  X_API_BEARER_TOKEN: z.string().trim().default(''),
+  X_API_BASE_URL: z.string().url().default('https://api.x.com/2'),
   OKX_ONCHAIN_API_KEY: z.string().trim().default(''),
   OKX_ONCHAIN_SECRET_KEY: z.string().trim().default(''),
   OKX_ONCHAIN_PASSPHRASE: z.string().trim().default(''),

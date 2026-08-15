@@ -380,23 +380,30 @@ model KOL {
 }
 
 model KOLSocialAccount {
-  id               String             @id @default(cuid())
-  kolId            String
-  platform         KOLPlatform
-  handle           String             @db.VarChar(160)
-  profileUrl       String?            @db.VarChar(700)
-  followerCount    BigInt             @default(0)
-  engagementRate   Decimal?           @db.Decimal(8, 4)
-  accountAgeDays   Int?
-  sourceType       KOLDataSourceType
-  verified         Boolean            @default(false)
-  verificationDate DateTime?
-  confidence       KOLConfidenceLevel @default(LOW)
-  sourceReference  String?            @db.VarChar(700)
-  measuredAt       DateTime
-  kol              KOL                @relation(fields: [kolId], references: [id], onDelete: Cascade)
+  id                String             @id @default(cuid())
+  kolId             String
+  platform          KOLPlatform
+  platformUserId    String?            @db.VarChar(64)
+  handle            String             @db.VarChar(160)
+  profileUrl        String?            @db.VarChar(700)
+  followerCount     BigInt             @default(0)
+  followingCount    BigInt             @default(0)
+  contentCount      BigInt             @default(0)
+  listedCount       BigInt             @default(0)
+  platformVerified  Boolean            @default(false)
+  platformCreatedAt DateTime?
+  engagementRate    Decimal?           @db.Decimal(8, 4)
+  accountAgeDays    Int?
+  sourceType        KOLDataSourceType
+  verified          Boolean            @default(false)
+  verificationDate  DateTime?
+  confidence        KOLConfidenceLevel @default(LOW)
+  sourceReference   String?            @db.VarChar(700)
+  measuredAt        DateTime
+  kol               KOL                @relation(fields: [kolId], references: [id], onDelete: Cascade)
 
   @@unique([kolId, platform, handle])
+  @@unique([platform, platformUserId])
   @@index([platform, followerCount])
   @@map("kol_social_accounts")
 }
