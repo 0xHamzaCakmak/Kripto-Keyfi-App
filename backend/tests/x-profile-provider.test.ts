@@ -25,4 +25,12 @@ describe('X profile provider', () => {
     expect(result).toMatchObject({ platformUserId: '123', username: 'Selcoin', followersCount: 250000, followingCount: 450, contentCount: 12000, verified: true });
     expect(fetch).toHaveBeenCalledWith(expect.objectContaining({ pathname: '/2/users/by/username/Selcoin' }), expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer test-token' }) }));
   });
+
+  it('reports missing X API credits without exposing credentials', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 402 })));
+    await expect(fetchXProfile('x.com/Selcoin', { bearerToken: 'test-token' })).rejects.toMatchObject({
+      statusCode: 402,
+      code: 'X_API_CREDITS_REQUIRED',
+    });
+  });
 });

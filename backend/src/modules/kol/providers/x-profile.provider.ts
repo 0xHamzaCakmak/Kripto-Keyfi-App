@@ -89,6 +89,7 @@ export async function fetchXProfile(
 
   if (response.status === 404) throw new ApiError(404, 'X kullanıcısı bulunamadı.', 'X_PROFILE_NOT_FOUND');
   if (response.status === 401 || response.status === 403) throw new ApiError(503, 'X API erişim anahtarı geçersiz veya yetkisiz.', 'X_API_UNAUTHORIZED');
+  if (response.status === 402) throw new ApiError(402, 'X API kredisi bulunmuyor. Developer Console üzerinden kullanım kredisi ekleyin.', 'X_API_CREDITS_REQUIRED');
   if (response.status === 429) throw new ApiError(429, 'X API istek limiti doldu. Lütfen daha sonra tekrar deneyin.', 'X_API_RATE_LIMITED');
   if (!response.ok) throw new ApiError(502, `X API profil sorgusu başarısız oldu (${response.status}).`, 'X_API_ERROR');
 
