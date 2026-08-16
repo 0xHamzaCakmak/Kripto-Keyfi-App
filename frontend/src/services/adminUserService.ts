@@ -17,7 +17,15 @@ export type AdminUserListItem = {
 };
 
 export type AdminUserPagination = { page: number; limit: number; total: number; totalPages: number };
-export type AdminUserProfileSection = { key: string; title: string; data: unknown };
+export type AdminUserProfileAction = {
+  key: string;
+  label: string;
+  method: 'DELETE' | 'POST' | 'PATCH';
+  endpoint: string;
+  confirm?: string;
+  tone?: 'default' | 'danger';
+};
+export type AdminUserProfileSection = { key: string; title: string; data: unknown; actions: AdminUserProfileAction[] };
 
 type Result<T> = { data: T };
 
@@ -65,6 +73,19 @@ export async function getAdminUser(id: string) {
 export async function getAdminUserProfileSections(id: string) {
   const response = await api.get<Result<{ sections: AdminUserProfileSection[] }>>(`/admin/users/${id}/profile-sections`);
   return response.data.data.sections;
+}
+
+export async function executeAdminUserProfileAction(action: AdminUserProfileAction, userId: string, row: Record<string, unknown>) {
+  if (!['DELETE', 'POST', 'PATCH'].includes(action.method) || !action.endpoint.startsWith('/admin/') || action.endpoint.includes('://')) {
+    throw new Error('Geçersiz profil aksiyonu.');
+  }
+  const values: Record<string, unknown> = { ...row, userId };
+  const endpoint = action.endpoint.replace(/:([a-zA-Z][a-zA-Z0-9_]*)/g, (_match, key: string) => {
+    const value = values[key];
+    if (value === null || value === undefined || value === '') throw new Error(`Aksiyon için ${key} alanı eksik.`);
+    return encodeURIComponent(String(value));
+  });
+  await api.request({ method: action.method, url: endpoint });
 }
 
 export async function updateAdminUser(id: string, input: {

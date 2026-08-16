@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { success } from '../../utils/response.js';
+import { removeFavoriteChannelAsAdmin } from '../videos/favorite.service.js';
 import type { AdminUserListQuery, CreateAdminUserInput, ResetAdminUserPasswordInput, UpdateAdminUserInput } from './admin-user.schema.js';
 import { createAdminUser, getAdminUser, getAdminUserProfileSections, listAdminUsers, resetAdminUserPassword, restoreAdminUser, softDeleteAdminUser, updateAdminUser } from './admin-user.service.js';
 
@@ -17,6 +18,11 @@ export async function detail(req: Request, res: Response) {
 
 export async function profileSections(req: Request, res: Response) {
   return success(res, { sections: await getAdminUserProfileSections(String(req.params.id)) });
+}
+
+export async function removeFavoriteChannel(req: Request, res: Response) {
+  await removeFavoriteChannelAsAdmin(String(req.params.id), Number(req.params.channelId), req.user!.id);
+  return success(res, { removed: true });
 }
 
 export async function update(req: Request, res: Response) {

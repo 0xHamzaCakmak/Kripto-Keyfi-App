@@ -6,6 +6,14 @@ export const videoUserProfileSections: UserProfileSectionDefinition[] = [
   {
     key: 'favorite_channels',
     title: 'Favori YouTube Kanalları',
+    actions: [{
+      key: 'remove_favorite',
+      label: 'Favoriden Çıkar',
+      method: 'DELETE',
+      endpoint: '/admin/users/:userId/favorite-channels/:channelId',
+      confirm: 'Bu kanal kullanıcının favorilerinden çıkarılsın mı?',
+      tone: 'danger',
+    }],
     async fetch(userId) {
       const favorites = await prisma.userFavoriteChannel.findMany({
         where: { userId },

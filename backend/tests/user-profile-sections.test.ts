@@ -9,11 +9,17 @@ describe('user profile section registry', () => {
     const registry = createUserProfileSectionRegistry([{
       key: 'existing', title: 'Mevcut Bölüm', fetch: async (userId) => [{ userId, value: 1 }],
     }]);
-    registry.register({ key: 'future_module', title: 'Yeni Modül', fetch: async () => [{ enabled: true }] });
+    registry.register({
+      key: 'future_module', title: 'Yeni Modül', fetch: async () => [{ enabled: true }],
+      actions: [{ key: 'disable', label: 'Devre dışı bırak', method: 'PATCH', endpoint: '/admin/users/:userId/example/:id' }],
+    });
 
     await expect(registry.fetchAll('user-1')).resolves.toEqual([
-      { key: 'existing', title: 'Mevcut Bölüm', data: [{ userId: 'user-1', value: 1 }] },
-      { key: 'future_module', title: 'Yeni Modül', data: [{ enabled: true }] },
+      { key: 'existing', title: 'Mevcut Bölüm', data: [{ userId: 'user-1', value: 1 }], actions: [] },
+      {
+        key: 'future_module', title: 'Yeni Modül', data: [{ enabled: true }],
+        actions: [{ key: 'disable', label: 'Devre dışı bırak', method: 'PATCH', endpoint: '/admin/users/:userId/example/:id' }],
+      },
     ]);
   });
 
@@ -24,7 +30,7 @@ describe('user profile section registry', () => {
     ]);
 
     await expect(registry.fetchAll('user-1')).resolves.toEqual([
-      { key: 'healthy', title: 'Sağlıklı', data: { count: 2 } },
+      { key: 'healthy', title: 'Sağlıklı', data: { count: 2 }, actions: [] },
     ]);
   });
 

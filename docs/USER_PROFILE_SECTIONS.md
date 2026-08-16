@@ -11,3 +11,16 @@ export const exampleSections: UserProfileSectionDefinition[] = [{
 
 userProfileSectionRegistry.register(...exampleSections);
 ```
+
+Bir bölüm satır bazlı admin işlemi sunacaksa `actions` metadata'sı ekler. Endpoint şablonundaki `:userId` otomatik olarak sayfadaki kullanıcıdan, `:id` gibi diğer alanlar ilgili satır verisinden alınır; generic kart butonu ve yükleme durumunu kendisi üretir.
+
+```ts
+actions: [{
+  key: 'remove',
+  label: 'Listeden çıkar',
+  method: 'DELETE',
+  endpoint: '/admin/users/:userId/example/:id',
+  confirm: 'Bu kayıt kaldırılsın mı?',
+  tone: 'danger',
+}]
+```

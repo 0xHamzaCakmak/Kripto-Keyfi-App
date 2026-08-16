@@ -14,3 +14,20 @@ export async function toggleFavoriteChannel(userId: string, channelId: number) {
   await prisma.userFavoriteChannel.create({ data: { userId, channelId } });
   return true;
 }
+
+export async function removeFavoriteChannelAsAdmin(userId: string, channelId: number, adminId: string) {
+  await prisma.$transaction(async (transaction) => {
+    const favorite = await transaction.userFavoriteChannel.findUnique({
+      where: { userId_channelId: { userId, channelId } },
+      select: { id: true, channel: { select: { channelId: true, channelName: true } } },
+    });
+    if (!favorite) throw new ApiError(404, 'Favori kanal kaydı bulunamadı.', 'FAVORITE_CHANNEL_NOT_FOUND');
+    await transaction.userFavoriteChannel.delete({ where: { userId_channelId: { userId, channelId } } });
+    await transaction.userAdminAuditLog.create({ data: {
+      userId,
+      adminId,
+      action: 'favorite_channel_removed',
+      changes: { favorite_channel: { old: { channelId, youtubeChannelId: favorite.channel.channelId, channelName: favorite.channel.channelName }, new: null } },
+    } });
+  });
+}

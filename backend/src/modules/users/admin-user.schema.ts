@@ -31,6 +31,10 @@ export const adminUserParamsSchema = z.object({
   id: z.string().trim().min(1).max(191),
 });
 
+export const adminUserFavoriteChannelParamsSchema = adminUserParamsSchema.extend({
+  channelId: z.coerce.number().int().positive(),
+});
+
 export const updateAdminUserBodySchema = z.object({
   email: z.string().trim().email().transform((value) => value.toLowerCase()).optional(),
   username: z.string().transform(normalizeUsername).pipe(
