@@ -1,4 +1,4 @@
-import { Prisma, UserCapabilityStatus, UserCapabilityType, VideoSource, VideoStatus, YoutubeChannelStatus } from '@prisma/client';
+import { Prisma, UserCapabilityStatus, UserCapabilityType, VideoContentType, VideoSource, VideoStatus, YoutubeChannelStatus } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { getChannelInfo, getVideoDetails, parseYoutubeVideoId } from '../../services/youtubeApi.js';
 import { ApiError } from '../../utils/api-error.js';
@@ -64,6 +64,7 @@ export async function addCreatorVideo(userId: string, youtubeUrl: string) {
       data: {
         youtubeVideoId, youtubeUrl: details.youtubeUrl, channelId: state.channel.id, channelName: details.channelName,
         title: details.title, description: details.description, thumbnailUrl: details.thumbnailUrl, duration: details.duration,
+        durationSeconds: details.durationSeconds, contentType: details.contentType === 'short' ? VideoContentType.SHORT : VideoContentType.LONG,
         publishedAt: details.publishedAt, source: VideoSource.CREATOR_AUTO, status: VideoStatus.PUBLISHED,
         creatorId: userId, addedById: userId,
       },

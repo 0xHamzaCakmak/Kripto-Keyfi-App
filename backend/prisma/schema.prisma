@@ -224,6 +224,11 @@ enum VideoStatus {
   HIDDEN    @map("hidden")
 }
 
+enum VideoContentType {
+  LONG  @map("long")
+  SHORT @map("short")
+}
+
 enum KOLPlatform {
   X
   YOUTUBE
@@ -394,28 +399,31 @@ model YoutubeChannel {
 }
 
 model Video {
-  id             Int             @id @default(autoincrement())
-  youtubeVideoId String          @unique @map("youtube_video_id") @db.VarChar(32)
-  youtubeUrl     String          @map("youtube_url") @db.VarChar(500)
-  channelId      Int?            @map("channel_id")
-  channelName    String?         @map("channel_name") @db.VarChar(255)
-  title          String?         @db.VarChar(500)
-  description    String?         @db.Text
-  thumbnailUrl   String?         @map("thumbnail_url") @db.VarChar(500)
-  duration       String?         @db.VarChar(16)
-  publishedAt    DateTime?       @map("published_at")
-  source         VideoSource
-  status         VideoStatus     @default(PUBLISHED)
-  addedById      String?         @map("added_by")
-  creatorId      String?         @map("creator_id")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
-  channel        YoutubeChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
-  addedBy        User?           @relation("video_added_by", fields: [addedById], references: [id], onDelete: SetNull)
-  creator        User?           @relation("video_creator", fields: [creatorId], references: [id], onDelete: SetNull)
+  id              Int              @id @default(autoincrement())
+  youtubeVideoId  String           @unique @map("youtube_video_id") @db.VarChar(32)
+  youtubeUrl      String           @map("youtube_url") @db.VarChar(500)
+  channelId       Int?             @map("channel_id")
+  channelName     String?          @map("channel_name") @db.VarChar(255)
+  title           String?          @db.VarChar(500)
+  description     String?          @db.Text
+  thumbnailUrl    String?          @map("thumbnail_url") @db.VarChar(500)
+  duration        String?          @db.VarChar(16)
+  durationSeconds Int?             @map("duration_seconds")
+  contentType     VideoContentType @default(LONG) @map("content_type")
+  publishedAt     DateTime?        @map("published_at")
+  source          VideoSource
+  status          VideoStatus      @default(PUBLISHED)
+  addedById       String?          @map("added_by")
+  creatorId       String?          @map("creator_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  channel         YoutubeChannel?  @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  addedBy         User?            @relation("video_added_by", fields: [addedById], references: [id], onDelete: SetNull)
+  creator         User?            @relation("video_creator", fields: [creatorId], references: [id], onDelete: SetNull)
 
   @@index([channelId])
   @@index([status, publishedAt])
+  @@index([status, contentType, publishedAt])
   @@index([source, status])
   @@index([addedById])
   @@index([creatorId])

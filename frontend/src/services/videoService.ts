@@ -8,6 +8,8 @@ export type PublicVideo = {
   description: string;
   thumbnailUrl: string | null;
   duration: string | null;
+  durationSeconds: number | null;
+  contentType: 'long' | 'short';
   publishedAt: string | null;
   channelName: string;
   channelAvatarUrl: string | null;
@@ -44,9 +46,13 @@ export type AdminCreatorApplication = {
 
 type Result<T> = { data: T };
 
-export async function getVideos() {
-  const response = await api.get<Result<{ videos: PublicVideo[] }>>('/videos');
-  return response.data.data.videos;
+export type VideoCounts = { all: number; long: number; short: number };
+
+export async function getVideos(filters: { contentType?: 'all' | 'long' | 'short'; creator?: string } = {}) {
+  const response = await api.get<Result<{ videos: PublicVideo[]; counts: VideoCounts }>>('/videos', {
+    params: { content_type: filters.contentType ?? 'all', ...(filters.creator ? { creator: filters.creator } : {}) },
+  });
+  return response.data.data;
 }
 
 export async function addVideo(youtubeUrl: string) {

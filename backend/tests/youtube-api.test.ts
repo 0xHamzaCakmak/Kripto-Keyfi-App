@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/utils/api-error.js';
-import { formatYoutubeDuration, getChannelInfo, getUploadsFromPlaylist, getVideoDetails, parseYoutubeVideoId } from '../src/services/youtubeApi.js';
+import { classifyYoutubeContent, formatYoutubeDuration, getChannelInfo, getUploadsFromPlaylist, getVideoDetails, parseYoutubeVideoId, youtubeDurationToSeconds } from '../src/services/youtubeApi.js';
 
 describe('YouTube video integration', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -26,6 +26,16 @@ describe('YouTube video integration', () => {
     expect(formatYoutubeDuration(duration)).toBe(expected);
   });
 
+  it.each([
+    ['PT58S', new Date('2024-01-01T00:00:00Z'), 58, 'short'],
+    ['PT2M30S', new Date('2025-01-01T00:00:00Z'), 150, 'short'],
+    ['PT2M30S', new Date('2024-01-01T00:00:00Z'), 150, 'long'],
+    ['PT18M42S', new Date('2026-01-01T00:00:00Z'), 1122, 'long'],
+  ])('classifies %s published at %s', (duration, publishedAt, seconds, expected) => {
+    expect(youtubeDurationToSeconds(duration)).toBe(seconds);
+    expect(classifyYoutubeContent(seconds, publishedAt)).toBe(expected);
+  });
+
   it('maps public video details without downloading video content', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       items: [{
@@ -40,7 +50,7 @@ describe('YouTube video integration', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await getVideoDetails('dQw4w9WgXcQ', 'test-api-key');
-    expect(result).toMatchObject({ title: 'Test video', channelName: 'Test Kanalı', duration: '18:42' });
+    expect(result).toMatchObject({ title: 'Test video', channelName: 'Test Kanalı', duration: '18:42', durationSeconds: 1122, contentType: 'long' });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0][0])).toContain('part=snippet%2CcontentDetails');
   });

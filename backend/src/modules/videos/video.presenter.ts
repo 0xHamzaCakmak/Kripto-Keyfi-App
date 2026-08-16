@@ -11,6 +11,8 @@ export function presentVideo(video: VideoWithChannel) {
     description: video.description ?? '',
     thumbnailUrl: video.thumbnailUrl,
     duration: video.duration,
+    durationSeconds: video.durationSeconds,
+    contentType: video.contentType.toLowerCase(),
     publishedAt: video.publishedAt?.toISOString() ?? null,
     channelName: video.channel?.channelName ?? video.channelName ?? 'YouTube',
     channelAvatarUrl: video.channel?.avatarUrl ?? null,

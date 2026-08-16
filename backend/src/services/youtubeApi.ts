@@ -36,6 +36,8 @@ export type YoutubeVideoDetails = {
   description: string;
   thumbnailUrl: string | null;
   duration: string;
+  durationSeconds: number | null;
+  contentType: 'long' | 'short';
   publishedAt: Date;
   channelName: string;
   channelId: string;
@@ -92,7 +94,22 @@ export function formatYoutubeDuration(duration: string) {
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
+export function youtubeDurationToSeconds(duration: string) {
+  const match = /^P(?:([0-9]+)D)?T(?:([0-9]+)H)?(?:([0-9]+)M)?(?:([0-9]+)S)?$/.exec(duration);
+  if (!match) return null;
+  return Number(match[1] ?? 0) * 86_400 + Number(match[2] ?? 0) * 3_600 + Number(match[3] ?? 0) * 60 + Number(match[4] ?? 0);
+}
+
+export function classifyYoutubeContent(durationSeconds: number | null, publishedAt: Date) {
+  if (!durationSeconds || durationSeconds < 1) return 'long' as const;
+  if (durationSeconds <= 60) return 'short' as const;
+  const threeMinuteShortsCutoff = Date.parse('2024-10-15T00:00:00Z');
+  return durationSeconds <= 180 && publishedAt.getTime() >= threeMinuteShortsCutoff ? 'short' as const : 'long' as const;
+}
+
 function normalizeVideo(item: z.infer<typeof videoItemSchema>): YoutubeVideoDetails {
+  const publishedAt = new Date(item.snippet.publishedAt);
+  const durationSeconds = youtubeDurationToSeconds(item.contentDetails.duration);
   return {
     youtubeVideoId: item.id,
     youtubeUrl: `https://www.youtube.com/watch?v=${item.id}`,
@@ -100,7 +117,9 @@ function normalizeVideo(item: z.infer<typeof videoItemSchema>): YoutubeVideoDeta
     description: item.snippet.description,
     thumbnailUrl: bestThumbnail(item.snippet.thumbnails),
     duration: formatYoutubeDuration(item.contentDetails.duration),
-    publishedAt: new Date(item.snippet.publishedAt),
+    durationSeconds,
+    contentType: classifyYoutubeContent(durationSeconds, publishedAt),
+    publishedAt,
     channelName: item.snippet.channelTitle,
     channelId: item.snippet.channelId,
   };

@@ -12,7 +12,7 @@ export default function AdminVideos() {
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
-    getVideos().then(setVideos).catch((reason) => setError(getApiErrorMessage(reason, 'Video listesi yüklenemedi.'))).finally(() => setLoading(false));
+    getVideos().then((result) => setVideos(result.videos)).catch((reason) => setError(getApiErrorMessage(reason, 'Video listesi yüklenemedi.'))).finally(() => setLoading(false));
   }, []);
 
   async function submit(event: React.FormEvent) {

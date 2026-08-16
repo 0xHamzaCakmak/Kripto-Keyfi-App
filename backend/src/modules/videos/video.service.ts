@@ -1,4 +1,4 @@
-import { Prisma, VideoSource, VideoStatus, YoutubeChannelStatus, type YoutubeChannel } from '@prisma/client';
+import { Prisma, VideoContentType, VideoSource, VideoStatus, YoutubeChannelStatus, type YoutubeChannel } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { getChannelInfo, getUploadsFromPlaylist, getVideoDetails, parseYoutubeVideoId } from '../../services/youtubeApi.js';
@@ -7,11 +7,25 @@ import { ApiError } from '../../utils/api-error.js';
 const withChannel = { channel: { select: { channelName: true, avatarUrl: true, isOwnChannel: true } } } as const;
 const withVideoCount = { _count: { select: { videos: true } } } as const;
 
-export async function listPublishedVideos() {
-  return prisma.video.findMany({
-    where: { status: VideoStatus.PUBLISHED }, include: withChannel,
-    orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-  });
+export async function listPublishedVideos(contentType: 'all' | 'long' | 'short' = 'all', creator?: string) {
+  const creatorFilter = creator ? {
+    OR: [
+      { channelName: { contains: creator } },
+      { channel: { is: { channelName: { contains: creator } } } },
+    ],
+  } : {};
+  const baseWhere: Prisma.VideoWhereInput = { status: VideoStatus.PUBLISHED, ...creatorFilter };
+  const where: Prisma.VideoWhereInput = {
+    ...baseWhere,
+    ...(contentType === 'all' ? {} : { contentType: contentType === 'short' ? VideoContentType.SHORT : VideoContentType.LONG }),
+  };
+  const [videos, all, long, short] = await prisma.$transaction([
+    prisma.video.findMany({ where, include: withChannel, orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }] }),
+    prisma.video.count({ where: baseWhere }),
+    prisma.video.count({ where: { ...baseWhere, contentType: VideoContentType.LONG } }),
+    prisma.video.count({ where: { ...baseWhere, contentType: VideoContentType.SHORT } }),
+  ]);
+  return { videos, counts: { all, long, short } };
 }
 
 export async function createManualVideo(youtubeUrl: string, addedById: string) {
@@ -23,7 +37,8 @@ export async function createManualVideo(youtubeUrl: string, addedById: string) {
     return await prisma.video.create({
       data: {
         youtubeVideoId, youtubeUrl: details.youtubeUrl, title: details.title, description: details.description,
-        thumbnailUrl: details.thumbnailUrl, duration: details.duration, publishedAt: details.publishedAt,
+        thumbnailUrl: details.thumbnailUrl, duration: details.duration, durationSeconds: details.durationSeconds,
+        contentType: details.contentType === 'short' ? VideoContentType.SHORT : VideoContentType.LONG, publishedAt: details.publishedAt,
         channelName: details.channelName, source: VideoSource.ADMIN_MANUAL, status: VideoStatus.PUBLISHED, addedById,
       },
       include: withChannel,
@@ -52,7 +67,8 @@ export async function syncYoutubeChannel(channel: YoutubeChannel, limit = 500) {
       data: uploads.map((video) => ({
         youtubeVideoId: video.youtubeVideoId, youtubeUrl: video.youtubeUrl, channelId: channel.id,
         channelName: video.channelName, title: video.title, description: video.description,
-        thumbnailUrl: video.thumbnailUrl, duration: video.duration, publishedAt: video.publishedAt,
+        thumbnailUrl: video.thumbnailUrl, duration: video.duration, durationSeconds: video.durationSeconds,
+        contentType: video.contentType === 'short' ? VideoContentType.SHORT : VideoContentType.LONG, publishedAt: video.publishedAt,
         source, status: VideoStatus.PUBLISHED, addedById: channel.addedById,
         creatorId: channel.ownerUserId,
       })),

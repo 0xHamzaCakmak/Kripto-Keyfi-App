@@ -3,9 +3,9 @@ import { success } from '../../utils/response.js';
 import { presentVideo, presentYoutubeChannel } from './video.presenter.js';
 import { createManualVideo, createYoutubeChannel, listPublishedVideos, listYoutubeChannels, updateYoutubeChannelStatus } from './video.service.js';
 
-export async function list(_req: Request, res: Response) {
-  const videos = await listPublishedVideos();
-  return success(res, { videos: videos.map(presentVideo) });
+export async function list(req: Request, res: Response) {
+  const result = await listPublishedVideos(req.query.content_type as 'all' | 'long' | 'short', req.query.creator as string | undefined);
+  return success(res, { videos: result.videos.map(presentVideo), counts: result.counts });
 }
 
 export async function create(req: Request, res: Response) {
