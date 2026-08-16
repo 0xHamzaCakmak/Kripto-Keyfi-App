@@ -28,7 +28,7 @@ export function createApp() {
   app.use(pinoHttp({
     level: env.NODE_ENV === 'test' ? 'silent' : 'info',
     redact: [
-      'req.headers.authorization', 'req.headers.cookie', 'req.headers.x-print-agent-token', 'req.body.password', 'req.body.confirmPassword', 'req.body.credential',
+      'req.headers.authorization', 'req.headers.cookie', 'req.headers.x-print-agent-token', 'req.body.password', 'req.body.new_password', 'req.body.confirmPassword', 'req.body.credential',
       'req.body.apiKey', 'req.body.apiSecret', 'req.body.passphrase', 'res.headers.set-cookie',
     ],
   }));
