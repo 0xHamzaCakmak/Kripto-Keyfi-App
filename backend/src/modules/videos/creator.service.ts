@@ -2,6 +2,7 @@ import { Prisma, UserCapabilityStatus, UserCapabilityType, VideoContentType, Vid
 import { prisma } from '../../database/prisma.js';
 import { getChannelInfo, getVideoDetails, parseYoutubeVideoId } from '../../services/youtubeApi.js';
 import { ApiError } from '../../utils/api-error.js';
+import { cacheYoutubeChannelAvatar } from './youtube-channel-assets.js';
 
 const channelWithCount = { _count: { select: { videos: true } } } as const;
 
@@ -14,7 +15,8 @@ export async function getMyCreatorState(userId: string) {
 }
 
 export async function connectMyYoutubeChannel(userId: string, channelUrl: string) {
-  const [details, state] = await Promise.all([getChannelInfo(channelUrl), getMyCreatorState(userId)]);
+  const [rawDetails, state] = await Promise.all([getChannelInfo(channelUrl), getMyCreatorState(userId)]);
+  const details = await cacheYoutubeChannelAvatar(rawDetails);
   const lockedStatuses: UserCapabilityStatus[] = [UserCapabilityStatus.PENDING, UserCapabilityStatus.APPROVED, UserCapabilityStatus.SUSPENDED];
   if (state.capability && lockedStatuses.includes(state.capability.status)) {
     throw new ApiError(409, 'Başvuru incelemedeyken veya onaylıyken kanal değiştirilemez.', 'CREATOR_CHANNEL_LOCKED');

@@ -1,11 +1,19 @@
 import type { Request, Response } from 'express';
 import { success } from '../../utils/response.js';
 import { presentVideo, presentYoutubeChannel } from './video.presenter.js';
-import { createManualVideo, createYoutubeChannel, listPublishedVideos, listYoutubeChannels, updateYoutubeChannelStatus } from './video.service.js';
+import { createManualVideo, createYoutubeChannel, listPublishedVideos, listPublicYoutubeChannels, listYoutubeChannels, updateYoutubeChannelStatus } from './video.service.js';
 
 export async function list(req: Request, res: Response) {
-  const result = await listPublishedVideos(req.query.content_type as 'all' | 'long' | 'short', req.query.creator as string | undefined);
-  return success(res, { videos: result.videos.map(presentVideo), counts: result.counts });
+  const result = await listPublishedVideos({
+    contentType: (req.query.type ?? req.query.content_type ?? 'all') as 'all' | 'long' | 'short',
+    search: (req.query.search ?? req.query.creator) as string | undefined,
+    channelId: req.query.channel_id as unknown as number | undefined,
+    favoritesOnly: req.query.favorites_only as unknown as boolean,
+    userId: req.user?.id,
+    page: req.query.page as unknown as number,
+    limit: req.query.limit as unknown as number,
+  });
+  return success(res, { videos: result.videos.map(presentVideo), counts: result.counts, pagination: result.pagination });
 }
 
 export async function create(req: Request, res: Response) {
@@ -16,6 +24,10 @@ export async function create(req: Request, res: Response) {
 export async function listChannels(_req: Request, res: Response) {
   const channels = await listYoutubeChannels();
   return success(res, { channels: channels.map(presentYoutubeChannel) });
+}
+
+export async function listPublicChannels(_req: Request, res: Response) {
+  return success(res, { channels: await listPublicYoutubeChannels() });
 }
 
 export async function createChannel(req: Request, res: Response) {

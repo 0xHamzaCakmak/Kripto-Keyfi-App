@@ -15,8 +15,9 @@ import { adminNewsRouter } from './modules/news/news.admin.routes.js';
 import { newsRouter } from './modules/news/news.routes.js';
 import { userRouter } from './modules/users/user.routes.js';
 import { adminKOLRouter, kolRouter, kolTrackingRouter } from './modules/kol/kol.routes.js';
-import { adminVideoRouter, adminYoutubeChannelRouter, videoRouter } from './modules/videos/video.routes.js';
+import { adminVideoRouter, adminYoutubeChannelRouter, publicYoutubeChannelRouter, videoRouter } from './modules/videos/video.routes.js';
 import { adminCreatorRouter, creatorRouter } from './modules/videos/creator.routes.js';
+import { favoriteChannelRouter } from './modules/videos/favorite.routes.js';
 
 export function createApp() {
   const app = express();
@@ -46,6 +47,8 @@ export function createApp() {
   app.use(`${API_PREFIX}/news`, newsRouter);
   app.use(`${API_PREFIX}/kols`, kolRouter);
   app.use(`${API_PREFIX}/videos`, videoRouter);
+  app.use(`${API_PREFIX}/youtube-channels`, publicYoutubeChannelRouter);
+  app.use(`${API_PREFIX}/favorites/channels`, favoriteChannelRouter);
   app.use(`${API_PREFIX}/creator`, creatorRouter);
   app.use(`${API_PREFIX}/admin`, adminRouter);
   app.use(`${API_PREFIX}/admin/kols`, adminKOLRouter);

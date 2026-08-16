@@ -5,6 +5,7 @@ type VideoWithChannel = Video & { channel: Pick<YoutubeChannel, 'channelName' | 
 export function presentVideo(video: VideoWithChannel) {
   return {
     id: video.id,
+    channelId: video.channelId,
     youtubeVideoId: video.youtubeVideoId,
     youtubeUrl: video.youtubeUrl,
     title: video.title ?? 'İsimsiz video',

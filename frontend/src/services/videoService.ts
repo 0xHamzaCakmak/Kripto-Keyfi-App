@@ -2,6 +2,7 @@ import { api } from './apiClient';
 
 export type PublicVideo = {
   id: number;
+  channelId: number | null;
   youtubeVideoId: string;
   youtubeUrl: string;
   title: string;
@@ -47,12 +48,34 @@ export type AdminCreatorApplication = {
 type Result<T> = { data: T };
 
 export type VideoCounts = { all: number; long: number; short: number };
+export type VideoPagination = { page: number; limit: number; total: number; totalPages: number };
+export type PublicYoutubeChannel = { id: number; channelName: string; avatarUrl: string | null; videoCount: number };
 
-export async function getVideos(filters: { contentType?: 'all' | 'long' | 'short'; creator?: string } = {}) {
-  const response = await api.get<Result<{ videos: PublicVideo[]; counts: VideoCounts }>>('/videos', {
-    params: { content_type: filters.contentType ?? 'all', ...(filters.creator ? { creator: filters.creator } : {}) },
+export async function getVideos(filters: { contentType?: 'all' | 'long' | 'short'; search?: string; channelId?: number; favoritesOnly?: boolean; page?: number; limit?: number } = {}) {
+  const response = await api.get<Result<{ videos: PublicVideo[]; counts: VideoCounts; pagination: VideoPagination }>>('/videos', {
+    params: {
+      type: filters.contentType ?? 'all', page: filters.page ?? 1, limit: filters.limit ?? 24,
+      ...(filters.search ? { search: filters.search } : {}),
+      ...(filters.channelId ? { channel_id: filters.channelId } : {}),
+      ...(filters.favoritesOnly ? { favorites_only: 'true' } : {}),
+    },
   });
   return response.data.data;
+}
+
+export async function getPublicYoutubeChannels() {
+  const response = await api.get<Result<{ channels: PublicYoutubeChannel[] }>>('/youtube-channels/list');
+  return response.data.data.channels;
+}
+
+export async function getFavoriteChannelIds() {
+  const response = await api.get<Result<{ channelIds: number[] }>>('/favorites/channels');
+  return response.data.data.channelIds;
+}
+
+export async function toggleFavoriteChannel(channelId: number) {
+  const response = await api.post<Result<{ favorited: boolean }>>(`/favorites/channels/${channelId}`);
+  return response.data.data.favorited;
 }
 
 export async function addVideo(youtubeUrl: string) {

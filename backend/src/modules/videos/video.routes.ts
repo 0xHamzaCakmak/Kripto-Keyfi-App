@@ -1,6 +1,6 @@
 import { UserRole } from '@prisma/client';
 import { Router } from 'express';
-import { authenticate } from '../../middleware/authenticate.js';
+import { authenticate, optionalAuthenticate } from '../../middleware/authenticate.js';
 import { authorize } from '../../middleware/authorize.js';
 import { validateRequest } from '../../middleware/validate-request.js';
 import { asyncHandler } from '../../utils/async-handler.js';
@@ -8,7 +8,10 @@ import * as controller from './video.controller.js';
 import { createVideoBodySchema, createYoutubeChannelBodySchema, listVideosQuerySchema, updateYoutubeChannelBodySchema, youtubeChannelParamsSchema } from './video.schema.js';
 
 export const videoRouter = Router();
-videoRouter.get('/', validateRequest({ query: listVideosQuerySchema }), asyncHandler(controller.list));
+videoRouter.get('/', optionalAuthenticate, validateRequest({ query: listVideosQuerySchema }), asyncHandler(controller.list));
+
+export const publicYoutubeChannelRouter = Router();
+publicYoutubeChannelRouter.get('/list', asyncHandler(controller.listPublicChannels));
 
 export const adminVideoRouter = Router();
 adminVideoRouter.use(authenticate, authorize(UserRole.ADMIN));

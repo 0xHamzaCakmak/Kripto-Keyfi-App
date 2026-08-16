@@ -3,29 +3,54 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { getChannelInfo, getUploadsFromPlaylist, getVideoDetails, parseYoutubeVideoId } from '../../services/youtubeApi.js';
 import { ApiError } from '../../utils/api-error.js';
+import { cacheYoutubeChannelAvatar } from './youtube-channel-assets.js';
 
 const withChannel = { channel: { select: { channelName: true, avatarUrl: true, isOwnChannel: true } } } as const;
 const withVideoCount = { _count: { select: { videos: true } } } as const;
 
-export async function listPublishedVideos(contentType: 'all' | 'long' | 'short' = 'all', creator?: string) {
-  const creatorFilter = creator ? {
-    OR: [
-      { channelName: { contains: creator } },
-      { channel: { is: { channelName: { contains: creator } } } },
-    ],
-  } : {};
-  const baseWhere: Prisma.VideoWhereInput = { status: VideoStatus.PUBLISHED, ...creatorFilter };
+type PublishedVideoFilters = {
+  contentType?: 'all' | 'long' | 'short';
+  search?: string | undefined;
+  channelId?: number | undefined;
+  favoritesOnly?: boolean;
+  userId?: string | undefined;
+  page?: number;
+  limit?: number;
+};
+
+export async function listPublishedVideos(filters: PublishedVideoFilters = {}) {
+  const { contentType = 'all', search, channelId, favoritesOnly = false, userId, page = 1, limit = 24 } = filters;
+  if (favoritesOnly && !userId) throw new ApiError(401, 'Favori videolar için giriş yapmalısınız.', 'UNAUTHORIZED');
+  const conditions: Prisma.VideoWhereInput[] = [];
+  if (search) conditions.push({ OR: [
+    { title: { contains: search } },
+    { channelName: { contains: search } },
+    { channel: { is: { channelName: { contains: search } } } },
+  ] });
+  if (channelId) conditions.push({ channelId });
+  if (favoritesOnly && userId) conditions.push({ channel: { is: { favoritedBy: { some: { userId } } } } });
+  const baseWhere: Prisma.VideoWhereInput = { status: VideoStatus.PUBLISHED, ...(conditions.length ? { AND: conditions } : {}) };
   const where: Prisma.VideoWhereInput = {
     ...baseWhere,
     ...(contentType === 'all' ? {} : { contentType: contentType === 'short' ? VideoContentType.SHORT : VideoContentType.LONG }),
   };
   const [videos, all, long, short] = await prisma.$transaction([
-    prisma.video.findMany({ where, include: withChannel, orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }] }),
+    prisma.video.findMany({ where, include: withChannel, orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }], skip: (page - 1) * limit, take: limit }),
     prisma.video.count({ where: baseWhere }),
     prisma.video.count({ where: { ...baseWhere, contentType: VideoContentType.LONG } }),
     prisma.video.count({ where: { ...baseWhere, contentType: VideoContentType.SHORT } }),
   ]);
-  return { videos, counts: { all, long, short } };
+  const total = contentType === 'all' ? all : contentType === 'short' ? short : long;
+  return { videos, counts: { all, long, short }, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+}
+
+export async function listPublicYoutubeChannels() {
+  const channels = await prisma.youtubeChannel.findMany({
+    where: { videos: { some: { status: VideoStatus.PUBLISHED } } },
+    select: { id: true, channelName: true, avatarUrl: true, _count: { select: { videos: { where: { status: VideoStatus.PUBLISHED } } } } },
+    orderBy: { channelName: 'asc' },
+  });
+  return channels.map((channel) => ({ id: channel.id, channelName: channel.channelName ?? 'YouTube', avatarUrl: channel.avatarUrl, videoCount: channel._count.videos }));
 }
 
 export async function createManualVideo(youtubeUrl: string, addedById: string) {
@@ -80,7 +105,7 @@ export async function syncYoutubeChannel(channel: YoutubeChannel, limit = 500) {
 }
 
 export async function createYoutubeChannel(channelUrl: string, addedById: string) {
-  const details = await getChannelInfo(channelUrl);
+  const details = await cacheYoutubeChannelAvatar(await getChannelInfo(channelUrl));
   const existing = await prisma.youtubeChannel.findUnique({ where: { channelId: details.channelId }, select: { id: true } });
   if (existing) throw new ApiError(409, 'Bu YouTube kanalı zaten takip ediliyor.', 'YOUTUBE_CHANNEL_ALREADY_EXISTS');
   let channel: YoutubeChannel;
