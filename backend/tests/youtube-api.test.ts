@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/utils/api-error.js';
-import { classifyYoutubeContent, formatYoutubeDuration, getChannelInfo, getChannelStatistics, getRecentVideosStats, getUploadsFromPlaylist, getVideoDetails, parseYoutubeVideoId, youtubeDurationToSeconds } from '../src/services/youtubeApi.js';
+import { classifyYoutubeContent, formatYoutubeDuration, getChannelInfo, getChannelStatistics, getRecentVideosStats, getUploadsFromPlaylist, getVideoDetails, parseYoutubeVideoId, selectYoutubeVideosByType, youtubeDurationToSeconds, type YoutubeVideoDetails } from '../src/services/youtubeApi.js';
 
 describe('YouTube video integration', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -84,6 +84,30 @@ describe('YouTube video integration', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(String(fetchMock.mock.calls[0]![0])).toContain('playlistItems');
     expect(String(fetchMock.mock.calls[1]![0])).toContain('videos');
+  });
+
+  it('selects separate newest quotas for long videos and Shorts', () => {
+    const makeVideo = (id: string, contentType: 'long' | 'short'): YoutubeVideoDetails => ({
+      youtubeVideoId: id,
+      youtubeUrl: `https://youtube.com/watch?v=${id}`,
+      title: id,
+      description: '',
+      thumbnailUrl: null,
+      duration: contentType === 'short' ? '0:30' : '10:00',
+      durationSeconds: contentType === 'short' ? 30 : 600,
+      contentType,
+      publishedAt: new Date(),
+      channelName: 'Test',
+      channelId: 'UC_TEST',
+    });
+    const videos = [
+      makeVideo('short-1', 'short'), makeVideo('short-2', 'short'), makeVideo('short-3', 'short'),
+      makeVideo('long-1', 'long'), makeVideo('long-2', 'long'), makeVideo('long-3', 'long'),
+    ];
+
+    expect(selectYoutubeVideosByType(videos, 2).map((video) => video.youtubeVideoId)).toEqual([
+      'short-1', 'short-2', 'long-1', 'long-2',
+    ]);
   });
 
   it('reads channel totals from channels.list statistics', async () => {

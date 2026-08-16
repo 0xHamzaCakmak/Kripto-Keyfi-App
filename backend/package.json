@@ -39,7 +39,9 @@
     "security:secrets": "tsx scripts/check-repository-secrets.ts",
     "youtube:backfill-avatars": "tsx scripts/backfill-youtube-channel-avatars.ts",
     "youtube:collect-metrics": "tsx scripts/collect-youtube-metrics.ts",
-    "youtube:calculate-scores": "tsx scripts/calculate-youtube-scores.ts"
+    "youtube:calculate-scores": "tsx scripts/calculate-youtube-scores.ts",
+    "youtube:backfill-balanced-videos": "tsx scripts/backfill-balanced-youtube-videos.ts",
+    "youtube:set-own-channel": "tsx scripts/set-own-youtube-channel.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

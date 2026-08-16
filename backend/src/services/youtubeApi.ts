@@ -267,4 +267,53 @@ export async function getUploadsFromPlaylist(playlistId: string, publishedAfter:
   return videos;
 }
 
+export function selectYoutubeVideosByType(videos: YoutubeVideoDetails[], perTypeLimit: number) {
+  let longCount = 0;
+  let shortCount = 0;
+  return videos.filter((video) => {
+    if (video.contentType === 'short') {
+      if (shortCount >= perTypeLimit) return false;
+      shortCount += 1;
+      return true;
+    }
+    if (longCount >= perTypeLimit) return false;
+    longCount += 1;
+    return true;
+  });
+}
+
+export async function getUploadsFromPlaylistByType(
+  playlistId: string,
+  perTypeLimit = 20,
+  scanLimit = 2_000,
+  apiKey = env.YOUTUBE_API_KEY,
+) {
+  const discovered: YoutubeVideoDetails[] = [];
+  let scanned = 0;
+  let pageToken: string | undefined;
+  let longCount = 0;
+  let shortCount = 0;
+  do {
+    const response = await youtubeGet('playlistItems', {
+      part: 'contentDetails',
+      playlistId,
+      maxResults: String(Math.min(50, scanLimit - scanned)),
+      ...(pageToken ? { pageToken } : {}),
+    }, youtubePlaylistResponseSchema, apiKey);
+    const videoIds = response.items.map((item) => item.contentDetails.videoId);
+    scanned += videoIds.length;
+    const details = await getVideoDetailsBatch(videoIds, apiKey);
+    const detailsById = new Map(details.map((video) => [video.youtubeVideoId, video]));
+    for (const videoId of videoIds) {
+      const video = detailsById.get(videoId);
+      if (video) discovered.push(video);
+    }
+    const selected = selectYoutubeVideosByType(discovered, perTypeLimit);
+    longCount = selected.filter((video) => video.contentType === 'long').length;
+    shortCount = selected.length - longCount;
+    pageToken = response.nextPageToken;
+  } while (pageToken && scanned < scanLimit && (longCount < perTypeLimit || shortCount < perTypeLimit));
+  return selectYoutubeVideosByType(discovered, perTypeLimit);
+}
+
 // Bu sistem yalnızca YouTube embed player kullanır; video dosyası indirilmez veya depolanmaz.
