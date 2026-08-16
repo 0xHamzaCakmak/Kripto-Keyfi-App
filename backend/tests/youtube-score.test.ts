@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildYoutubeChannelScores, normalizeYoutubeMetric } from '../src/modules/videos/youtube-score.service.js';
+import { updateYoutubeScoreWeightsBodySchema } from '../src/modules/videos/youtube-score.schema.js';
 
 const weights = { reach: 20, engagement: 30, viewPower: 25, consistency: 15, growth: 10 };
 
@@ -34,5 +35,10 @@ describe('YouTube score engine', () => {
     })), weights);
     expect(result.every((score) => score.growthScore === null)).toBe(true);
     expect(result.every((score) => score.totalScore !== null && score.totalScore >= 0 && score.totalScore <= 100)).toBe(true);
+  });
+
+  it('accepts only weight sets whose total is exactly 100 percent', () => {
+    expect(updateYoutubeScoreWeightsBodySchema.safeParse(weights).success).toBe(true);
+    expect(updateYoutubeScoreWeightsBodySchema.safeParse({ ...weights, growth: 11 }).success).toBe(false);
   });
 });

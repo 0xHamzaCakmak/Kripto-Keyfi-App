@@ -39,7 +39,11 @@ export function presentAdminVideo(video: VideoWithChannel) {
   };
 }
 
-type ChannelWithCount = YoutubeChannel & { _count: { videos: number } };
+type ChannelWithCount = YoutubeChannel & {
+  _count: { videos: number };
+  metricSnapshots?: Array<{ subscriberCount: number | null }>;
+  score?: { totalScore: unknown | null } | null;
+};
 
 export function presentYoutubeChannel(channel: ChannelWithCount) {
   return {
@@ -52,6 +56,8 @@ export function presentYoutubeChannel(channel: ChannelWithCount) {
     status: channel.status.toLowerCase(),
     lastSyncedAt: channel.lastSyncedAt?.toISOString() ?? null,
     videoCount: channel._count.videos,
+    subscriberCount: channel.metricSnapshots?.[0]?.subscriberCount ?? null,
+    score: channel.score?.totalScore == null ? null : Number(channel.score.totalScore),
     createdAt: channel.createdAt.toISOString(),
   };
 }

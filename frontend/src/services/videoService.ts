@@ -42,6 +42,8 @@ export type YoutubeChannel = {
   status: 'active' | 'paused';
   lastSyncedAt: string | null;
   videoCount: number;
+  subscriberCount: number | null;
+  score: number | null;
   createdAt: string;
 };
 
@@ -63,7 +65,40 @@ type Result<T> = { data: T };
 
 export type VideoCounts = { all: number; long: number; short: number };
 export type VideoPagination = { page: number; limit: number; total: number; totalPages: number };
-export type PublicYoutubeChannel = { id: number; channelName: string; avatarUrl: string | null; videoCount: number };
+export type PublicYoutubeChannel = { id: number; channelName: string; avatarUrl: string | null; videoCount: number; subscriberCount: number | null };
+
+export type YoutubeScoreWeights = {
+  reach: number;
+  engagement: number;
+  viewPower: number;
+  consistency: number;
+  growth: number;
+  updatedAt?: string;
+};
+
+export type YoutubeScoreOverview = {
+  eligible: boolean;
+  minimumChannelCount: number;
+  activeChannelCount: number;
+  weights: YoutubeScoreWeights;
+  channels: Array<{
+    id: number;
+    channelName: string;
+    avatarUrl: string | null;
+    status: 'active' | 'paused';
+    subscriberCount: number | null;
+    snapshotDate: string | null;
+    score: null | {
+      total: number | null;
+      reach: number | null;
+      engagement: number | null;
+      viewPower: number | null;
+      consistency: number | null;
+      growth: number | null;
+      calculatedAt: string;
+    };
+  }>;
+};
 
 export async function getVideos(filters: { contentType?: 'all' | 'long' | 'short'; search?: string; channelId?: number; favoritesOnly?: boolean; likedOnly?: boolean; page?: number; limit?: number } = {}) {
   const response = await api.get<Result<{ videos: PublicVideo[]; counts: VideoCounts; pagination: VideoPagination }>>('/videos', {
@@ -148,6 +183,21 @@ export async function addYoutubeChannel(channelUrl: string) {
 export async function setYoutubeChannelStatus(id: number, status: YoutubeChannel['status']) {
   const response = await api.patch<Result<{ channel: YoutubeChannel }>>(`/admin/youtube-channels/${id}/status`, { status });
   return response.data.data.channel;
+}
+
+export async function getYoutubeScoreOverview() {
+  const response = await api.get<Result<YoutubeScoreOverview>>('/admin/youtube-scores');
+  return response.data.data;
+}
+
+export async function updateYoutubeScoreWeights(weights: Omit<YoutubeScoreWeights, 'updatedAt'>) {
+  const response = await api.put<Result<YoutubeScoreOverview>>('/admin/youtube-scores/weights', weights);
+  return response.data.data;
+}
+
+export async function recalculateYoutubeScores() {
+  const response = await api.post<Result<YoutubeScoreOverview>>('/admin/youtube-scores/recalculate');
+  return response.data.data;
 }
 
 export async function getMyCreatorState() {

@@ -1,5 +1,6 @@
 import { YoutubeChannelStatus } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
+import { ApiError } from '../../utils/api-error.js';
 
 export type YoutubeScoreWeights = {
   reach: number;
@@ -152,4 +153,74 @@ export async function calculateYoutubeChannelScores(calculatedAt = new Date()) {
     update: { ...score, calculatedAt },
   })));
   return { eligible: channels.length >= 5, activeChannels: channels.length, calculated: scores.length, scores };
+}
+
+export async function getYoutubeScoreOverview() {
+  const [weightRow, activeChannels, channels] = await Promise.all([
+    prisma.youtubeScoreWeight.findFirst({ orderBy: { id: 'asc' } }),
+    prisma.youtubeChannel.count({ where: { status: YoutubeChannelStatus.ACTIVE } }),
+    prisma.youtubeChannel.findMany({
+      orderBy: { channelName: 'asc' },
+      select: {
+        id: true,
+        channelName: true,
+        avatarUrl: true,
+        status: true,
+        score: true,
+        metricSnapshots: { orderBy: { snapshotDate: 'desc' }, take: 1 },
+      },
+    }),
+  ]);
+  if (!weightRow) throw new ApiError(500, 'YouTube skor ağırlıkları yapılandırılmamış.', 'YOUTUBE_SCORE_WEIGHTS_MISSING');
+  return {
+    eligible: activeChannels >= 5,
+    minimumChannelCount: 5,
+    activeChannelCount: activeChannels,
+    weights: {
+      reach: Number(weightRow.reachWeight),
+      engagement: Number(weightRow.engagementWeight),
+      viewPower: Number(weightRow.viewPowerWeight),
+      consistency: Number(weightRow.consistencyWeight),
+      growth: Number(weightRow.growthWeight),
+      updatedAt: weightRow.updatedAt.toISOString(),
+    },
+    channels: channels.map((channel) => {
+      const metric = channel.metricSnapshots[0];
+      return {
+        id: channel.id,
+        channelName: channel.channelName ?? 'YouTube',
+        avatarUrl: channel.avatarUrl,
+        status: channel.status.toLowerCase(),
+        subscriberCount: metric?.subscriberCount ?? null,
+        snapshotDate: metric?.snapshotDate.toISOString() ?? null,
+        score: channel.score ? {
+          total: channel.score.totalScore === null ? null : Number(channel.score.totalScore),
+          reach: channel.score.reachScore === null ? null : Number(channel.score.reachScore),
+          engagement: channel.score.engagementScore === null ? null : Number(channel.score.engagementScore),
+          viewPower: channel.score.viewPowerScore === null ? null : Number(channel.score.viewPowerScore),
+          consistency: channel.score.consistencyScore === null ? null : Number(channel.score.consistencyScore),
+          growth: channel.score.growthScore === null ? null : Number(channel.score.growthScore),
+          calculatedAt: channel.score.calculatedAt.toISOString(),
+        } : null,
+      };
+    }),
+  };
+}
+
+export async function updateYoutubeScoreWeights(weights: YoutubeScoreWeights, adminId: string) {
+  const current = await prisma.youtubeScoreWeight.findFirst({ orderBy: { id: 'asc' }, select: { id: true } });
+  if (!current) throw new ApiError(500, 'YouTube skor ağırlıkları yapılandırılmamış.', 'YOUTUBE_SCORE_WEIGHTS_MISSING');
+  await prisma.youtubeScoreWeight.update({
+    where: { id: current.id },
+    data: {
+      reachWeight: weights.reach,
+      engagementWeight: weights.engagement,
+      viewPowerWeight: weights.viewPower,
+      consistencyWeight: weights.consistency,
+      growthWeight: weights.growth,
+      updatedById: adminId,
+    },
+  });
+  await calculateYoutubeChannelScores();
+  return getYoutubeScoreOverview();
 }

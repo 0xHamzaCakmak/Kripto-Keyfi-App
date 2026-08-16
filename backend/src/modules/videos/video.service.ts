@@ -6,7 +6,11 @@ import { ApiError } from '../../utils/api-error.js';
 import { cacheYoutubeChannelAvatar } from './youtube-channel-assets.js';
 
 const withChannel = { channel: { select: { channelName: true, avatarUrl: true, isOwnChannel: true } } } as const;
-const withVideoCount = { _count: { select: { videos: true } } } as const;
+const withVideoCount = {
+  _count: { select: { videos: true } },
+  metricSnapshots: { select: { subscriberCount: true }, orderBy: { snapshotDate: 'desc' as const }, take: 1 },
+  score: { select: { totalScore: true } },
+} as const;
 
 type PublishedVideoFilters = {
   contentType?: 'all' | 'long' | 'short';
@@ -50,10 +54,22 @@ export async function listPublishedVideos(filters: PublishedVideoFilters = {}) {
 export async function listPublicYoutubeChannels() {
   const channels = await prisma.youtubeChannel.findMany({
     where: { videos: { some: { status: VideoStatus.PUBLISHED, deletedAt: null } } },
-    select: { id: true, channelName: true, avatarUrl: true, _count: { select: { videos: { where: { status: VideoStatus.PUBLISHED, deletedAt: null } } } } },
+    select: {
+      id: true,
+      channelName: true,
+      avatarUrl: true,
+      metricSnapshots: { select: { subscriberCount: true }, orderBy: { snapshotDate: 'desc' }, take: 1 },
+      _count: { select: { videos: { where: { status: VideoStatus.PUBLISHED, deletedAt: null } } } },
+    },
     orderBy: { channelName: 'asc' },
   });
-  return channels.map((channel) => ({ id: channel.id, channelName: channel.channelName ?? 'YouTube', avatarUrl: channel.avatarUrl, videoCount: channel._count.videos }));
+  return channels.map((channel) => ({
+    id: channel.id,
+    channelName: channel.channelName ?? 'YouTube',
+    avatarUrl: channel.avatarUrl,
+    videoCount: channel._count.videos,
+    subscriberCount: channel.metricSnapshots[0]?.subscriberCount ?? null,
+  }));
 }
 
 export async function listAdminVideos(includeDeleted = false) {

@@ -97,6 +97,7 @@ const kolTabs: AdminModuleTab[] = [
 const videoTabs: AdminModuleTab[] = [
   { label: 'Video Ekle', to: '/admin/videos', icon: Link2, end: true },
   { label: 'YouTuberlar', to: '/admin/videos/channels', icon: RadioTower },
+  { label: 'Skor Kriterleri', to: '/admin/videos/scoring', icon: Gauge },
   { label: 'Creator Başvuruları', to: '/admin/videos/creators', icon: UserRoundCheck },
 ];
 

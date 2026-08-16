@@ -42,6 +42,7 @@ const TradingBotGuide = lazy(() => import('./components/TradingBotGuide'));
 const AdminNewsSources = lazy(() => import('./components/AdminNewsSources'));
 const AdminVideos = lazy(() => import('./components/AdminVideos'));
 const AdminYoutubeChannels = lazy(() => import('./components/AdminYoutubeChannels'));
+const AdminYoutubeScoring = lazy(() => import('./components/AdminYoutubeScoring'));
 const AdminCreatorApplications = lazy(() => import('./components/AdminCreatorApplications'));
 const ExchangeAccounts = lazy(() => import('./components/ExchangeAccounts'));
 const ManualTrading = lazy(() => import('./components/ManualTrading'));
@@ -97,6 +98,7 @@ export default function App() {
               <Route path="videos" element={<VideoModuleLayout />}>
                 <Route index element={<AdminVideos />} />
                 <Route path="channels" element={<AdminYoutubeChannels />} />
+                <Route path="scoring" element={<AdminYoutubeScoring />} />
                 <Route path="creators" element={<AdminCreatorApplications />} />
               </Route>
               <Route path="kol" element={<KolModuleLayout />}>

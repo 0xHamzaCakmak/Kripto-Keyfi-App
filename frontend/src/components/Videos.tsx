@@ -26,6 +26,11 @@ function formatPublishedAt(value: string | null) {
   return new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(value));
 }
 
+function formatSubscriberCount(value: number | null) {
+  if (value === null) return 'Abone verisi bekleniyor';
+  return `${new Intl.NumberFormat('tr-TR', { notation: 'compact', maximumFractionDigits: 1 }).format(value)} abone`;
+}
+
 function ChannelAvatar({ name, url }: { name: string; url: string | null }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [url]);
@@ -104,7 +109,7 @@ function CreatorCard({ channel, favorited, busy, onFavorite, onVideos }: { chann
     <article className="rounded-[24px] border border-outline/10 bg-surface p-6 transition hover:border-primary/30 hover:bg-surface-high">
       <div className="flex items-center gap-4">
         <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-surface-highest ring-1 ring-outline/10"><ChannelAvatar name={channel.channelName} url={channel.avatarUrl} /></div>
-        <div className="min-w-0 flex-1"><h2 className="truncate font-headline text-lg font-bold text-white">{channel.channelName}</h2><p className="mt-1 text-sm text-on-surface-variant">{channel.videoCount} video</p></div>
+        <div className="min-w-0 flex-1"><h2 className="truncate font-headline text-lg font-bold text-white">{channel.channelName}</h2><p className="mt-1 text-sm text-on-surface-variant">{formatSubscriberCount(channel.subscriberCount)} · {channel.videoCount} video</p></div>
         <button type="button" disabled={busy} onClick={onFavorite} aria-label={favorited ? 'Favori YouTuber listesinden çıkar' : 'Favori YouTuber listesine ekle'} aria-pressed={favorited} className={`flex h-11 w-11 items-center justify-center rounded-xl transition disabled:opacity-50 ${favorited ? 'bg-primary/15 text-primary' : 'bg-surface-high text-on-surface-variant hover:text-primary'}`}><Star size={19} fill={favorited ? 'currentColor' : 'none'} /></button>
       </div>
       <button type="button" onClick={onVideos} className="mt-5 w-full rounded-xl bg-primary/10 px-4 py-3 text-sm font-black text-primary transition hover:bg-primary hover:text-background">Videolarını görüntüle</button>
