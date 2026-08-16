@@ -41,6 +41,7 @@ const TradingBots = lazy(() => import('./components/TradingBots'));
 const TradingBotGuide = lazy(() => import('./components/TradingBotGuide'));
 const AdminNewsSources = lazy(() => import('./components/AdminNewsSources'));
 const AdminVideos = lazy(() => import('./components/AdminVideos'));
+const AdminYoutubeChannels = lazy(() => import('./components/AdminYoutubeChannels'));
 const ExchangeAccounts = lazy(() => import('./components/ExchangeAccounts'));
 const ManualTrading = lazy(() => import('./components/ManualTrading'));
 const OpenOrdersPage = lazy(() => import('./components/TradingActivity').then((module) => ({ default: module.OpenOrdersPage })));
@@ -94,6 +95,7 @@ export default function App() {
               <Route path="news/sources" element={<AdminNewsSources />} />
               <Route path="videos" element={<VideoModuleLayout />}>
                 <Route index element={<AdminVideos />} />
+                <Route path="channels" element={<AdminYoutubeChannels />} />
               </Route>
               <Route path="kol" element={<KolModuleLayout />}>
                 <Route index element={<KOLModuleOverview />} />

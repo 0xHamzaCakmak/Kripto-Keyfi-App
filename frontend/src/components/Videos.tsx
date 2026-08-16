@@ -46,8 +46,9 @@ function VideoCard({ video, onPlay }: { video: PublicVideo; onPlay: () => void }
         {video.duration && <span className="absolute bottom-3 right-3 rounded-lg bg-black/80 px-2 py-1 text-xs font-bold text-white">{video.duration}</span>}
       </div>
       <div className="p-5">
+        {video.source !== 'admin_manual' && <span className={`mb-3 inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${video.source === 'kriptokeyfi_auto' ? 'bg-primary/15 text-primary' : 'bg-secondary/10 text-secondary'}`}>{video.source === 'kriptokeyfi_auto' ? 'Resmî Kanal' : 'Creator'}</span>}
         <h2 className="line-clamp-2 font-headline text-lg font-bold leading-snug text-white group-hover:text-primary">{video.title}</h2>
-        <p className="mt-3 text-sm font-bold text-on-surface">{video.channelName}</p>
+        <div className="mt-3 flex items-center gap-2">{video.channelAvatarUrl && <img src={video.channelAvatarUrl} alt="" className="h-7 w-7 rounded-lg object-cover" />}<p className="text-sm font-bold text-on-surface">{video.channelName}</p></div>
         {video.publishedAt && <p className="mt-1 text-xs text-on-surface-variant">{formatPublishedAt(video.publishedAt)}</p>}
       </div>
     </button>

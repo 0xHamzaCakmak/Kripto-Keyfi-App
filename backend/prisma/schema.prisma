@@ -213,8 +213,9 @@ enum YoutubeChannelStatus {
 }
 
 enum VideoSource {
-  MANUAL @map("manual")
-  AUTO   @map("auto")
+  ADMIN_MANUAL     @map("admin_manual")
+  CREATOR_AUTO     @map("creator_auto")
+  KRIPTOKEYFI_AUTO @map("kriptokeyfi_auto")
 }
 
 enum VideoStatus {
@@ -390,6 +391,7 @@ model YoutubeChannel {
 model Video {
   id             Int             @id @default(autoincrement())
   youtubeVideoId String          @unique @map("youtube_video_id") @db.VarChar(32)
+  youtubeUrl     String          @map("youtube_url") @db.VarChar(500)
   channelId      Int?            @map("channel_id")
   channelName    String?         @map("channel_name") @db.VarChar(255)
   title          String?         @db.VarChar(500)
@@ -401,11 +403,13 @@ model Video {
   status         VideoStatus     @default(PUBLISHED)
   addedById      String?         @map("added_by")
   createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
   channel        YoutubeChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
   addedBy        User?           @relation("video_added_by", fields: [addedById], references: [id], onDelete: SetNull)
 
   @@index([channelId])
   @@index([status, publishedAt])
+  @@index([source, status])
   @@index([addedById])
   @@map("videos")
 }

@@ -54,6 +54,9 @@ const envSchema = z.object({
   OKX_ONCHAIN_PASSPHRASE: z.string().trim().default(''),
   OKX_ONCHAIN_API_BASE_URL: z.string().url().default('https://web3.okx.com'),
   YOUTUBE_API_KEY: z.string().trim().default(''),
+  YOUTUBE_SYNC_ENABLED: booleanString.default('true'),
+  YOUTUBE_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(15).max(1_440).default(45),
+  YOUTUBE_INITIAL_SYNC_LIMIT: z.coerce.number().int().min(1).max(50).default(20),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production' && !value.COOKIE_SECURE) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['COOKIE_SECURE'], message: 'must be true in production' });

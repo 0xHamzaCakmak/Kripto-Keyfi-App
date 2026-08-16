@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/utils/api-error.js';
-import { formatYoutubeDuration, getVideoDetails, parseYoutubeVideoId } from '../src/services/youtubeApi.js';
+import { formatYoutubeDuration, getChannelInfo, getUploadsFromPlaylist, getVideoDetails, parseYoutubeVideoId } from '../src/services/youtubeApi.js';
 
 describe('YouTube video integration', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -43,5 +43,36 @@ describe('YouTube video integration', () => {
     expect(result).toMatchObject({ title: 'Test video', channelName: 'Test Kanalı', duration: '18:42' });
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(String(fetchMock.mock.calls[0][0])).toContain('part=snippet%2CcontentDetails');
+  });
+
+  it('resolves a channel handle with channels.list and stores its uploads playlist', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [{
+      id: 'UC1234567890123456789012',
+      snippet: { title: 'Creator Kanalı', customUrl: '@creator', thumbnails: { high: { url: 'https://yt.example/avatar.jpg' } } },
+      contentDetails: { relatedPlaylists: { uploads: 'UU1234567890123456789012' } },
+    }] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const channel = await getChannelInfo('https://www.youtube.com/@creator', 'test-api-key');
+    expect(channel).toMatchObject({ channelId: 'UC1234567890123456789012', uploadsPlaylistId: 'UU1234567890123456789012', channelName: 'Creator Kanalı' });
+    expect(String(fetchMock.mock.calls[0][0])).toContain('forHandle=creator');
+  });
+
+  it('uses the uploads playlist and batches video metadata requests', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [
+        { contentDetails: { videoId: 'dQw4w9WgXcQ', videoPublishedAt: '2026-08-16T10:00:00Z' } },
+      ] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{
+        id: 'dQw4w9WgXcQ', snippet: { title: 'Yeni video', description: '', channelTitle: 'Creator', publishedAt: '2026-08-16T10:00:00Z', thumbnails: {} }, contentDetails: { duration: 'PT5M4S' },
+      }] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const videos = await getUploadsFromPlaylist('UU123', new Date('2026-08-16T09:00:00Z'), 20, 'test-api-key');
+    expect(videos).toHaveLength(1);
+    expect(videos[0]).toMatchObject({ youtubeVideoId: 'dQw4w9WgXcQ', duration: '5:04' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('playlistItems');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('videos');
   });
 });
