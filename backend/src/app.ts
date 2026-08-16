@@ -26,7 +26,7 @@ export function createApp() {
   app.use(pinoHttp({
     level: env.NODE_ENV === 'test' ? 'silent' : 'info',
     redact: [
-        'req.headers.authorization', 'req.headers.cookie', 'req.body.password', 'req.body.confirmPassword', 'req.body.credential',
+      'req.headers.authorization', 'req.headers.cookie', 'req.headers.x-print-agent-token', 'req.body.password', 'req.body.confirmPassword', 'req.body.credential',
       'req.body.apiKey', 'req.body.apiSecret', 'req.body.passphrase', 'res.headers.set-cookie',
     ],
   }));
@@ -34,7 +34,14 @@ export function createApp() {
   app.use(cors({ origin: env.FRONTEND_URL, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] }));
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
-  app.use(API_PREFIX, rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-8', legacyHeaders: false, skip: () => env.NODE_ENV === 'test' }));
+  app.use(API_PREFIX, rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    skipFailedRequests: true,
+    skip: () => env.NODE_ENV === 'test',
+  }));
 
   app.get(`${API_PREFIX}/health`, async (_req, res, next) => {
     try {
