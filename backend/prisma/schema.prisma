@@ -331,76 +331,127 @@ enum CampaignEventType {
 }
 
 model User {
-  id                      String                @id @default(cuid())
-  email                   String                @unique
-  passwordHash            String?
-  name                    String?
-  username                String                @unique @db.VarChar(30)
-  avatarUrl               String?               @db.VarChar(500)
-  bio                     String?               @db.VarChar(500)
-  emailVerifiedAt         DateTime?
-  termsAcceptedAt         DateTime?
-  privacyAcceptedAt       DateTime?
-  role                    UserRole              @default(USER)
-  status                  UserStatus            @default(ACTIVE)
-  mustChangePassword      Boolean               @default(false)
-  profileCompleted        Boolean               @default(false)
-  onboardingCompleted     Boolean               @default(false)
-  lastLoginAt             DateTime?
-  createdAt               DateTime              @default(now())
-  updatedAt               DateTime              @updatedAt
-  refreshSessions         RefreshSession[]
-  exchangeAccounts        ExchangeAccount[]
-  manualOrderPreviews     ManualOrderPreview[]
-  tradingOrders           TradingOrder[]
-  tradingAuditLogs        TradingAuditLog[]
-  tradingOutboxEvents     TradingOutboxEvent[]
-  tradingRiskProfiles     TradingRiskProfile[]
-  tradingRiskEvents       TradingRiskEvent[]
-  tradingBots             TradingBot[]
-  tradingBotDecisions     TradingBotDecision[]
-  tradingBotSignals       TradingBotSignal[]
-  identities              UserIdentity[]
-  profileRoles            UserProfileRole[]
-  capabilities            UserCapability[]
-  savedNews               NewsSavedArticle[]
-  companyMemberships      CompanyMember[]
-  kolProfile              KOL?                  @relation("kol_user")
-  kolAuditLogs            KOLAuditLog[]         @relation("kol_audit_actor")
-  addedYoutubeChannels    YoutubeChannel[]      @relation("youtube_channel_added_by")
-  addedVideos             Video[]               @relation("video_added_by")
-  ownedYoutubeChannel     YoutubeChannel?       @relation("youtube_channel_owner")
-  creatorVideos           Video[]               @relation("video_creator")
-  moderatedVideos         Video[]               @relation("video_moderated_by")
-  deletedVideos           Video[]               @relation("video_deleted_by")
-  warnedVideos            Video[]               @relation("video_warned_by")
-  favoriteYoutubeChannels UserFavoriteChannel[]
+  id                        String                @id @default(cuid())
+  email                     String                @unique
+  passwordHash              String?
+  name                      String?
+  username                  String                @unique @db.VarChar(30)
+  avatarUrl                 String?               @db.VarChar(500)
+  bio                       String?               @db.VarChar(500)
+  emailVerifiedAt           DateTime?
+  termsAcceptedAt           DateTime?
+  privacyAcceptedAt         DateTime?
+  role                      UserRole              @default(USER)
+  status                    UserStatus            @default(ACTIVE)
+  mustChangePassword        Boolean               @default(false)
+  profileCompleted          Boolean               @default(false)
+  onboardingCompleted       Boolean               @default(false)
+  lastLoginAt               DateTime?
+  createdAt                 DateTime              @default(now())
+  updatedAt                 DateTime              @updatedAt
+  refreshSessions           RefreshSession[]
+  exchangeAccounts          ExchangeAccount[]
+  manualOrderPreviews       ManualOrderPreview[]
+  tradingOrders             TradingOrder[]
+  tradingAuditLogs          TradingAuditLog[]
+  tradingOutboxEvents       TradingOutboxEvent[]
+  tradingRiskProfiles       TradingRiskProfile[]
+  tradingRiskEvents         TradingRiskEvent[]
+  tradingBots               TradingBot[]
+  tradingBotDecisions       TradingBotDecision[]
+  tradingBotSignals         TradingBotSignal[]
+  identities                UserIdentity[]
+  profileRoles              UserProfileRole[]
+  capabilities              UserCapability[]
+  savedNews                 NewsSavedArticle[]
+  companyMemberships        CompanyMember[]
+  kolProfile                KOL?                  @relation("kol_user")
+  kolAuditLogs              KOLAuditLog[]         @relation("kol_audit_actor")
+  addedYoutubeChannels      YoutubeChannel[]      @relation("youtube_channel_added_by")
+  addedVideos               Video[]               @relation("video_added_by")
+  ownedYoutubeChannel       YoutubeChannel?       @relation("youtube_channel_owner")
+  creatorVideos             Video[]               @relation("video_creator")
+  moderatedVideos           Video[]               @relation("video_moderated_by")
+  deletedVideos             Video[]               @relation("video_deleted_by")
+  warnedVideos              Video[]               @relation("video_warned_by")
+  favoriteYoutubeChannels   UserFavoriteChannel[]
+  youtubeScoreWeightUpdates YoutubeScoreWeight[]  @relation("youtube_score_weight_updated_by")
 
   @@map("users")
 }
 
 model YoutubeChannel {
-  id                Int                   @id @default(autoincrement())
-  channelId         String                @unique @map("channel_id") @db.VarChar(64)
-  uploadsPlaylistId String                @map("uploads_playlist_id") @db.VarChar(64)
-  channelName       String?               @map("channel_name") @db.VarChar(255)
-  channelUrl        String?               @map("channel_url") @db.VarChar(500)
-  avatarUrl         String?               @map("avatar_url") @db.VarChar(500)
-  isOwnChannel      Boolean               @default(false) @map("is_own_channel")
-  status            YoutubeChannelStatus  @default(ACTIVE)
-  lastSyncedAt      DateTime?             @map("last_synced_at")
-  addedById         String?               @map("added_by")
-  ownerUserId       String?               @unique @map("owner_user_id")
-  createdAt         DateTime              @default(now()) @map("created_at")
-  updatedAt         DateTime              @updatedAt @map("updated_at")
-  addedBy           User?                 @relation("youtube_channel_added_by", fields: [addedById], references: [id], onDelete: SetNull)
-  owner             User?                 @relation("youtube_channel_owner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  id                Int                            @id @default(autoincrement())
+  channelId         String                         @unique @map("channel_id") @db.VarChar(64)
+  uploadsPlaylistId String                         @map("uploads_playlist_id") @db.VarChar(64)
+  channelName       String?                        @map("channel_name") @db.VarChar(255)
+  channelUrl        String?                        @map("channel_url") @db.VarChar(500)
+  avatarUrl         String?                        @map("avatar_url") @db.VarChar(500)
+  isOwnChannel      Boolean                        @default(false) @map("is_own_channel")
+  status            YoutubeChannelStatus           @default(ACTIVE)
+  lastSyncedAt      DateTime?                      @map("last_synced_at")
+  addedById         String?                        @map("added_by")
+  ownerUserId       String?                        @unique @map("owner_user_id")
+  createdAt         DateTime                       @default(now()) @map("created_at")
+  updatedAt         DateTime                       @updatedAt @map("updated_at")
+  addedBy           User?                          @relation("youtube_channel_added_by", fields: [addedById], references: [id], onDelete: SetNull)
+  owner             User?                          @relation("youtube_channel_owner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   videos            Video[]
   favoritedBy       UserFavoriteChannel[]
+  metricSnapshots   YoutubeChannelMetricSnapshot[]
+  score             YoutubeChannelScore?
 
   @@index([status])
   @@index([addedById])
   @@map("youtube_channels")
+}
+
+model YoutubeChannelMetricSnapshot {
+  id                Int            @id @default(autoincrement())
+  channelId         Int            @map("channel_id")
+  snapshotDate      DateTime       @map("snapshot_date") @db.Date
+  subscriberCount   Int?           @map("subscriber_count")
+  totalViewCount    BigInt?        @map("total_view_count")
+  videoCount        Int?           @map("video_count")
+  avgViewsRecent    Int?           @map("avg_views_recent")
+  avgLikesRecent    Int?           @map("avg_likes_recent")
+  avgCommentsRecent Int?           @map("avg_comments_recent")
+  uploadsLast90Days Int            @map("uploads_last_90_days")
+  channel           YoutubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, snapshotDate])
+  @@index([snapshotDate])
+  @@map("youtube_channel_metrics_snapshots")
+}
+
+model YoutubeScoreWeight {
+  id                Int      @id @default(autoincrement())
+  reachWeight       Decimal  @default(20.00) @map("reach_weight") @db.Decimal(4, 2)
+  engagementWeight  Decimal  @default(30.00) @map("engagement_weight") @db.Decimal(4, 2)
+  viewPowerWeight   Decimal  @default(25.00) @map("view_power_weight") @db.Decimal(4, 2)
+  consistencyWeight Decimal  @default(15.00) @map("consistency_weight") @db.Decimal(4, 2)
+  growthWeight      Decimal  @default(10.00) @map("growth_weight") @db.Decimal(4, 2)
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  updatedById       String?  @map("updated_by")
+  updatedBy         User?    @relation("youtube_score_weight_updated_by", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([updatedById])
+  @@map("youtube_score_weights")
+}
+
+model YoutubeChannelScore {
+  id               Int            @id @default(autoincrement())
+  channelId        Int            @unique @map("channel_id")
+  totalScore       Decimal?       @map("total_score") @db.Decimal(5, 2)
+  reachScore       Decimal?       @map("reach_score") @db.Decimal(5, 2)
+  engagementScore  Decimal?       @map("engagement_score") @db.Decimal(5, 2)
+  viewPowerScore   Decimal?       @map("view_power_score") @db.Decimal(5, 2)
+  consistencyScore Decimal?       @map("consistency_score") @db.Decimal(5, 2)
+  growthScore      Decimal?       @map("growth_score") @db.Decimal(5, 2)
+  calculatedAt     DateTime       @default(now()) @map("calculated_at")
+  channel          YoutubeChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@map("youtube_channel_scores")
 }
 
 model UserFavoriteChannel {

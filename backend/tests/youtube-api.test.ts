@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../src/utils/api-error.js';
-import { classifyYoutubeContent, formatYoutubeDuration, getChannelInfo, getUploadsFromPlaylist, getVideoDetails, parseYoutubeVideoId, youtubeDurationToSeconds } from '../src/services/youtubeApi.js';
+import { classifyYoutubeContent, formatYoutubeDuration, getChannelInfo, getChannelStatistics, getRecentVideosStats, getUploadsFromPlaylist, getVideoDetails, parseYoutubeVideoId, youtubeDurationToSeconds } from '../src/services/youtubeApi.js';
 
 describe('YouTube video integration', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -52,7 +52,7 @@ describe('YouTube video integration', () => {
     const result = await getVideoDetails('dQw4w9WgXcQ', 'test-api-key');
     expect(result).toMatchObject({ title: 'Test video', channelName: 'Test Kanalı', duration: '18:42', durationSeconds: 1122, contentType: 'long' });
     expect(fetchMock).toHaveBeenCalledOnce();
-    expect(String(fetchMock.mock.calls[0][0])).toContain('part=snippet%2CcontentDetails');
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('part=snippet%2CcontentDetails');
   });
 
   it('resolves a channel handle with channels.list and stores its uploads playlist', async () => {
@@ -65,7 +65,7 @@ describe('YouTube video integration', () => {
 
     const channel = await getChannelInfo('https://www.youtube.com/@creator', 'test-api-key');
     expect(channel).toMatchObject({ channelId: 'UC1234567890123456789012', uploadsPlaylistId: 'UU1234567890123456789012', channelName: 'Creator Kanalı' });
-    expect(String(fetchMock.mock.calls[0][0])).toContain('forHandle=creator');
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('forHandle=creator');
   });
 
   it('uses the uploads playlist and batches video metadata requests', async () => {
@@ -82,7 +82,39 @@ describe('YouTube video integration', () => {
     expect(videos).toHaveLength(1);
     expect(videos[0]).toMatchObject({ youtubeVideoId: 'dQw4w9WgXcQ', duration: '5:04' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[0][0])).toContain('playlistItems');
-    expect(String(fetchMock.mock.calls[1][0])).toContain('videos');
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('playlistItems');
+    expect(String(fetchMock.mock.calls[1]![0])).toContain('videos');
+  });
+
+  it('reads channel totals from channels.list statistics', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ items: [{
+      id: 'UC_CREATOR', statistics: { subscriberCount: '12500', viewCount: '9876543210', videoCount: '84' },
+    }] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await getChannelStatistics('UC_CREATOR', 'test-api-key');
+
+    expect(result).toEqual({ subscriberCount: 12_500, totalViewCount: 9_876_543_210n, videoCount: 84 });
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('part=statistics');
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('id=UC_CREATOR');
+  });
+
+  it('loads recent video statistics in one batched videos.list request', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [
+        { contentDetails: { videoId: 'video000001' } },
+        { contentDetails: { videoId: 'video000002' } },
+      ] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [
+        { id: 'video000001', statistics: { viewCount: '1000', likeCount: '100', commentCount: '20' } },
+        { id: 'video000002', statistics: { viewCount: '3000', likeCount: '300', commentCount: '40' } },
+      ] }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await getRecentVideosStats('UU_CREATOR', 20, 'test-api-key');
+
+    expect(result).toEqual({ avgViews: 2_000, avgLikes: 200, avgComments: 30, sampleSize: 2 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]![0])).toContain('id=video000001%2Cvideo000002');
   });
 });

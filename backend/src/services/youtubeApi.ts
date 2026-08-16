@@ -28,6 +28,26 @@ const youtubePlaylistResponseSchema = z.object({
     contentDetails: z.object({ videoId: z.string(), videoPublishedAt: z.string().optional() }),
   })),
 });
+const youtubeChannelStatisticsResponseSchema = z.object({
+  items: z.array(z.object({
+    id: z.string(),
+    statistics: z.object({
+      subscriberCount: z.string().regex(/^\d+$/).optional(),
+      viewCount: z.string().regex(/^\d+$/).optional(),
+      videoCount: z.string().regex(/^\d+$/).optional(),
+    }),
+  })),
+});
+const youtubeVideoStatisticsResponseSchema = z.object({
+  items: z.array(z.object({
+    id: z.string(),
+    statistics: z.object({
+      viewCount: z.string().regex(/^\d+$/).optional(),
+      likeCount: z.string().regex(/^\d+$/).optional(),
+      commentCount: z.string().regex(/^\d+$/).optional(),
+    }),
+  })),
+});
 
 export type YoutubeVideoDetails = {
   youtubeVideoId: string;
@@ -51,8 +71,31 @@ export type YoutubeChannelInfo = {
   uploadsPlaylistId: string;
 };
 
+export type YoutubeChannelStatistics = {
+  subscriberCount: number | null;
+  totalViewCount: bigint | null;
+  videoCount: number | null;
+};
+
+export type YoutubeRecentVideoStats = {
+  avgViews: number | null;
+  avgLikes: number | null;
+  avgComments: number | null;
+  sampleSize: number;
+};
+
 function bestThumbnail(thumbnails: Record<string, { url: string }>) {
   return thumbnails.maxres?.url ?? thumbnails.standard?.url ?? thumbnails.high?.url ?? thumbnails.medium?.url ?? thumbnails.default?.url ?? null;
+}
+
+function optionalCount(value: string | undefined) {
+  if (value === undefined) return null;
+  const count = Number(value);
+  return Number.isSafeInteger(count) ? count : null;
+}
+
+function average(values: number[]) {
+  return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
 }
 
 async function youtubeGet<S extends z.ZodTypeAny>(path: string, params: Record<string, string>, schema: S, apiKey = env.YOUTUBE_API_KEY): Promise<z.output<S>> {
@@ -171,6 +214,33 @@ export async function getChannelInfo(input: string, apiKey = env.YOUTUBE_API_KEY
     channelUrl: `https://www.youtube.com/channel/${channel.id}`,
     avatarUrl: bestThumbnail(channel.snippet.thumbnails),
     uploadsPlaylistId: channel.contentDetails.relatedPlaylists.uploads,
+  };
+}
+
+export async function getChannelStatistics(channelId: string, apiKey = env.YOUTUBE_API_KEY): Promise<YoutubeChannelStatistics> {
+  const response = await youtubeGet('channels', { part: 'statistics', id: channelId }, youtubeChannelStatisticsResponseSchema, apiKey);
+  const channel = response.items[0];
+  if (!channel) throw new ApiError(404, 'YouTube kanalı bulunamadı veya herkese açık değil.', 'YOUTUBE_CHANNEL_NOT_FOUND');
+  return {
+    subscriberCount: optionalCount(channel.statistics.subscriberCount),
+    totalViewCount: channel.statistics.viewCount === undefined ? null : BigInt(channel.statistics.viewCount),
+    videoCount: optionalCount(channel.statistics.videoCount),
+  };
+}
+
+export async function getRecentVideosStats(uploadsPlaylistId: string, count = 20, apiKey = env.YOUTUBE_API_KEY): Promise<YoutubeRecentVideoStats> {
+  const requestedCount = Math.min(50, Math.max(1, count));
+  const playlist = await youtubeGet('playlistItems', {
+    part: 'contentDetails', playlistId: uploadsPlaylistId, maxResults: String(requestedCount),
+  }, youtubePlaylistResponseSchema, apiKey);
+  const videoIds = playlist.items.slice(0, requestedCount).map((item) => item.contentDetails.videoId);
+  if (!videoIds.length) return { avgViews: null, avgLikes: null, avgComments: null, sampleSize: 0 };
+  const response = await youtubeGet('videos', { part: 'statistics', id: videoIds.join(',') }, youtubeVideoStatisticsResponseSchema, apiKey);
+  return {
+    avgViews: average(response.items.map((item) => optionalCount(item.statistics.viewCount) ?? 0)),
+    avgLikes: average(response.items.map((item) => optionalCount(item.statistics.likeCount) ?? 0)),
+    avgComments: average(response.items.map((item) => optionalCount(item.statistics.commentCount) ?? 0)),
+    sampleSize: response.items.length,
   };
 }
 

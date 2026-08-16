@@ -46,7 +46,7 @@ describe('YouTube video moderation', () => {
     mocks.getVideoDetails.mockResolvedValue({ youtubeUrl: 'https://youtu.be/dQw4w9WgXcQ', channelName: 'Kanal', title: 'Yeni başlık', description: 'Yeni açıklama', thumbnailUrl: 'https://example.com/x.jpg', duration: '0:30', durationSeconds: 30, contentType: 'short', publishedAt: new Date() });
     mocks.update.mockResolvedValue({ id: 9 });
     await refreshVideoMetadata(9, 'admin-1');
-    const data = mocks.update.mock.calls[0][0].data;
+    const data = mocks.update.mock.calls[0]![0].data;
     expect(data).toMatchObject({ title: 'Yeni başlık', contentType: VideoContentType.SHORT, moderatedById: 'admin-1' });
     expect(data).not.toHaveProperty('titleOverride');
     expect(data).not.toHaveProperty('descriptionOverride');

@@ -6,17 +6,20 @@ import { logger } from './utils/logger.js';
 import { scheduleNewsSync } from './modules/news/news.worker.js';
 import { ensureDefaultNewsCatalog } from './modules/news/news.catalog.js';
 import { scheduleYoutubeSync } from './modules/videos/youtube.worker.js';
+import { scheduleYoutubeMetricsCollection } from './modules/videos/youtube-metrics.worker.js';
 
 let server: Server | undefined;
 let shuttingDown = false;
 let stopNewsSync: (() => void) | undefined;
 let stopYoutubeSync: (() => void) | undefined;
+let stopYoutubeMetricsCollection: (() => void) | undefined;
 
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
   stopNewsSync?.();
   stopYoutubeSync?.();
+  stopYoutubeMetricsCollection?.();
   logger.info({ signal }, 'graceful shutdown started');
   server?.close((error) => {
     void prisma.$disconnect().then(() => {
@@ -43,6 +46,7 @@ async function start() {
     logger.info({ port: env.PORT }, 'KriptoKeyfi API listening');
     if (env.NEWS_SYNC_ENABLED) stopNewsSync = scheduleNewsSync();
     if (env.YOUTUBE_SYNC_ENABLED) stopYoutubeSync = scheduleYoutubeSync();
+    if (env.YOUTUBE_METRICS_ENABLED) stopYoutubeMetricsCollection = scheduleYoutubeMetricsCollection();
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : undefined;
     logger.fatal({ err: error instanceof Error ? { name: error.name, message: error.message, ...(code ? { code } : {}) } : error }, code === 'EADDRINUSE' ? `Port ${env.PORT} is already in use; stop the existing backend process before starting another.` : 'application startup failed');

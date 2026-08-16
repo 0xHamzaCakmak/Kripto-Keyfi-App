@@ -57,6 +57,8 @@ const envSchema = z.object({
   YOUTUBE_SYNC_ENABLED: booleanString.default('true'),
   YOUTUBE_SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(15).max(1_440).default(45),
   YOUTUBE_INITIAL_SYNC_LIMIT: z.coerce.number().int().min(1).max(50).default(20),
+  YOUTUBE_METRICS_ENABLED: booleanString.default('true'),
+  YOUTUBE_METRICS_INTERVAL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production' && !value.COOKIE_SECURE) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['COOKIE_SECURE'], message: 'must be true in production' });
