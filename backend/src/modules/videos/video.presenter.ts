@@ -8,8 +8,8 @@ export function presentVideo(video: VideoWithChannel) {
     channelId: video.channelId,
     youtubeVideoId: video.youtubeVideoId,
     youtubeUrl: video.youtubeUrl,
-    title: video.title ?? 'İsimsiz video',
-    description: video.description ?? '',
+    title: video.titleOverride ?? video.title ?? 'İsimsiz video',
+    description: video.descriptionOverride ?? video.description ?? '',
     thumbnailUrl: video.thumbnailUrl,
     duration: video.duration,
     durationSeconds: video.durationSeconds,
@@ -19,6 +19,23 @@ export function presentVideo(video: VideoWithChannel) {
     channelAvatarUrl: video.channel?.avatarUrl ?? null,
     source: video.source.toLowerCase(),
     isOwnChannel: video.channel?.isOwnChannel ?? false,
+  };
+}
+
+export function presentAdminVideo(video: VideoWithChannel) {
+  return {
+    ...presentVideo(video),
+    originalTitle: video.title ?? '',
+    originalDescription: video.description ?? '',
+    titleOverride: video.titleOverride,
+    descriptionOverride: video.descriptionOverride,
+    status: video.status.toLowerCase(),
+    deletedAt: video.deletedAt?.toISOString() ?? null,
+    warningLabel: video.warningLabel,
+    warningNote: video.warningNote,
+    warningVisibleToUsers: video.warningVisibleToUsers,
+    warnedAt: video.warnedAt?.toISOString() ?? null,
+    moderatedAt: video.moderatedAt?.toISOString() ?? null,
   };
 }
 

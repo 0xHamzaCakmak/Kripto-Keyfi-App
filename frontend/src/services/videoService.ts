@@ -18,6 +18,20 @@ export type PublicVideo = {
   isOwnChannel: boolean;
 };
 
+export type AdminVideo = PublicVideo & {
+  originalTitle: string;
+  originalDescription: string;
+  titleOverride: string | null;
+  descriptionOverride: string | null;
+  status: 'published' | 'hidden';
+  deletedAt: string | null;
+  warningLabel: string | null;
+  warningNote: string | null;
+  warningVisibleToUsers: boolean;
+  warnedAt: string | null;
+  moderatedAt: string | null;
+};
+
 export type YoutubeChannel = {
   id: number;
   channelId: string;
@@ -79,7 +93,32 @@ export async function toggleFavoriteChannel(channelId: number) {
 }
 
 export async function addVideo(youtubeUrl: string) {
-  const response = await api.post<Result<{ video: PublicVideo }>>('/admin/videos', { youtube_url: youtubeUrl });
+  const response = await api.post<Result<{ video: AdminVideo }>>('/admin/videos', { youtube_url: youtubeUrl });
+  return response.data.data.video;
+}
+
+export async function getAdminVideos(includeDeleted = false) {
+  const response = await api.get<Result<{ videos: AdminVideo[] }>>('/admin/videos', { params: { include_deleted: String(includeDeleted) } });
+  return response.data.data.videos;
+}
+
+export async function setAdminVideoStatus(id: number, status: AdminVideo['status']) {
+  const response = await api.patch<Result<{ video: AdminVideo }>>(`/admin/videos/${id}/status`, { status });
+  return response.data.data.video;
+}
+
+export async function softDeleteAdminVideo(id: number) {
+  const response = await api.delete<Result<{ video: AdminVideo }>>(`/admin/videos/${id}`);
+  return response.data.data.video;
+}
+
+export async function restoreAdminVideo(id: number) {
+  const response = await api.post<Result<{ video: AdminVideo }>>(`/admin/videos/${id}/restore`);
+  return response.data.data.video;
+}
+
+export async function refreshAdminVideo(id: number) {
+  const response = await api.post<Result<{ video: AdminVideo }>>(`/admin/videos/${id}/refresh`);
   return response.data.data.video;
 }
 

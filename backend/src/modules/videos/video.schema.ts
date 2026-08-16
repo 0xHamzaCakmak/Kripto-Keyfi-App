@@ -15,6 +15,13 @@ export const createVideoBodySchema = z.object({
   youtube_url: z.string().trim().min(1, 'YouTube bağlantısı zorunludur.').max(500),
 });
 
+export const adminVideoListQuerySchema = z.object({
+  include_deleted: z.enum(['true', 'false']).transform((value) => value === 'true').default('false'),
+});
+
+export const videoParamsSchema = z.object({ videoId: z.coerce.number().int().positive() });
+export const updateVideoStatusBodySchema = z.object({ status: z.enum(['published', 'hidden']) });
+
 export const createYoutubeChannelBodySchema = z.object({
   channel_url: z.string().trim().min(1, 'YouTube kanal bağlantısı zorunludur.').max(500),
 });

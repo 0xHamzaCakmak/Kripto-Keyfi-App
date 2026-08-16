@@ -29,7 +29,7 @@ export async function listPublishedVideos(filters: PublishedVideoFilters = {}) {
   ] });
   if (channelId) conditions.push({ channelId });
   if (favoritesOnly && userId) conditions.push({ channel: { is: { favoritedBy: { some: { userId } } } } });
-  const baseWhere: Prisma.VideoWhereInput = { status: VideoStatus.PUBLISHED, ...(conditions.length ? { AND: conditions } : {}) };
+  const baseWhere: Prisma.VideoWhereInput = { status: VideoStatus.PUBLISHED, deletedAt: null, ...(conditions.length ? { AND: conditions } : {}) };
   const where: Prisma.VideoWhereInput = {
     ...baseWhere,
     ...(contentType === 'all' ? {} : { contentType: contentType === 'short' ? VideoContentType.SHORT : VideoContentType.LONG }),
@@ -46,11 +46,59 @@ export async function listPublishedVideos(filters: PublishedVideoFilters = {}) {
 
 export async function listPublicYoutubeChannels() {
   const channels = await prisma.youtubeChannel.findMany({
-    where: { videos: { some: { status: VideoStatus.PUBLISHED } } },
-    select: { id: true, channelName: true, avatarUrl: true, _count: { select: { videos: { where: { status: VideoStatus.PUBLISHED } } } } },
+    where: { videos: { some: { status: VideoStatus.PUBLISHED, deletedAt: null } } },
+    select: { id: true, channelName: true, avatarUrl: true, _count: { select: { videos: { where: { status: VideoStatus.PUBLISHED, deletedAt: null } } } } },
     orderBy: { channelName: 'asc' },
   });
   return channels.map((channel) => ({ id: channel.id, channelName: channel.channelName ?? 'YouTube', avatarUrl: channel.avatarUrl, videoCount: channel._count.videos }));
+}
+
+export async function listAdminVideos(includeDeleted = false) {
+  return prisma.video.findMany({
+    where: includeDeleted ? {} : { deletedAt: null },
+    include: withChannel,
+    orderBy: [{ deletedAt: 'desc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
+  });
+}
+
+async function requireVideo(id: number) {
+  const video = await prisma.video.findUnique({ where: { id } });
+  if (!video) throw new ApiError(404, 'Video bulunamadı.', 'VIDEO_NOT_FOUND');
+  return video;
+}
+
+export async function updateVideoStatus(id: number, status: 'published' | 'hidden', adminId: string) {
+  await requireVideo(id);
+  return prisma.video.update({
+    where: { id },
+    data: { status: status === 'published' ? VideoStatus.PUBLISHED : VideoStatus.HIDDEN, moderatedById: adminId, moderatedAt: new Date() },
+    include: withChannel,
+  });
+}
+
+export async function softDeleteVideo(id: number, adminId: string) {
+  await requireVideo(id);
+  return prisma.video.update({ where: { id }, data: { deletedAt: new Date(), deletedById: adminId, moderatedById: adminId, moderatedAt: new Date() }, include: withChannel });
+}
+
+export async function restoreVideo(id: number, adminId: string) {
+  await requireVideo(id);
+  return prisma.video.update({ where: { id }, data: { deletedAt: null, deletedById: null, moderatedById: adminId, moderatedAt: new Date() }, include: withChannel });
+}
+
+export async function refreshVideoMetadata(id: number, adminId: string) {
+  const video = await requireVideo(id);
+  const details = await getVideoDetails(video.youtubeVideoId);
+  return prisma.video.update({
+    where: { id },
+    data: {
+      youtubeUrl: details.youtubeUrl, channelName: details.channelName, title: details.title, description: details.description,
+      thumbnailUrl: details.thumbnailUrl, duration: details.duration, durationSeconds: details.durationSeconds,
+      contentType: details.contentType === 'short' ? VideoContentType.SHORT : VideoContentType.LONG,
+      publishedAt: details.publishedAt, moderatedById: adminId, moderatedAt: new Date(),
+    },
+    include: withChannel,
+  });
 }
 
 export async function createManualVideo(youtubeUrl: string, addedById: string) {
