@@ -3,6 +3,7 @@ import { prisma } from '../../database/prisma.js';
 import { hashPassword } from '../../security/password.js';
 import { ApiError } from '../../utils/api-error.js';
 import type { AdminUserListQuery, CreateAdminUserInput, UpdateAdminUserInput } from './admin-user.schema.js';
+import { fetchUserProfileSections } from './user-profile-sections.js';
 
 const roleMap = { admin: UserRole.ADMIN, user: UserRole.USER } as const;
 const statusMap = {
@@ -122,6 +123,12 @@ export async function getAdminUser(id: string) {
   const user = await prisma.user.findUnique({ where: { id }, select: adminUserSelect });
   if (!user) notFound();
   return presentAdminUser(user);
+}
+
+export async function getAdminUserProfileSections(id: string) {
+  const user = await prisma.user.findUnique({ where: { id }, select: { id: true } });
+  if (!user) notFound();
+  return fetchUserProfileSections(id);
 }
 
 export async function updateAdminUser(id: string, input: UpdateAdminUserInput, adminId: string) {

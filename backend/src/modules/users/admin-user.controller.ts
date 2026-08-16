@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { success } from '../../utils/response.js';
 import type { AdminUserListQuery, CreateAdminUserInput, ResetAdminUserPasswordInput, UpdateAdminUserInput } from './admin-user.schema.js';
-import { createAdminUser, getAdminUser, listAdminUsers, resetAdminUserPassword, restoreAdminUser, softDeleteAdminUser, updateAdminUser } from './admin-user.service.js';
+import { createAdminUser, getAdminUser, getAdminUserProfileSections, listAdminUsers, resetAdminUserPassword, restoreAdminUser, softDeleteAdminUser, updateAdminUser } from './admin-user.service.js';
 
 export async function list(req: Request, res: Response) {
   return success(res, await listAdminUsers(req.query as unknown as AdminUserListQuery));
@@ -13,6 +13,10 @@ export async function create(req: Request, res: Response) {
 
 export async function detail(req: Request, res: Response) {
   return success(res, { user: await getAdminUser(String(req.params.id)) });
+}
+
+export async function profileSections(req: Request, res: Response) {
+  return success(res, { sections: await getAdminUserProfileSections(String(req.params.id)) });
 }
 
 export async function update(req: Request, res: Response) {

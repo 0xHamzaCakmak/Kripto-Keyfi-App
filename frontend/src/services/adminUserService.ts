@@ -17,6 +17,7 @@ export type AdminUserListItem = {
 };
 
 export type AdminUserPagination = { page: number; limit: number; total: number; totalPages: number };
+export type AdminUserProfileSection = { key: string; title: string; data: unknown };
 
 type Result<T> = { data: T };
 
@@ -59,6 +60,11 @@ export async function createAdminUser(input: {
 export async function getAdminUser(id: string) {
   const response = await api.get<Result<{ user: AdminUserListItem }>>(`/admin/users/${id}`);
   return response.data.data.user;
+}
+
+export async function getAdminUserProfileSections(id: string) {
+  const response = await api.get<Result<{ sections: AdminUserProfileSection[] }>>(`/admin/users/${id}/profile-sections`);
+  return response.data.data.sections;
 }
 
 export async function updateAdminUser(id: string, input: {
