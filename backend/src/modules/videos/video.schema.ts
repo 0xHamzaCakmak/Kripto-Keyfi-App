@@ -7,6 +7,7 @@ export const listVideosQuerySchema = z.object({
   creator: z.string().trim().max(120).optional().transform((value) => value || undefined),
   channel_id: z.coerce.number().int().positive().optional(),
   favorites_only: z.enum(['true', 'false']).transform((value) => value === 'true').default('false'),
+  liked_only: z.enum(['true', 'false']).transform((value) => value === 'true').default('false'),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(50).default(24),
 });

@@ -18,6 +18,7 @@ import { adminKOLRouter, kolRouter, kolTrackingRouter } from './modules/kol/kol.
 import { adminVideoRouter, adminYoutubeChannelRouter, publicYoutubeChannelRouter, videoRouter } from './modules/videos/video.routes.js';
 import { adminCreatorRouter, creatorRouter } from './modules/videos/creator.routes.js';
 import { favoriteChannelRouter } from './modules/videos/favorite.routes.js';
+import { videoReactionRouter } from './modules/videos/video-reaction.routes.js';
 
 export function createApp() {
   const app = express();
@@ -56,6 +57,7 @@ export function createApp() {
   app.use(`${API_PREFIX}/videos`, videoRouter);
   app.use(`${API_PREFIX}/youtube-channels`, publicYoutubeChannelRouter);
   app.use(`${API_PREFIX}/favorites/channels`, favoriteChannelRouter);
+  app.use(`${API_PREFIX}/video-reactions`, videoReactionRouter);
   app.use(`${API_PREFIX}/creator`, creatorRouter);
   app.use(`${API_PREFIX}/admin`, adminRouter);
   app.use(`${API_PREFIX}/admin/kols`, adminKOLRouter);

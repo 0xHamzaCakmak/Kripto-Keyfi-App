@@ -13,14 +13,16 @@ type PublishedVideoFilters = {
   search?: string | undefined;
   channelId?: number | undefined;
   favoritesOnly?: boolean;
+  likedOnly?: boolean;
   userId?: string | undefined;
   page?: number;
   limit?: number;
 };
 
 export async function listPublishedVideos(filters: PublishedVideoFilters = {}) {
-  const { contentType = 'all', search, channelId, favoritesOnly = false, userId, page = 1, limit = 24 } = filters;
+  const { contentType = 'all', search, channelId, favoritesOnly = false, likedOnly = false, userId, page = 1, limit = 24 } = filters;
   if (favoritesOnly && !userId) throw new ApiError(401, 'Favori videolar için giriş yapmalısınız.', 'UNAUTHORIZED');
+  if (likedOnly && !userId) throw new ApiError(401, 'Beğenilen videolar için giriş yapmalısınız.', 'UNAUTHORIZED');
   const conditions: Prisma.VideoWhereInput[] = [];
   if (search) conditions.push({ OR: [
     { title: { contains: search } },
@@ -29,6 +31,7 @@ export async function listPublishedVideos(filters: PublishedVideoFilters = {}) {
   ] });
   if (channelId) conditions.push({ channelId });
   if (favoritesOnly && userId) conditions.push({ channel: { is: { favoritedBy: { some: { userId } } } } });
+  if (likedOnly && userId) conditions.push({ reactions: { some: { userId, reaction: 'LIKE' } } });
   const baseWhere: Prisma.VideoWhereInput = { status: VideoStatus.PUBLISHED, deletedAt: null, ...(conditions.length ? { AND: conditions } : {}) };
   const where: Prisma.VideoWhereInput = {
     ...baseWhere,

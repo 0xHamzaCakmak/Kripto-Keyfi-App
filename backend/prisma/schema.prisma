@@ -229,6 +229,11 @@ enum VideoContentType {
   SHORT @map("short")
 }
 
+enum VideoReactionType {
+  LIKE    @map("like")
+  DISLIKE @map("dislike")
+}
+
 enum KOLPlatform {
   X
   YOUTUBE
@@ -376,6 +381,7 @@ model User {
   warnedVideos              Video[]               @relation("video_warned_by")
   favoriteYoutubeChannels   UserFavoriteChannel[]
   youtubeScoreWeightUpdates YoutubeScoreWeight[]  @relation("youtube_score_weight_updated_by")
+  videoReactions            UserVideoReaction[]
 
   @@map("users")
 }
@@ -467,42 +473,58 @@ model UserFavoriteChannel {
   @@map("user_favorite_channels")
 }
 
+model UserVideoReaction {
+  id        Int               @id @default(autoincrement())
+  userId    String            @map("user_id")
+  videoId   Int               @map("video_id")
+  reaction  VideoReactionType
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video     Video             @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+  @@index([videoId, reaction])
+  @@map("user_video_reactions")
+}
+
 model Video {
-  id                    Int              @id @default(autoincrement())
-  youtubeVideoId        String           @unique @map("youtube_video_id") @db.VarChar(32)
-  youtubeUrl            String           @map("youtube_url") @db.VarChar(500)
-  channelId             Int?             @map("channel_id")
-  channelName           String?          @map("channel_name") @db.VarChar(255)
-  title                 String?          @db.VarChar(500)
-  description           String?          @db.Text
-  thumbnailUrl          String?          @map("thumbnail_url") @db.VarChar(500)
-  duration              String?          @db.VarChar(16)
-  durationSeconds       Int?             @map("duration_seconds")
-  contentType           VideoContentType @default(LONG) @map("content_type")
-  publishedAt           DateTime?        @map("published_at")
+  id                    Int                 @id @default(autoincrement())
+  youtubeVideoId        String              @unique @map("youtube_video_id") @db.VarChar(32)
+  youtubeUrl            String              @map("youtube_url") @db.VarChar(500)
+  channelId             Int?                @map("channel_id")
+  channelName           String?             @map("channel_name") @db.VarChar(255)
+  title                 String?             @db.VarChar(500)
+  description           String?             @db.Text
+  thumbnailUrl          String?             @map("thumbnail_url") @db.VarChar(500)
+  duration              String?             @db.VarChar(16)
+  durationSeconds       Int?                @map("duration_seconds")
+  contentType           VideoContentType    @default(LONG) @map("content_type")
+  publishedAt           DateTime?           @map("published_at")
   source                VideoSource
-  status                VideoStatus      @default(PUBLISHED)
-  addedById             String?          @map("added_by")
-  creatorId             String?          @map("creator_id")
-  deletedAt             DateTime?        @map("deleted_at")
-  deletedById           String?          @map("deleted_by")
-  titleOverride         String?          @map("title_override") @db.VarChar(500)
-  descriptionOverride   String?          @map("description_override") @db.Text
-  warningLabel          String?          @map("warning_label") @db.VarChar(50)
-  warningNote           String?          @map("warning_note") @db.Text
-  warningVisibleToUsers Boolean          @default(false) @map("warning_visible_to_users")
-  warnedById            String?          @map("warned_by")
-  warnedAt              DateTime?        @map("warned_at")
-  moderatedById         String?          @map("moderated_by")
-  moderatedAt           DateTime?        @map("moderated_at")
-  createdAt             DateTime         @default(now()) @map("created_at")
-  updatedAt             DateTime         @updatedAt @map("updated_at")
-  channel               YoutubeChannel?  @relation(fields: [channelId], references: [id], onDelete: SetNull)
-  addedBy               User?            @relation("video_added_by", fields: [addedById], references: [id], onDelete: SetNull)
-  creator               User?            @relation("video_creator", fields: [creatorId], references: [id], onDelete: SetNull)
-  deletedBy             User?            @relation("video_deleted_by", fields: [deletedById], references: [id], onDelete: SetNull)
-  warnedBy              User?            @relation("video_warned_by", fields: [warnedById], references: [id], onDelete: SetNull)
-  moderatedBy           User?            @relation("video_moderated_by", fields: [moderatedById], references: [id], onDelete: SetNull)
+  status                VideoStatus         @default(PUBLISHED)
+  addedById             String?             @map("added_by")
+  creatorId             String?             @map("creator_id")
+  deletedAt             DateTime?           @map("deleted_at")
+  deletedById           String?             @map("deleted_by")
+  titleOverride         String?             @map("title_override") @db.VarChar(500)
+  descriptionOverride   String?             @map("description_override") @db.Text
+  warningLabel          String?             @map("warning_label") @db.VarChar(50)
+  warningNote           String?             @map("warning_note") @db.Text
+  warningVisibleToUsers Boolean             @default(false) @map("warning_visible_to_users")
+  warnedById            String?             @map("warned_by")
+  warnedAt              DateTime?           @map("warned_at")
+  moderatedById         String?             @map("moderated_by")
+  moderatedAt           DateTime?           @map("moderated_at")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+  channel               YoutubeChannel?     @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  addedBy               User?               @relation("video_added_by", fields: [addedById], references: [id], onDelete: SetNull)
+  creator               User?               @relation("video_creator", fields: [creatorId], references: [id], onDelete: SetNull)
+  deletedBy             User?               @relation("video_deleted_by", fields: [deletedById], references: [id], onDelete: SetNull)
+  warnedBy              User?               @relation("video_warned_by", fields: [warnedById], references: [id], onDelete: SetNull)
+  moderatedBy           User?               @relation("video_moderated_by", fields: [moderatedById], references: [id], onDelete: SetNull)
+  reactions             UserVideoReaction[]
 
   @@index([channelId])
   @@index([status, publishedAt])

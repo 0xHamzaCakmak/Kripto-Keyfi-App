@@ -65,13 +65,14 @@ export type VideoCounts = { all: number; long: number; short: number };
 export type VideoPagination = { page: number; limit: number; total: number; totalPages: number };
 export type PublicYoutubeChannel = { id: number; channelName: string; avatarUrl: string | null; videoCount: number };
 
-export async function getVideos(filters: { contentType?: 'all' | 'long' | 'short'; search?: string; channelId?: number; favoritesOnly?: boolean; page?: number; limit?: number } = {}) {
+export async function getVideos(filters: { contentType?: 'all' | 'long' | 'short'; search?: string; channelId?: number; favoritesOnly?: boolean; likedOnly?: boolean; page?: number; limit?: number } = {}) {
   const response = await api.get<Result<{ videos: PublicVideo[]; counts: VideoCounts; pagination: VideoPagination }>>('/videos', {
     params: {
       type: filters.contentType ?? 'all', page: filters.page ?? 1, limit: filters.limit ?? 24,
       ...(filters.search ? { search: filters.search } : {}),
       ...(filters.channelId ? { channel_id: filters.channelId } : {}),
       ...(filters.favoritesOnly ? { favorites_only: 'true' } : {}),
+      ...(filters.likedOnly ? { liked_only: 'true' } : {}),
     },
   });
   return response.data.data;
@@ -90,6 +91,18 @@ export async function getFavoriteChannelIds() {
 export async function toggleFavoriteChannel(channelId: number) {
   const response = await api.post<Result<{ favorited: boolean }>>(`/favorites/channels/${channelId}`);
   return response.data.data.favorited;
+}
+
+export type VideoReaction = 'like' | 'dislike';
+
+export async function getVideoReactions() {
+  const response = await api.get<Result<{ reactions: Array<{ videoId: number; reaction: VideoReaction }> }>>('/video-reactions');
+  return response.data.data.reactions;
+}
+
+export async function toggleVideoReaction(videoId: number, reaction: VideoReaction) {
+  const response = await api.put<Result<{ reaction: VideoReaction | null }>>(`/video-reactions/${videoId}`, { reaction });
+  return response.data.data.reaction;
 }
 
 export async function addVideo(youtubeUrl: string) {

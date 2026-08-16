@@ -37,8 +37,8 @@ describe('YouTube favorite channels', () => {
   });
 
   it('validates combined public filters without raw SQL input', () => {
-    expect(listVideosQuerySchema.parse({ search: 'bitcoin', type: 'short', channel_id: '7', favorites_only: 'true', page: '2', limit: '12' })).toMatchObject({
-      search: 'bitcoin', type: 'short', channel_id: 7, favorites_only: true, page: 2, limit: 12,
+    expect(listVideosQuerySchema.parse({ search: 'bitcoin', type: 'short', channel_id: '7', favorites_only: 'true', liked_only: 'true', page: '2', limit: '12' })).toMatchObject({
+      search: 'bitcoin', type: 'short', channel_id: 7, favorites_only: true, liked_only: true, page: 2, limit: 12,
     });
   });
 });

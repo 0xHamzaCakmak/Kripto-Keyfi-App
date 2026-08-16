@@ -9,6 +9,7 @@ export async function list(req: Request, res: Response) {
     search: (req.query.search ?? req.query.creator) as string | undefined,
     channelId: req.query.channel_id as unknown as number | undefined,
     favoritesOnly: req.query.favorites_only as unknown as boolean,
+    likedOnly: req.query.liked_only as unknown as boolean,
     userId: req.user?.id,
     page: req.query.page as unknown as number,
     limit: req.query.limit as unknown as number,
