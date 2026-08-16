@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   warn: vi.fn(),
   info: vi.fn(),
   error: vi.fn(),
+  calculateScores: vi.fn(),
 }));
 
 vi.mock('../src/database/prisma.js', () => ({
@@ -23,6 +24,7 @@ vi.mock('../src/services/youtubeApi.js', () => ({
   getRecentVideosStats: mocks.getRecentVideosStats,
 }));
 vi.mock('../src/utils/logger.js', () => ({ logger: { warn: mocks.warn, info: mocks.info, error: mocks.error } }));
+vi.mock('../src/modules/videos/youtube-score.service.js', () => ({ calculateYoutubeChannelScores: mocks.calculateScores }));
 
 import { collectYoutubeChannelMetrics, runYoutubeMetricsCollection, utcDateOnly } from '../src/modules/videos/youtube-metrics.worker.js';
 
@@ -33,6 +35,7 @@ describe('YouTube metrics worker', () => {
     mocks.getRecentVideosStats.mockResolvedValue({ avgViews: 2_000, avgLikes: 200, avgComments: 30, sampleSize: 20 });
     mocks.videoCount.mockResolvedValue(7);
     mocks.snapshotUpsert.mockImplementation(async ({ create }: { create: unknown }) => create);
+    mocks.calculateScores.mockResolvedValue({ eligible: false, activeChannels: 2, calculated: 2, scores: [] });
   });
 
   it('upserts one UTC calendar-day snapshot with API and database metrics', async () => {
@@ -60,9 +63,15 @@ describe('YouTube metrics worker', () => {
 
     const result = await runYoutubeMetricsCollection(new Date('2026-08-16T10:00:00.000Z'));
 
-    expect(result).toEqual({ activeChannels: 2, collected: 1, failed: 1 });
+    expect(result).toEqual({
+      activeChannels: 2,
+      collected: 1,
+      failed: 1,
+      scoring: { eligible: false, activeChannels: 2, calculated: 2, scores: [] },
+    });
     expect(mocks.snapshotUpsert).toHaveBeenCalledOnce();
     expect(mocks.warn).toHaveBeenCalledOnce();
+    expect(mocks.calculateScores).toHaveBeenCalledWith(new Date('2026-08-16T10:00:00.000Z'));
   });
 
   it('normalizes timestamps to a UTC date', () => {

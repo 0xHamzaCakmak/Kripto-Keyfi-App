@@ -38,7 +38,8 @@
     "news:monitor": "tsx scripts/monitor-news-production.ts",
     "security:secrets": "tsx scripts/check-repository-secrets.ts",
     "youtube:backfill-avatars": "tsx scripts/backfill-youtube-channel-avatars.ts",
-    "youtube:collect-metrics": "tsx scripts/collect-youtube-metrics.ts"
+    "youtube:collect-metrics": "tsx scripts/collect-youtube-metrics.ts",
+    "youtube:calculate-scores": "tsx scripts/calculate-youtube-scores.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

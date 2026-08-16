@@ -3,6 +3,7 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { getChannelStatistics, getRecentVideosStats } from '../../services/youtubeApi.js';
 import { logger } from '../../utils/logger.js';
+import { calculateYoutubeChannelScores } from './youtube-score.service.js';
 
 const MYSQL_INT_MAX = 2_147_483_647;
 
@@ -58,7 +59,8 @@ export async function runYoutubeMetricsCollection(collectedAt = new Date()) {
       logger.warn({ channelId: channel.channelId, err: error }, 'YouTube channel metrics collection failed');
     }
   }
-  return { activeChannels: channels.length, collected, failed };
+  const scoring = await calculateYoutubeChannelScores(collectedAt);
+  return { activeChannels: channels.length, collected, failed, scoring };
 }
 
 export function scheduleYoutubeMetricsCollection() {

@@ -19,6 +19,7 @@ import { adminVideoRouter, adminYoutubeChannelRouter, publicYoutubeChannelRouter
 import { adminCreatorRouter, creatorRouter } from './modules/videos/creator.routes.js';
 import { favoriteChannelRouter } from './modules/videos/favorite.routes.js';
 import { videoReactionRouter } from './modules/videos/video-reaction.routes.js';
+import { adminYoutubeScoreRouter } from './modules/videos/youtube-score.routes.js';
 
 export function createApp() {
   const app = express();
@@ -64,6 +65,7 @@ export function createApp() {
   app.use(`${API_PREFIX}/admin/news`, adminNewsRouter);
   app.use(`${API_PREFIX}/admin/videos`, adminVideoRouter);
   app.use(`${API_PREFIX}/admin/youtube-channels`, adminYoutubeChannelRouter);
+  app.use(`${API_PREFIX}/admin/youtube-scores`, adminYoutubeScoreRouter);
   app.use(`${API_PREFIX}/admin/creator-applications`, adminCreatorRouter);
   app.use('/r', kolTrackingRouter);
   app.use(notFound);
