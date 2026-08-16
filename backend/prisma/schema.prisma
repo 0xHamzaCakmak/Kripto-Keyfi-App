@@ -352,6 +352,8 @@ model User {
   profileCompleted          Boolean               @default(false)
   onboardingCompleted       Boolean               @default(false)
   lastLoginAt               DateTime?
+  createdByAdminId          String?               @map("created_by_admin_id")
+  notes                     String?               @db.Text
   createdAt                 DateTime              @default(now())
   updatedAt                 DateTime              @updatedAt
   refreshSessions           RefreshSession[]
@@ -382,8 +384,28 @@ model User {
   favoriteYoutubeChannels   UserFavoriteChannel[]
   youtubeScoreWeightUpdates YoutubeScoreWeight[]  @relation("youtube_score_weight_updated_by")
   videoReactions            UserVideoReaction[]
+  createdByAdmin            User?                 @relation("user_created_by_admin", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  adminCreatedUsers         User[]                @relation("user_created_by_admin")
+  adminAuditLogs            UserAdminAuditLog[]   @relation("user_admin_audit_actor")
+  subjectAuditLogs          UserAdminAuditLog[]   @relation("user_admin_audit_subject")
 
+  @@index([createdByAdminId])
   @@map("users")
+}
+
+model UserAdminAuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    String   @map("user_id")
+  adminId   String   @map("admin_id")
+  action    String   @db.VarChar(100)
+  changes   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation("user_admin_audit_subject", fields: [userId], references: [id], onDelete: Restrict)
+  admin     User     @relation("user_admin_audit_actor", fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([adminId, createdAt])
+  @@map("user_admin_audit_logs")
 }
 
 model YoutubeChannel {

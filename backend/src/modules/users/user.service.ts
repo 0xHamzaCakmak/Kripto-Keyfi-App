@@ -1,11 +1,11 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, UserStatus } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import type { PublicUser } from '../auth/auth.types.js';
 import type { UpdateMeInput } from './user.schema.js';
 import { publicUserSelect, serializePublicUser } from './user.presenter.js';
 
-export const countUsers = () => prisma.user.count();
+export const countUsers = () => prisma.user.count({ where: { status: { not: UserStatus.DELETED } } });
 
 export async function updateMe(userId: string, input: UpdateMeInput): Promise<PublicUser> {
   const current = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, username: true, bio: true } });

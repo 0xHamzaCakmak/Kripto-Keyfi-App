@@ -35,6 +35,7 @@ const ForgotPasswordPage = lazy(() => import('./components/Auth').then((module) 
 const OnboardingPage = lazy(() => import('./components/Auth').then((module) => ({ default: module.OnboardingPage })));
 const ConnectWalletPage = lazy(() => import('./components/Auth').then((module) => ({ default: module.ConnectWalletPage })));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const AdminUsers = lazy(() => import('./components/AdminUsers'));
 const AdminLayout = lazy(() => import('./components/AdminLayout'));
 const TradingBotDashboard = lazy(() => import('./components/TradingBotDashboard'));
 const TradingBots = lazy(() => import('./components/TradingBots'));
@@ -79,6 +80,7 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
               <Route index element={<AdminDashboard />} />
+              <Route path="users" element={<AdminUsers />} />
               <Route path="trading" element={<TradingModuleLayout />}>
                 <Route index element={<TradingBotDashboard />} />
                 <Route path="bots" element={<TradingBots />} />

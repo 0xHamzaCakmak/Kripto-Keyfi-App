@@ -19,6 +19,7 @@ import { logout } from '../services/authService';
 
 const primaryLinks = [
   { label: 'Genel Bakış', to: '/admin', icon: LayoutDashboard, end: true },
+  { label: 'Kullanıcı Yönetimi', to: '/admin/users', icon: UsersRound },
   { label: 'Haber Yönetimi', to: '/admin/news/sources', icon: Radio, end: true },
   { label: 'Videolar', to: '/admin/videos', icon: Youtube },
   { label: 'KOL Intelligence', to: '/admin/kol', icon: UsersRound },

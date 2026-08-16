@@ -54,11 +54,10 @@ export default function AdminDashboard() {
     },
     {
       title: "Kullanıcı yönetimi",
-      description: "Hesap, rol ve erişim kontrolleri yakında burada olacak.",
-      to: "/admin",
+      description: "Kullanıcı hesaplarını, rollerini ve erişim durumlarını yönetin.",
+      to: "/admin/users",
       icon: Users,
-      accent: "text-on-surface-variant",
-      disabled: true,
+      accent: "text-primary",
     },
     {
       title: "Sistem güvenliği",
@@ -119,12 +118,11 @@ export default function AdminDashboard() {
         </div>
         <div className="grid gap-5 md:grid-cols-2">
           {modules.map(
-            ({ title, description, to, icon: Icon, accent, disabled }) => (
+            ({ title, description, to, icon: Icon, accent }) => (
               <Link
                 key={title}
                 to={to}
-                onClick={(event) => disabled && event.preventDefault()}
-                className={`group rounded-[28px] border border-outline/10 bg-surface p-6 transition ${disabled ? "cursor-not-allowed opacity-55" : "hover:-translate-y-1 hover:border-primary/35 hover:bg-surface-high"}`}
+                className="group rounded-[28px] border border-outline/10 bg-surface p-6 transition hover:-translate-y-1 hover:border-primary/35 hover:bg-surface-high"
               >
                 <Icon className={accent} size={28} />
                 <h3 className="mt-8 font-headline text-2xl font-extrabold text-white">
@@ -134,8 +132,7 @@ export default function AdminDashboard() {
                   {description}
                 </p>
                 <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-primary">
-                  {disabled ? "Yakında" : "Alanı aç"}{" "}
-                  {!disabled && <ArrowRight size={16} />}
+                  Alanı aç <ArrowRight size={16} />
                 </span>
               </Link>
             ),
