@@ -1,7 +1,9 @@
-import { UserRole, UserStatus } from '@prisma/client';
+import { Prisma, UserRole, UserStatus } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ findMany: vi.fn(), count: vi.fn(), transaction: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  findMany: vi.fn(), count: vi.fn(), userCreate: vi.fn(), auditCreate: vi.fn(), transaction: vi.fn(), hashPassword: vi.fn(),
+}));
 
 vi.mock('../src/database/prisma.js', () => ({
   prisma: {
@@ -9,16 +11,23 @@ vi.mock('../src/database/prisma.js', () => ({
     $transaction: mocks.transaction,
   },
 }));
+vi.mock('../src/security/password.js', () => ({ hashPassword: mocks.hashPassword }));
 
-import { adminUserListQuerySchema } from '../src/modules/users/admin-user.schema.js';
-import { listAdminUsers } from '../src/modules/users/admin-user.service.js';
+import { adminUserListQuerySchema, createAdminUserBodySchema } from '../src/modules/users/admin-user.schema.js';
+import { createAdminUser, listAdminUsers } from '../src/modules/users/admin-user.service.js';
 
 describe('admin user list', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.transaction.mockImplementation((operations: Array<Promise<unknown>>) => Promise.all(operations));
+    mocks.transaction.mockImplementation((input: Array<Promise<unknown>> | ((transaction: unknown) => unknown)) => (
+      typeof input === 'function'
+        ? input({ user: { create: mocks.userCreate }, userAdminAuditLog: { create: mocks.auditCreate } })
+        : Promise.all(input)
+    ));
     mocks.findMany.mockResolvedValue([]);
     mocks.count.mockResolvedValue(0);
+    mocks.hashPassword.mockResolvedValue('argon2id-hash');
+    mocks.auditCreate.mockResolvedValue({ id: 1 });
   });
 
   it('validates filters and pagination limits', () => {
@@ -53,5 +62,49 @@ describe('admin user list', () => {
     expect(mocks.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { AND: [{ status: UserStatus.DELETED }, { role: UserRole.ADMIN }] },
     }));
+  });
+
+  it('creates an active verified account with a hashed temporary password and a password-free audit entry', async () => {
+    const createdAt = new Date('2026-08-16T18:00:00Z');
+    mocks.userCreate.mockResolvedValue({
+      id: 'new-user', email: 'new@example.com', username: 'new_user', name: 'Yeni Kullanıcı', avatarUrl: null,
+      role: UserRole.USER, status: UserStatus.ACTIVE, createdAt, lastLoginAt: null,
+    });
+    const input = createAdminUserBodySchema.parse({
+      email: 'NEW@EXAMPLE.COM', username: 'Yeni Kullanıcı', display_name: 'Yeni Kullanıcı', password: 'temporary-123', role: 'user',
+    });
+
+    const result = await createAdminUser(input, 'admin-1');
+
+    expect(mocks.hashPassword).toHaveBeenCalledWith('temporary-123');
+    expect(mocks.userCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        email: 'new@example.com', username: 'yeni_kullanici', passwordHash: 'argon2id-hash', status: UserStatus.ACTIVE,
+        emailVerifiedAt: expect.any(Date), mustChangePassword: true, createdByAdminId: 'admin-1',
+      }),
+    }));
+    expect(mocks.auditCreate).toHaveBeenCalledWith({ data: {
+      userId: 'new-user', adminId: 'admin-1', action: 'created', changes: { source: 'admin', role: 'user' },
+    } });
+    expect(JSON.stringify(mocks.auditCreate.mock.calls)).not.toContain('temporary-123');
+    expect(result).toMatchObject({ id: 'new-user', role: 'user', status: 'active' });
+  });
+
+  it('returns a meaningful conflict when the email is already registered', async () => {
+    mocks.userCreate.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: '6.19.0',
+      meta: { target: ['email'] },
+    }));
+
+    const input = createAdminUserBodySchema.parse({
+      email: 'existing@example.com', username: 'new_user', display_name: 'Yeni Kullanıcı',
+      password: 'temporary-123', role: 'user',
+    });
+
+    await expect(createAdminUser(input, 'admin-1')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'EMAIL_EXISTS',
+    });
   });
 });

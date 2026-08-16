@@ -34,3 +34,20 @@ export async function getAdminUsers(filters: {
   });
   return response.data.data;
 }
+
+export async function createAdminUser(input: {
+  email: string;
+  username: string;
+  displayName: string;
+  password: string;
+  role: AdminUserListItem['role'];
+}) {
+  const response = await api.post<Result<{ user: AdminUserListItem }>>('/admin/users', {
+    email: input.email,
+    username: input.username,
+    display_name: input.displayName,
+    password: input.password,
+    role: input.role,
+  });
+  return response.data.data.user;
+}
