@@ -3,6 +3,7 @@ import { prisma } from '../../database/prisma.js';
 import { getChannelInfo, getVideoDetails, parseYoutubeVideoId } from '../../services/youtubeApi.js';
 import { ApiError } from '../../utils/api-error.js';
 import { cacheYoutubeChannelAvatar } from './youtube-channel-assets.js';
+import { isOfficialYoutubeChannel } from './official-youtube-channel.js';
 
 const channelWithCount = { _count: { select: { videos: true } } } as const;
 
@@ -34,7 +35,7 @@ export async function connectMyYoutubeChannel(userId: string, channelUrl: string
     return prisma.youtubeChannel.update({ where: { id: claimed.id }, data: { ...details, ownerUserId: userId, status: YoutubeChannelStatus.PAUSED }, include: channelWithCount });
   }
   return prisma.youtubeChannel.create({
-    data: { ...details, ownerUserId: userId, addedById: userId, isOwnChannel: false, status: YoutubeChannelStatus.PAUSED },
+    data: { ...details, ownerUserId: userId, addedById: userId, isOwnChannel: isOfficialYoutubeChannel(details), status: YoutubeChannelStatus.PAUSED },
     include: channelWithCount,
   });
 }
@@ -70,7 +71,7 @@ export async function addCreatorVideo(userId: string, youtubeUrl: string) {
         publishedAt: details.publishedAt, source: VideoSource.CREATOR_AUTO, status: VideoStatus.PUBLISHED,
         creatorId: userId, addedById: userId,
       },
-      include: { channel: { select: { channelName: true, avatarUrl: true, isOwnChannel: true } } },
+      include: { channel: { select: { channelId: true, channelName: true, avatarUrl: true, isOwnChannel: true } } },
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ApiError(409, 'Bu video zaten Video Merkezi’nde yer alıyor.', 'VIDEO_ALREADY_EXISTS');

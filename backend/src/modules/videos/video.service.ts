@@ -4,9 +4,10 @@ import { prisma } from '../../database/prisma.js';
 import { getChannelInfo, getUploadsFromPlaylist, getUploadsFromPlaylistByType, getVideoDetails, parseYoutubeVideoId, type YoutubeVideoDetails } from '../../services/youtubeApi.js';
 import { ApiError } from '../../utils/api-error.js';
 import { cacheYoutubeChannelAvatar } from './youtube-channel-assets.js';
+import { isOfficialYoutubeChannel } from './official-youtube-channel.js';
 import { ensureOwnChannelInEveryFive } from './video-ordering.js';
 
-const withChannel = { channel: { select: { channelName: true, avatarUrl: true, isOwnChannel: true } } } as const;
+const withChannel = { channel: { select: { channelId: true, channelName: true, avatarUrl: true, isOwnChannel: true } } } as const;
 const withVideoCount = {
   _count: { select: { videos: true } },
   metricSnapshots: { select: { subscriberCount: true }, orderBy: { snapshotDate: 'desc' as const }, take: 1 },
@@ -47,7 +48,7 @@ export async function listPublishedVideos(filters: PublishedVideoFilters = {}) {
     const [videoOrder, all, long, short] = await prisma.$transaction([
       prisma.video.findMany({
         where,
-        select: { id: true, channel: { select: { isOwnChannel: true } } },
+        select: { id: true, channel: { select: { channelId: true, isOwnChannel: true } } },
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
       }),
       prisma.video.count({ where: baseWhere }),
@@ -88,20 +89,23 @@ export async function listPublicYoutubeChannels() {
     where: { videos: { some: { status: VideoStatus.PUBLISHED, deletedAt: null } } },
     select: {
       id: true,
+      channelId: true,
       channelName: true,
       avatarUrl: true,
       isOwnChannel: true,
       metricSnapshots: { select: { subscriberCount: true }, orderBy: { snapshotDate: 'desc' }, take: 1 },
       _count: { select: { videos: { where: { status: VideoStatus.PUBLISHED, deletedAt: null } } } },
     },
-    orderBy: [{ isOwnChannel: 'desc' }, { channelName: 'asc' }],
+    orderBy: { channelName: 'asc' },
   });
+  channels.sort((left, right) => Number(isOfficialYoutubeChannel(right)) - Number(isOfficialYoutubeChannel(left)));
   return channels.map((channel) => ({
     id: channel.id,
     channelName: channel.channelName ?? 'YouTube',
     avatarUrl: channel.avatarUrl,
     videoCount: channel._count.videos,
     subscriberCount: channel.metricSnapshots[0]?.subscriberCount ?? null,
+    isOwnChannel: isOfficialYoutubeChannel(channel),
   }));
 }
 
@@ -186,7 +190,7 @@ export async function syncYoutubeChannel(channel: YoutubeChannel, limit = 500) {
 }
 
 async function persistYoutubeChannelUploads(channel: YoutubeChannel, uploads: YoutubeVideoDetails[], syncStartedAt = new Date()) {
-  const source = channel.isOwnChannel ? VideoSource.KRIPTOKEYFI_AUTO : VideoSource.CREATOR_AUTO;
+  const source = isOfficialYoutubeChannel(channel) ? VideoSource.KRIPTOKEYFI_AUTO : VideoSource.CREATOR_AUTO;
   if (!uploads.length) {
     await prisma.youtubeChannel.update({ where: { id: channel.id }, data: { lastSyncedAt: syncStartedAt } });
     return { discovered: 0, created: 0, syncedAt: syncStartedAt };
@@ -220,7 +224,7 @@ export async function createYoutubeChannel(channelUrl: string, addedById: string
   let channel: YoutubeChannel;
   try {
     channel = await prisma.youtubeChannel.create({
-      data: { ...details, isOwnChannel: false, status: YoutubeChannelStatus.ACTIVE, addedById },
+      data: { ...details, isOwnChannel: isOfficialYoutubeChannel(details), status: YoutubeChannelStatus.ACTIVE, addedById },
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ApiError(409, 'Bu YouTube kanalı zaten takip ediliyor.', 'YOUTUBE_CHANNEL_ALREADY_EXISTS');

@@ -1,6 +1,7 @@
 import type { Video, YoutubeChannel } from '@prisma/client';
+import { isOfficialYoutubeChannel } from './official-youtube-channel.js';
 
-type VideoWithChannel = Video & { channel: Pick<YoutubeChannel, 'channelName' | 'avatarUrl' | 'isOwnChannel'> | null };
+type VideoWithChannel = Video & { channel: Pick<YoutubeChannel, 'channelId' | 'channelName' | 'avatarUrl' | 'isOwnChannel'> | null };
 
 export function presentVideo(video: VideoWithChannel) {
   return {
@@ -18,7 +19,7 @@ export function presentVideo(video: VideoWithChannel) {
     channelName: video.channel?.channelName ?? video.channelName ?? 'YouTube',
     channelAvatarUrl: video.channel?.avatarUrl ?? null,
     source: video.source.toLowerCase(),
-    isOwnChannel: video.channel?.isOwnChannel ?? false,
+    isOwnChannel: isOfficialYoutubeChannel(video.channel),
   };
 }
 
@@ -52,7 +53,7 @@ export function presentYoutubeChannel(channel: ChannelWithCount) {
     channelName: channel.channelName,
     channelUrl: channel.channelUrl,
     avatarUrl: channel.avatarUrl,
-    isOwnChannel: channel.isOwnChannel,
+    isOwnChannel: isOfficialYoutubeChannel(channel),
     status: channel.status.toLowerCase(),
     lastSyncedAt: channel.lastSyncedAt?.toISOString() ?? null,
     videoCount: channel._count.videos,
