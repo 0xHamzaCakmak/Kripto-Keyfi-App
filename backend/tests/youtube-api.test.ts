@@ -31,7 +31,7 @@ describe('YouTube video integration', () => {
       items: [{
         id: 'dQw4w9WgXcQ',
         snippet: {
-          title: 'Test video', description: 'Açıklama', channelTitle: 'Test Kanalı',
+          title: 'Test video', description: 'Açıklama', channelId: 'UC_TEST', channelTitle: 'Test Kanalı',
           publishedAt: '2026-08-16T09:00:00Z', thumbnails: { high: { url: 'https://i.ytimg.com/test.jpg' } },
         },
         contentDetails: { duration: 'PT18M42S' },
@@ -64,7 +64,7 @@ describe('YouTube video integration', () => {
         { contentDetails: { videoId: 'dQw4w9WgXcQ', videoPublishedAt: '2026-08-16T10:00:00Z' } },
       ] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{
-        id: 'dQw4w9WgXcQ', snippet: { title: 'Yeni video', description: '', channelTitle: 'Creator', publishedAt: '2026-08-16T10:00:00Z', thumbnails: {} }, contentDetails: { duration: 'PT5M4S' },
+        id: 'dQw4w9WgXcQ', snippet: { title: 'Yeni video', description: '', channelId: 'UC_CREATOR', channelTitle: 'Creator', publishedAt: '2026-08-16T10:00:00Z', thumbnails: {} }, contentDetails: { duration: 'PT5M4S' },
       }] }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 

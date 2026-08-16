@@ -54,6 +54,7 @@ export async function syncYoutubeChannel(channel: YoutubeChannel, limit = 500) {
         channelName: video.channelName, title: video.title, description: video.description,
         thumbnailUrl: video.thumbnailUrl, duration: video.duration, publishedAt: video.publishedAt,
         source, status: VideoStatus.PUBLISHED, addedById: channel.addedById,
+        creatorId: channel.ownerUserId,
       })),
       skipDuplicates: true,
     }),

@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { getApiErrorMessage } from '../services/apiClient';
 import { updateMyProfile } from '../services/authService';
 import { UserAvatar } from './UserAvatar';
+import YoutubeCreatorProfile from './YoutubeCreatorProfile';
 
 export default function UserProfilePage() {
   const { user } = useAuth();
@@ -77,6 +78,7 @@ export default function UserProfilePage() {
           <div className="rounded-2xl border border-outline/5 bg-surface p-4 text-xs text-on-surface-variant"><ShieldCheck className="mb-3 text-primary" size={18} />Rol ve hesap durumu bu form üzerinden değiştirilemez.</div>
         </aside>
       </div>
+      <YoutubeCreatorProfile />
     </div>
   );
 }

@@ -6,7 +6,7 @@ const thumbnailSchema = z.record(z.object({ url: z.string().url() })).default({}
 const videoItemSchema = z.object({
   id: z.string(),
   snippet: z.object({
-    title: z.string(), description: z.string().default(''), channelTitle: z.string().default('YouTube'),
+    title: z.string(), description: z.string().default(''), channelId: z.string(), channelTitle: z.string().default('YouTube'),
     publishedAt: z.string(), thumbnails: thumbnailSchema,
   }),
   contentDetails: z.object({ duration: z.string() }),
@@ -38,6 +38,7 @@ export type YoutubeVideoDetails = {
   duration: string;
   publishedAt: Date;
   channelName: string;
+  channelId: string;
 };
 
 export type YoutubeChannelInfo = {
@@ -101,6 +102,7 @@ function normalizeVideo(item: z.infer<typeof videoItemSchema>): YoutubeVideoDeta
     duration: formatYoutubeDuration(item.contentDetails.duration),
     publishedAt: new Date(item.snippet.publishedAt),
     channelName: item.snippet.channelTitle,
+    channelId: item.snippet.channelId,
   };
 }
 

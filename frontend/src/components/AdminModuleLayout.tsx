@@ -17,6 +17,7 @@ import {
   UsersRound,
   Link2,
   RadioTower,
+  UserRoundCheck,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { cn } from '../lib/utils';
@@ -96,6 +97,7 @@ const kolTabs: AdminModuleTab[] = [
 const videoTabs: AdminModuleTab[] = [
   { label: 'Video Ekle', to: '/admin/videos', icon: Link2, end: true },
   { label: 'YouTuberlar', to: '/admin/videos/channels', icon: RadioTower },
+  { label: 'Creator Başvuruları', to: '/admin/videos/creators', icon: UserRoundCheck },
 ];
 
 export function TradingModuleLayout() {

@@ -32,6 +32,7 @@ enum UserCapabilityStatus {
   PENDING
   APPROVED
   REJECTED
+  SUSPENDED
 }
 
 enum AuthProvider {
@@ -363,6 +364,8 @@ model User {
   kolAuditLogs         KOLAuditLog[]        @relation("kol_audit_actor")
   addedYoutubeChannels YoutubeChannel[]     @relation("youtube_channel_added_by")
   addedVideos          Video[]              @relation("video_added_by")
+  ownedYoutubeChannel  YoutubeChannel?      @relation("youtube_channel_owner")
+  creatorVideos        Video[]              @relation("video_creator")
 
   @@map("users")
 }
@@ -378,9 +381,11 @@ model YoutubeChannel {
   status            YoutubeChannelStatus @default(ACTIVE)
   lastSyncedAt      DateTime?            @map("last_synced_at")
   addedById         String?              @map("added_by")
+  ownerUserId       String?              @unique @map("owner_user_id")
   createdAt         DateTime             @default(now()) @map("created_at")
   updatedAt         DateTime             @updatedAt @map("updated_at")
   addedBy           User?                @relation("youtube_channel_added_by", fields: [addedById], references: [id], onDelete: SetNull)
+  owner             User?                @relation("youtube_channel_owner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   videos            Video[]
 
   @@index([status])
@@ -402,15 +407,18 @@ model Video {
   source         VideoSource
   status         VideoStatus     @default(PUBLISHED)
   addedById      String?         @map("added_by")
+  creatorId      String?         @map("creator_id")
   createdAt      DateTime        @default(now()) @map("created_at")
   updatedAt      DateTime        @updatedAt @map("updated_at")
   channel        YoutubeChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
   addedBy        User?           @relation("video_added_by", fields: [addedById], references: [id], onDelete: SetNull)
+  creator        User?           @relation("video_creator", fields: [creatorId], references: [id], onDelete: SetNull)
 
   @@index([channelId])
   @@index([status, publishedAt])
   @@index([source, status])
   @@index([addedById])
+  @@index([creatorId])
   @@map("videos")
 }
 

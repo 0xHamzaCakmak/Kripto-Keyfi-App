@@ -5,7 +5,7 @@ export type UserRole = 'ADMIN' | 'USER';
 export type AccountStatus = 'ACTIVE' | 'PENDING' | 'PASSIVE' | 'SUSPENDED' | 'DELETED';
 export type Capability = {
   type: 'CREATOR' | 'AUTHOR' | 'PROJECT_OWNER' | 'DEVELOPER';
-  status: 'NOT_APPLIED' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  status: 'NOT_APPLIED' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED';
   appliedAt: string;
   approvedAt: string | null;
   rejectedAt: string | null;

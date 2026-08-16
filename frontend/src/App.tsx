@@ -42,6 +42,7 @@ const TradingBotGuide = lazy(() => import('./components/TradingBotGuide'));
 const AdminNewsSources = lazy(() => import('./components/AdminNewsSources'));
 const AdminVideos = lazy(() => import('./components/AdminVideos'));
 const AdminYoutubeChannels = lazy(() => import('./components/AdminYoutubeChannels'));
+const AdminCreatorApplications = lazy(() => import('./components/AdminCreatorApplications'));
 const ExchangeAccounts = lazy(() => import('./components/ExchangeAccounts'));
 const ManualTrading = lazy(() => import('./components/ManualTrading'));
 const OpenOrdersPage = lazy(() => import('./components/TradingActivity').then((module) => ({ default: module.OpenOrdersPage })));
@@ -96,6 +97,7 @@ export default function App() {
               <Route path="videos" element={<VideoModuleLayout />}>
                 <Route index element={<AdminVideos />} />
                 <Route path="channels" element={<AdminYoutubeChannels />} />
+                <Route path="creators" element={<AdminCreatorApplications />} />
               </Route>
               <Route path="kol" element={<KolModuleLayout />}>
                 <Route index element={<KOLModuleOverview />} />
@@ -135,9 +137,9 @@ export default function App() {
             <Route path="/kol/dashboard" element={<ProtectedRoute feature="KOL Dashboard"><KOLDashboardPage /></ProtectedRoute>} />
             <Route path="/identity" element={<ProtectedRoute feature="Profil"><UserProfilePage /></ProtectedRoute>} />
             <Route path="/u/:username" element={<PlaceholderDashboard title="Public profil hazırlanıyor" />} />
-            <Route path="/creator/apply" element={<ProtectedRoute feature="Creator başvurusu"><PlaceholderDashboard title="Creator başvuru sistemi hazırlanıyor" /></ProtectedRoute>} />
-            <Route path="/creator/verify" element={<ProtectedRoute feature="Creator doğrulama"><PlaceholderDashboard title="Creator doğrulama sistemi hazırlanıyor" /></ProtectedRoute>} />
-            <Route path="/creator/dashboard" element={<ProtectedRoute feature="Creator Dashboard"><PlaceholderDashboard title="Creator Dashboard hazırlanıyor" /></ProtectedRoute>} />
+            <Route path="/creator/apply" element={<Navigate to="/profile" replace />} />
+            <Route path="/creator/verify" element={<Navigate to="/profile" replace />} />
+            <Route path="/creator/dashboard" element={<Navigate to="/profile" replace />} />
             <Route path="/author/apply" element={<ProtectedRoute feature="Author başvurusu"><PlaceholderDashboard title="Author Başvuru Ekranı Hazırlanıyor" /></ProtectedRoute>} />
             <Route path="/project/apply" element={<ProtectedRoute feature="Project Owner başvurusu"><PlaceholderDashboard title="Project Owner Başvuru Ekranı Hazırlanıyor" /></ProtectedRoute>} />
             <Route path="/developer/apply" element={<ProtectedRoute feature="Developer başvurusu"><PlaceholderDashboard title="Developer Başvuru Ekranı Hazırlanıyor" /></ProtectedRoute>} />
