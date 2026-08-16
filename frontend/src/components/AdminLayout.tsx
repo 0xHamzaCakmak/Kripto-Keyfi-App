@@ -9,6 +9,7 @@ import {
   PanelLeftOpen,
   Radio,
   UsersRound,
+  Youtube,
   X,
 } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -19,6 +20,7 @@ import { logout } from '../services/authService';
 const primaryLinks = [
   { label: 'Genel Bakış', to: '/admin', icon: LayoutDashboard, end: true },
   { label: 'Haber Yönetimi', to: '/admin/news/sources', icon: Radio, end: true },
+  { label: 'Videolar', to: '/admin/videos', icon: Youtube },
   { label: 'KOL Intelligence', to: '/admin/kol', icon: UsersRound },
   { label: 'Trading Bot', to: '/admin/trading', icon: Bot },
 ];

@@ -53,6 +53,7 @@ const envSchema = z.object({
   OKX_ONCHAIN_SECRET_KEY: z.string().trim().default(''),
   OKX_ONCHAIN_PASSPHRASE: z.string().trim().default(''),
   OKX_ONCHAIN_API_BASE_URL: z.string().url().default('https://web3.okx.com'),
+  YOUTUBE_API_KEY: z.string().trim().default(''),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production' && !value.COOKIE_SECURE) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['COOKIE_SECURE'], message: 'must be true in production' });

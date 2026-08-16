@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
   Target,
   UsersRound,
+  Link2,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { cn } from '../lib/utils';
@@ -91,10 +92,18 @@ const kolTabs: AdminModuleTab[] = [
   { label: 'Kampanyalar', to: '/admin/kol/campaigns', icon: Megaphone },
 ];
 
+const videoTabs: AdminModuleTab[] = [
+  { label: 'Video Ekle', to: '/admin/videos', icon: Link2, end: true },
+];
+
 export function TradingModuleLayout() {
   return <AdminModuleLayout eyebrow="Yönetim modülü" title="Trading Bot" description="Botlar, hesaplar, işlemler ve risk kontrolleri tek çalışma alanında." tabs={tradingTabs} />;
 }
 
 export function KolModuleLayout() {
   return <AdminModuleLayout eyebrow="Yönetim modülü" title="KOL Intelligence" description="Influencer verisi, tahmin doğruluğu ve kampanya operasyonlarını birlikte yönetin." tabs={kolTabs} />;
+}
+
+export function VideoModuleLayout() {
+  return <AdminModuleLayout eyebrow="İçerik modülü" title="Videolar" description="YouTube bağlantılarını yönetin ve Video Merkezi’nde yayınlayın." tabs={videoTabs} />;
 }

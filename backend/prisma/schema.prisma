@@ -207,6 +207,21 @@ enum NewsRelationType {
   VIDEO
 }
 
+enum YoutubeChannelStatus {
+  ACTIVE @map("active")
+  PAUSED @map("paused")
+}
+
+enum VideoSource {
+  MANUAL @map("manual")
+  AUTO   @map("auto")
+}
+
+enum VideoStatus {
+  PUBLISHED @map("published")
+  HIDDEN    @map("hidden")
+}
+
 enum KOLPlatform {
   X
   YOUTUBE
@@ -309,44 +324,90 @@ enum CampaignEventType {
 }
 
 model User {
-  id                  String               @id @default(cuid())
-  email               String               @unique
-  passwordHash        String?
-  name                String?
-  username            String               @unique @db.VarChar(30)
-  avatarUrl           String?              @db.VarChar(500)
-  bio                 String?              @db.VarChar(500)
-  emailVerifiedAt     DateTime?
-  termsAcceptedAt     DateTime?
-  privacyAcceptedAt   DateTime?
-  role                UserRole             @default(USER)
-  status              UserStatus           @default(ACTIVE)
-  mustChangePassword  Boolean              @default(false)
-  profileCompleted    Boolean              @default(false)
-  onboardingCompleted Boolean              @default(false)
-  lastLoginAt         DateTime?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  refreshSessions     RefreshSession[]
-  exchangeAccounts    ExchangeAccount[]
-  manualOrderPreviews ManualOrderPreview[]
-  tradingOrders       TradingOrder[]
-  tradingAuditLogs    TradingAuditLog[]
-  tradingOutboxEvents TradingOutboxEvent[]
-  tradingRiskProfiles TradingRiskProfile[]
-  tradingRiskEvents   TradingRiskEvent[]
-  tradingBots         TradingBot[]
-  tradingBotDecisions TradingBotDecision[]
-  tradingBotSignals   TradingBotSignal[]
-  identities          UserIdentity[]
-  profileRoles        UserProfileRole[]
-  capabilities        UserCapability[]
-  savedNews           NewsSavedArticle[]
-  companyMemberships  CompanyMember[]
-  kolProfile          KOL?                 @relation("kol_user")
-  kolAuditLogs        KOLAuditLog[]        @relation("kol_audit_actor")
+  id                   String               @id @default(cuid())
+  email                String               @unique
+  passwordHash         String?
+  name                 String?
+  username             String               @unique @db.VarChar(30)
+  avatarUrl            String?              @db.VarChar(500)
+  bio                  String?              @db.VarChar(500)
+  emailVerifiedAt      DateTime?
+  termsAcceptedAt      DateTime?
+  privacyAcceptedAt    DateTime?
+  role                 UserRole             @default(USER)
+  status               UserStatus           @default(ACTIVE)
+  mustChangePassword   Boolean              @default(false)
+  profileCompleted     Boolean              @default(false)
+  onboardingCompleted  Boolean              @default(false)
+  lastLoginAt          DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  refreshSessions      RefreshSession[]
+  exchangeAccounts     ExchangeAccount[]
+  manualOrderPreviews  ManualOrderPreview[]
+  tradingOrders        TradingOrder[]
+  tradingAuditLogs     TradingAuditLog[]
+  tradingOutboxEvents  TradingOutboxEvent[]
+  tradingRiskProfiles  TradingRiskProfile[]
+  tradingRiskEvents    TradingRiskEvent[]
+  tradingBots          TradingBot[]
+  tradingBotDecisions  TradingBotDecision[]
+  tradingBotSignals    TradingBotSignal[]
+  identities           UserIdentity[]
+  profileRoles         UserProfileRole[]
+  capabilities         UserCapability[]
+  savedNews            NewsSavedArticle[]
+  companyMemberships   CompanyMember[]
+  kolProfile           KOL?                 @relation("kol_user")
+  kolAuditLogs         KOLAuditLog[]        @relation("kol_audit_actor")
+  addedYoutubeChannels YoutubeChannel[]     @relation("youtube_channel_added_by")
+  addedVideos          Video[]              @relation("video_added_by")
 
   @@map("users")
+}
+
+model YoutubeChannel {
+  id                Int                  @id @default(autoincrement())
+  channelId         String               @unique @map("channel_id") @db.VarChar(64)
+  uploadsPlaylistId String               @map("uploads_playlist_id") @db.VarChar(64)
+  channelName       String?              @map("channel_name") @db.VarChar(255)
+  channelUrl        String?              @map("channel_url") @db.VarChar(500)
+  avatarUrl         String?              @map("avatar_url") @db.VarChar(500)
+  isOwnChannel      Boolean              @default(false) @map("is_own_channel")
+  status            YoutubeChannelStatus @default(ACTIVE)
+  lastSyncedAt      DateTime?            @map("last_synced_at")
+  addedById         String?              @map("added_by")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  addedBy           User?                @relation("youtube_channel_added_by", fields: [addedById], references: [id], onDelete: SetNull)
+  videos            Video[]
+
+  @@index([status])
+  @@index([addedById])
+  @@map("youtube_channels")
+}
+
+model Video {
+  id             Int             @id @default(autoincrement())
+  youtubeVideoId String          @unique @map("youtube_video_id") @db.VarChar(32)
+  channelId      Int?            @map("channel_id")
+  channelName    String?         @map("channel_name") @db.VarChar(255)
+  title          String?         @db.VarChar(500)
+  description    String?         @db.Text
+  thumbnailUrl   String?         @map("thumbnail_url") @db.VarChar(500)
+  duration       String?         @db.VarChar(16)
+  publishedAt    DateTime?       @map("published_at")
+  source         VideoSource
+  status         VideoStatus     @default(PUBLISHED)
+  addedById      String?         @map("added_by")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  channel        YoutubeChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  addedBy        User?           @relation("video_added_by", fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@index([channelId])
+  @@index([status, publishedAt])
+  @@index([addedById])
+  @@map("videos")
 }
 
 model KOL {

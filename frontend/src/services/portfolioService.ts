@@ -1,4 +1,4 @@
-import { ASSETS, VIDEOS } from '../constants';
+import { ASSETS } from '../constants';
 import { ACADEMY_ARTICLES } from '../constants';
 import { getEcosystemProjects } from './ecosystemService';
 import { getCurrentUser } from './userService';
@@ -30,7 +30,7 @@ export function getSavedContent() {
     // News are loaded asynchronously from the backend in the News module.
     news: [],
     academy: ACADEMY_ARTICLES.slice(0, 3),
-    videos: VIDEOS.slice(0, 3),
+    videos: [],
     projects: getEcosystemProjects().slice(0, 3)
   };
 }

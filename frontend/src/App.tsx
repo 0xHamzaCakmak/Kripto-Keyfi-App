@@ -40,6 +40,7 @@ const TradingBotDashboard = lazy(() => import('./components/TradingBotDashboard'
 const TradingBots = lazy(() => import('./components/TradingBots'));
 const TradingBotGuide = lazy(() => import('./components/TradingBotGuide'));
 const AdminNewsSources = lazy(() => import('./components/AdminNewsSources'));
+const AdminVideos = lazy(() => import('./components/AdminVideos'));
 const ExchangeAccounts = lazy(() => import('./components/ExchangeAccounts'));
 const ManualTrading = lazy(() => import('./components/ManualTrading'));
 const OpenOrdersPage = lazy(() => import('./components/TradingActivity').then((module) => ({ default: module.OpenOrdersPage })));
@@ -62,6 +63,7 @@ const AdminCampaignManagement = lazy(() => import('./components/AdminCampaignMan
 const KOLModuleOverview = lazy(() => import('./components/KOLModuleOverview'));
 const TradingModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.TradingModuleLayout })));
 const KolModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.KolModuleLayout })));
+const VideoModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.VideoModuleLayout })));
 
 export default function App() {
   return (
@@ -90,6 +92,9 @@ export default function App() {
                 <Route path="bots/guide" element={<Navigate to="/admin/trading/guide" replace />} />
               </Route>
               <Route path="news/sources" element={<AdminNewsSources />} />
+              <Route path="videos" element={<VideoModuleLayout />}>
+                <Route index element={<AdminVideos />} />
+              </Route>
               <Route path="kol" element={<KolModuleLayout />}>
                 <Route index element={<KOLModuleOverview />} />
                 <Route path="intelligence" element={<AdminKOLWorkspace />} />
