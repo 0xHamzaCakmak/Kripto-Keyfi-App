@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 11
-Current prompt: PROMPT 12
+Last completed prompt: PROMPT 12
+Current prompt: PROMPT 13
 Status: READY
 Updated at: 2026-08-21
 
@@ -21,16 +21,17 @@ Updated at: 2026-08-21
 - PROMPT 9 — COMPLETED
 - PROMPT 10 — COMPLETED
 - PROMPT 11 — COMPLETED
+- PROMPT 12 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 12 — Researcher
+PROMPT 13 — Mutation Engine
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 43 files, 179 tests
+- Backend unit/integration tests: PASS — 44 files, 184 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
@@ -42,16 +43,16 @@ Henüz başlanmadı.
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
 
-Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 179 testin tamamı geçmiştir.
+Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 184 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- Bot ve strategy performansını analiz eden deterministic `RuleBasedTeacherProvider` eklendi.
-- Insufficient sample, drawdown deterioration, low profit factor, excessive churn ve regime strength/weakness kuralları yapılandırılmış öneri üretiyor.
-- LLM entegrasyonu zorunlu olmayan `TeacherAnalysisProvider` interface'i arkasına hazırlandı.
-- `TeacherEvaluation` observation, severity, confidence, metric evidence, recommended action ve analyzer bilgisiyle saklanıyor.
-- Teacher API'si hedefli veya toplu evaluation çalıştırabiliyor ve kullanıcı izolasyonlu evaluation geçmişini listeliyor.
-- Her evaluation audit log'a yazılıyor; `recommendationApplied: false` ve `applyAutomatically: false` sabitleriyle canlı strategy/bot/risk/execution mutation'ı yapılmıyor.
+- Trade Memory/PnL-regime, TeacherEvaluation önerileri ve latest BotMetric skorlarını birleştiren Researcher veri seti eklendi.
+- Rule/template provider confidence, cooldown, funding context, regime ve tekrarlanan Teacher aksiyonlarından hypothesis üretiyor.
+- Minimum örnek eşiğinin altındaki strategy family'ler için hypothesis üretilmiyor.
+- `ResearchHypothesis` evidence, target strategy family, suggested change, confidence, status ve provider alanlarıyla saklanıyor.
+- İleride LLM bağlamak için `ResearchHypothesisProvider`, candidate üretimi için `ResearchCandidateFactory` interface'i eklendi.
+- Researcher yalnız `DRAFT` hypothesis oluşturuyor; candidate factory çağrılmıyor, canlı bot/strategy/risk/execution mutation'ı yapılmıyor.
 
 ## Safety State
 
@@ -62,11 +63,19 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - AI observer: default OFF, comparison-only, no paper fill or order execution permission
 - Trade Memory endpoints: read-only
 - Teacher: recommendation-only; automatic application disabled
+- Researcher: hypothesis-only; candidate/live creation disabled
 - Production exchange environment: NOT PRESENT
 
 ## Migration
 
-PROMPT 11: `20260821020000_add_teacher_evaluations`
+PROMPT 12: `20260821030000_add_research_hypotheses`
+
+- Additive migration; yalnız `research_hypotheses` tablosunu ve sorgu indexlerini oluşturur.
+- `targetStrategyFamily` mevcut Prisma `StrategyFamily` enum değerleriyle birebir uyumludur.
+- Mevcut tablo/kolon silmez, mevcut production verisini dönüştürmez veya silmez.
+- Production verisine uygulanmadı.
+
+Önceki migration: `20260821020000_add_teacher_evaluations` (PROMPT 11)
 
 - Additive migration; yalnız `teacher_evaluations` tablosunu, foreign key'leri ve sorgu indexlerini oluşturur.
 - Mevcut tablo/kolon silmez, mevcut production verisini dönüştürmez veya silmez.
@@ -92,8 +101,8 @@ PROMPT 11: `20260821020000_add_teacher_evaluations`
 
 ## Open TODO
 
-- PROMPT 12 kapsamında Trade Memory, TeacherEvaluation ve performance verilerinden rule/template based Research Hypothesis üretmek.
-- Researcher'ın canlı bot/strategy değiştirmemesini ve candidate üretimini yalnız bir interface sınırı olarak hazırlamak.
+- PROMPT 13 kapsamında allowed parameter schema/range dışına çıkmayan kontrollü Mutation Engine geliştirmek.
+- Champion parametrelerini yerinde değiştirmeden child botu CANDIDATE olarak oluşturmak ve mutation lineage/diff bilgisini saklamak.
 
 ## Known Risks for Next Prompts
 

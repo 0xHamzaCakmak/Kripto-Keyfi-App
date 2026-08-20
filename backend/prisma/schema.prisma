@@ -1682,6 +1682,24 @@ model TeacherEvaluation {
   @@map("teacher_evaluations")
 }
 
+model ResearchHypothesis {
+  id                   String         @id @default(cuid())
+  createdById          String
+  hypothesis           String         @db.VarChar(1500)
+  evidence             Json
+  targetStrategyFamily StrategyFamily
+  suggestedChange      Json
+  confidence           Decimal        @db.Decimal(5, 4)
+  status               String         @default("DRAFT") @db.VarChar(30)
+  provider             String         @default("RULE_TEMPLATE") @db.VarChar(40)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([createdById, status, createdAt])
+  @@index([targetStrategyFamily, status, confidence])
+  @@map("research_hypotheses")
+}
+
 model ChampionCandidate {
   id           String                  @id @default(cuid())
   tradingBotId String

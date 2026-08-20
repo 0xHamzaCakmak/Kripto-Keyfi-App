@@ -27,6 +27,8 @@ import { tradeMemory, tradeMemorySummary } from '../ai-trading/trade-memory.cont
 import { tradeMemoryQuerySchema, tradeMemorySummaryQuerySchema } from '../ai-trading/trade-memory.schema.js';
 import { evaluate as evaluateTeacher, evaluations as teacherEvaluations } from '../ai-trading/teacher.controller.js';
 import { runTeacherBodySchema, teacherEvaluationsQuerySchema } from '../ai-trading/teacher.schema.js';
+import { hypotheses as researchHypotheses, research as runResearch } from '../ai-trading/researcher.controller.js';
+import { researchHypothesesQuerySchema, runResearcherBodySchema } from '../ai-trading/researcher.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -51,6 +53,8 @@ tradingRouter.get('/trade-memory', validateRequest({ query: tradeMemoryQuerySche
 tradingRouter.get('/trade-memory/summary', validateRequest({ query: tradeMemorySummaryQuerySchema }), asyncHandler(tradeMemorySummary));
 tradingRouter.get('/teacher/evaluations', validateRequest({ query: teacherEvaluationsQuerySchema }), asyncHandler(teacherEvaluations));
 tradingRouter.post('/teacher/evaluate', validateRequest({ body: runTeacherBodySchema }), asyncHandler(evaluateTeacher));
+tradingRouter.get('/research/hypotheses', validateRequest({ query: researchHypothesesQuerySchema }), asyncHandler(researchHypotheses));
+tradingRouter.post('/research/run', validateRequest({ body: runResearcherBodySchema }), asyncHandler(runResearch));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));
