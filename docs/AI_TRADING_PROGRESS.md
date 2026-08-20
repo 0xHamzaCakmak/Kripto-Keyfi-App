@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 16
-Current prompt: PROMPT 17
+Last completed prompt: PROMPT 17
+Current prompt: PROMPT 18
 Status: READY
 Updated at: 2026-08-21
 
@@ -26,16 +26,17 @@ Updated at: 2026-08-21
 - PROMPT 14 — COMPLETED
 - PROMPT 15 — COMPLETED
 - PROMPT 16 — COMPLETED
+- PROMPT 17 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 17 — Strategy Router
+PROMPT 18 — Immutable Risk Engine
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 48 files, 203 tests
+- Backend unit/integration tests: PASS — 49 files, 209 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
@@ -77,9 +78,16 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Market Intelligence: versioned MarketContext v1; public read-only market data; 15-second cache and per-source freshness checks
 - Missing BTC dominance/news/social/whale numeric sources: nullable with `UNKNOWN` status; no inferred or fabricated values
 - Market Intelligence trade execution: NONE
+- Strategy Router: deterministic PAPER-only selection; regime score, risk state and recent health gates; normalized weights
+- Strategy Router audit: `AI_STRATEGY_ROUTED`; order submission and live activation paths absent
+- Strategy Router fail-closed states: unknown/stale regime, kill switch, disabled risk/account, disconnected account, stale health/metrics
 - Production exchange environment: NOT PRESENT
 
 ## Migration
+
+PROMPT 17: migration yok.
+
+- Router kararları mevcut `trading_audit_logs` tablosuna yazılır; production schema veya verisi değiştirilmedi.
 
 PROMPT 16: migration yok.
 
@@ -137,8 +145,8 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 17 kapsamında MarketContext ve rejim performansına göre deterministik Strategy Router geliştirmek.
-- Router'ın yalnızca uygun PAPER/SHADOW bot havuzunu seçmesini; trade emri veya live aktivasyonu üretmemesini sağlamak.
+- PROMPT 18 kapsamında merkezi, immutable ve bypass edilemeyen autonomous Risk Engine gereksinimlerini uygulamak.
+- Mevcut manual/grid/exchange davranışını bozmadan tüm autonomous execution girişlerini aynı fail-closed risk değerlendirmesine bağlamak.
 
 ## Known Risks for Next Prompts
 
