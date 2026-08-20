@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 3
-Current prompt: PROMPT 4
+Last completed prompt: PROMPT 4
+Current prompt: PROMPT 5
 Status: READY
 Updated at: 2026-08-20
 
@@ -13,10 +13,11 @@ Updated at: 2026-08-20
 - PROMPT 1 — COMPLETED
 - PROMPT 2 — COMPLETED
 - PROMPT 3 — COMPLETED
+- PROMPT 4 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 4 — Paper Execution Engine
+PROMPT 5 — Bot Arena
 
 Henüz başlanmadı.
 
@@ -36,11 +37,11 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Last Changes
 
-- Bot Factory manual creation, clone ve parameter variant servis/API sözleşmeleri eklendi.
-- BotInstance lineage, generation, symbols, timeframe, starting paper balance ve zorunlu risk profile bağları eklendi.
-- Autonomous bot lifecycle transition doğrulaması eklendi; LIVE geçişi açıkça kilitli tutuldu.
-- Legacy manual/grid bot listeleme ve action yolları autonomous factory botlarından ayrıldı.
-- Factory yolu scheduler, outbox, exchange adapter veya gerçek emir çağrısı üretmiyor.
+- Go engine içinde exchange bağımlılığı olmayan ayrık `internal/paper` simülasyon katmanı eklendi.
+- Entry/exit, maker-taker fee, spread, slippage, funding, leverage, isolated margin ve realized/unrealized PnL hesapları eklendi.
+- Stop loss, take profit, liquidation approximation, tick/lot/minimum order ve partial-fill config desteği eklendi.
+- `PaperTrade` open/close persistence interface'i ve MySQL implementasyonu eklendi.
+- Deterministic engine ve persistence service testleri eklendi; mevcut legacy paper ledger değiştirilmedi.
 
 ## Safety State
 
@@ -53,7 +54,9 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Migration
 
-PROMPT 3: `20260820020000_add_bot_factory_fields`
+PROMPT 4: Migration yok; PROMPT 1'de eklenen `paper_trades` tablosu kullanılıyor.
+
+Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
 - Additive migration; `TradingBotType` enum'una `AUTONOMOUS` ekler.
 - Nullable factory creation method, symbols ve timeframe alanları ile additive index ekler.
@@ -68,8 +71,8 @@ PROMPT 3: `20260820020000_add_bot_factory_fields`
 
 ## Open TODO
 
-- PROMPT 4 kapsamında gerçekçi fakat tamamen izole Paper Execution Engine oluşturmak.
-- Fee, spread, slippage, funding ve fill muhasebesini deterministic testlerle doğrulamak.
+- PROMPT 5 kapsamında ortak market event fan-out kullanan Bot Arena oluşturmak.
+- Aynı market eventini tekrar fetch etmeden en az 100 paper botuna dağıtan benchmark/test eklemek.
 
 ## Known Risks for Next Prompts
 
