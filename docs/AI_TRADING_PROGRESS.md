@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 12
-Current prompt: PROMPT 13
+Last completed prompt: PROMPT 13
+Current prompt: PROMPT 14
 Status: READY
 Updated at: 2026-08-21
 
@@ -22,16 +22,17 @@ Updated at: 2026-08-21
 - PROMPT 10 — COMPLETED
 - PROMPT 11 — COMPLETED
 - PROMPT 12 — COMPLETED
+- PROMPT 13 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 13 — Mutation Engine
+PROMPT 14 — Evolution / Generations
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 44 files, 184 tests
+- Backend unit/integration tests: PASS — 45 files, 189 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
@@ -43,16 +44,15 @@ Henüz başlanmadı.
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
 
-Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 184 testin tamamı geçmiştir.
+Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 189 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- Trade Memory/PnL-regime, TeacherEvaluation önerileri ve latest BotMetric skorlarını birleştiren Researcher veri seti eklendi.
-- Rule/template provider confidence, cooldown, funding context, regime ve tekrarlanan Teacher aksiyonlarından hypothesis üretiyor.
-- Minimum örnek eşiğinin altındaki strategy family'ler için hypothesis üretilmiyor.
-- `ResearchHypothesis` evidence, target strategy family, suggested change, confidence, status ve provider alanlarıyla saklanıyor.
-- İleride LLM bağlamak için `ResearchHypothesisProvider`, candidate üretimi için `ResearchCandidateFactory` interface'i eklendi.
-- Researcher yalnız `DRAFT` hypothesis oluşturuyor; candidate factory çağrılmıyor, canlı bot/strategy/risk/execution mutation'ı yapılmıyor.
+- Numeric parameter, threshold, cooldown ve position factor mutation işlemleri registry schema/range/step doğrulamasından geçiyor.
+- Timeframe varyantı yalnız strategy version'ın `supportedTimeframes` listesinde varsa kabul ediliyor.
+- Her mutation parent bot, yeni child bot, generation, reason ve structured diff ile `BotMutation` kaydına bağlanıyor.
+- Child bot atomik factory transaction'ında `CANDIDATE` ve PAPER/SHADOW olarak oluşturuluyor; testnet/demo account ve risk profile kontrolleri korunuyor.
+- Parent/Champion bot parametreleri yerinde güncellenmiyor; live execution veya outbox çağrısı eklenmedi.
 
 ## Safety State
 
@@ -64,11 +64,19 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Trade Memory endpoints: read-only
 - Teacher: recommendation-only; automatic application disabled
 - Researcher: hypothesis-only; candidate/live creation disabled
+- Mutation Engine: child candidate only; parent immutable; PAPER/SHADOW only
 - Production exchange environment: NOT PRESENT
 
 ## Migration
 
-PROMPT 12: `20260821030000_add_research_hypotheses`
+PROMPT 13: `20260821040000_add_bot_mutations`
+
+- Additive migration; yalnız `bot_mutations` lineage tablosunu, foreign key'leri ve indexleri oluşturur.
+- Parent bot foreign key'i `RESTRICT`; mutation mevcut parent kaydı değiştirmez.
+- Mevcut tablo/kolon silmez, production verisini dönüştürmez veya silmez.
+- Production verisine uygulanmadı.
+
+Önceki migration: `20260821030000_add_research_hypotheses` (PROMPT 12)
 
 - Additive migration; yalnız `research_hypotheses` tablosunu ve sorgu indexlerini oluşturur.
 - `targetStrategyFamily` mevcut Prisma `StrategyFamily` enum değerleriyle birebir uyumludur.
@@ -101,8 +109,8 @@ PROMPT 12: `20260821030000_add_research_hypotheses`
 
 ## Open TODO
 
-- PROMPT 13 kapsamında allowed parameter schema/range dışına çıkmayan kontrollü Mutation Engine geliştirmek.
-- Champion parametrelerini yerinde değiştirmeden child botu CANDIDATE olarak oluşturmak ve mutation lineage/diff bilgisini saklamak.
+- PROMPT 14 kapsamında Generation lifecycle ve population orchestration geliştirmek.
+- Evolution akışının yalnız candidate/paper-safe botlar üretmesini ve promotion/live adımlarını atlamamasını sağlamak.
 
 ## Known Risks for Next Prompts
 

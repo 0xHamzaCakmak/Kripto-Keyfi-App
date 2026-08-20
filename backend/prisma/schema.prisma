@@ -1281,6 +1281,8 @@ model TradingBot {
   metrics         BotMetric[]
   championCandidates ChampionCandidate[]
   teacherEvaluations TeacherEvaluation[]
+  parentMutations    BotMutation[]            @relation("mutation_parent")
+  childMutation      BotMutation?             @relation("mutation_child")
 
   @@unique([userId, name])
   @@index([userId, state])
@@ -1353,6 +1355,7 @@ model Generation {
 
   createdBy User         @relation("generation_created_by", fields: [createdById], references: [id], onDelete: Restrict)
   bots      TradingBot[]
+  mutations BotMutation[]
 
   @@unique([createdById, number])
   @@index([status, createdAt])
@@ -1698,6 +1701,24 @@ model ResearchHypothesis {
   @@index([createdById, status, createdAt])
   @@index([targetStrategyFamily, status, confidence])
   @@map("research_hypotheses")
+}
+
+model BotMutation {
+  id           String   @id @default(cuid())
+  parentBotId  String
+  childBotId   String   @unique
+  generationId String
+  reason       String   @db.VarChar(1000)
+  diff         Json
+  createdAt    DateTime @default(now())
+
+  parentBot  TradingBot @relation("mutation_parent", fields: [parentBotId], references: [id], onDelete: Restrict)
+  childBot   TradingBot @relation("mutation_child", fields: [childBotId], references: [id], onDelete: Cascade)
+  generation Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  @@index([parentBotId, createdAt])
+  @@index([generationId, createdAt])
+  @@map("bot_mutations")
 }
 
 model ChampionCandidate {

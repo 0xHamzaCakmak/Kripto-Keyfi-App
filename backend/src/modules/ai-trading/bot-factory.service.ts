@@ -33,6 +33,16 @@ type FactoryCreateData = {
   parentBotId?: string;
   creationMethod: BotCreationMethod;
   lifecycleStatus: AutonomousTradingStatus;
+  mutation?: { reason: string; diff: Prisma.InputJsonObject };
+};
+
+export type MutationFactoryInput = {
+  name: string;
+  parameters: Record<string, unknown>;
+  timeframe?: string;
+  generationId: string;
+  reason: string;
+  diff: Prisma.InputJsonObject;
 };
 
 export function mergeParameterVariant(
@@ -116,6 +126,21 @@ export async function createParameterVariant(
   }, ipAddress);
 }
 
+export async function createMutationFactoryBot(
+  userId: string, parentBotId: string, input: MutationFactoryInput, ipAddress?: string,
+) {
+  const parent = await ownedFactoryBot(userId, parentBotId);
+  return persistFactoryBot(userId, {
+    name: input.name, strategyVersionId: parent.strategyVersionId!, exchangeAccountId: parent.exchangeAccountId,
+    parameters: input.parameters, startingPaperBalance: parent.startingPaperBalance.toString(),
+    symbols: jsonStringArray(parent.symbols, parent.symbol),
+    timeframe: input.timeframe ?? parent.timeframe ?? secondsToTimeframe(parent.intervalSeconds),
+    mode: parent.mode === 'SHADOW' ? 'SHADOW' : 'PAPER', riskProfileId: parent.riskProfileId!,
+    generationId: input.generationId, parentBotId, creationMethod: 'PARAMETER_VARIANT', lifecycleStatus: 'CANDIDATE',
+    mutation: { reason: input.reason, diff: input.diff },
+  }, ipAddress);
+}
+
 export async function transitionFactoryBot(
   userId: string,
   id: string,
@@ -176,6 +201,12 @@ async function persistFactoryBot(userId: string, data: FactoryCreateData, ipAddr
         ...(data.generationId ? { generationId: data.generationId } : {}),
         ...(data.parentBotId ? { parentBotId: data.parentBotId } : {}),
       }, select: botFactorySelect });
+      if (data.mutation && data.generationId && data.parentBotId) {
+        await tx.botMutation.create({ data: {
+          parentBotId: data.parentBotId, childBotId: bot.id, generationId: data.generationId,
+          reason: data.mutation.reason, diff: data.mutation.diff,
+        } });
+      }
       await tx.tradingAuditLog.create({ data: {
         userId,
         exchangeAccountId: data.exchangeAccountId,
@@ -188,6 +219,7 @@ async function persistFactoryBot(userId: string, data: FactoryCreateData, ipAddr
           lifecycleStatus: data.lifecycleStatus,
           strategyVersionId: data.strategyVersionId,
           parentBotId: data.parentBotId ?? null,
+          mutation: data.mutation ?? null,
           liveTradingEnabled: false,
         },
         ...(ipAddress ? { ipAddress } : {}),
