@@ -35,6 +35,8 @@ import { evolve, runs as evolutionRuns } from '../ai-trading/evolution.controlle
 import { evolutionRunsQuerySchema, runEvolutionBodySchema } from '../ai-trading/evolution.schema.js';
 import { cross, crossovers } from '../ai-trading/crossover.controller.js';
 import { createCrossoverBodySchema, crossoversQuerySchema } from '../ai-trading/crossover.schema.js';
+import { marketContext } from '../ai-trading/market-intelligence.controller.js';
+import { marketContextQuerySchema } from '../ai-trading/market-intelligence.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -67,6 +69,7 @@ tradingRouter.get('/evolution/runs', validateRequest({ query: evolutionRunsQuery
 tradingRouter.post('/evolution/run', validateRequest({ body: runEvolutionBodySchema }), asyncHandler(evolve));
 tradingRouter.get('/crossovers', validateRequest({ query: crossoversQuerySchema }), asyncHandler(crossovers));
 tradingRouter.post('/crossovers', validateRequest({ body: createCrossoverBodySchema }), asyncHandler(cross));
+tradingRouter.get('/market-intelligence/context', validateRequest({ query: marketContextQuerySchema }), asyncHandler(marketContext));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));

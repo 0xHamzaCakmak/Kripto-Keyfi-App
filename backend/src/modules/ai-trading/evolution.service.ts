@@ -1,4 +1,4 @@
-import { Prisma, type AutonomousTradingStatus } from '@prisma/client';
+import type { AutonomousTradingStatus, Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import { createMutation } from './mutation.service.js';

@@ -4,7 +4,6 @@ import { ApiError } from '../../utils/api-error.js';
 import type {
   CreateStrategyInput,
   CreateStrategyVersionInput,
-  StrategyParameterSchema,
   ValidateStrategyParametersInput,
 } from './strategy-registry.schema.js';
 import { strategyParameterSchemaSchema } from './strategy-registry.schema.js';

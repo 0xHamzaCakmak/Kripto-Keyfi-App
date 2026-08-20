@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 15
-Current prompt: PROMPT 16
+Last completed prompt: PROMPT 16
+Current prompt: PROMPT 17
 Status: READY
 Updated at: 2026-08-21
 
@@ -25,19 +25,22 @@ Updated at: 2026-08-21
 - PROMPT 13 — COMPLETED
 - PROMPT 14 — COMPLETED
 - PROMPT 15 — COMPLETED
+- PROMPT 16 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 16 — Market Intelligence
+PROMPT 17 — Strategy Router
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 47 files, 199 tests
+- Backend unit/integration tests: PASS — 48 files, 203 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
+- PROMPT 16 scoped backend ESLint: PASS
+- Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
 - Frontend typecheck/lint: PASS
@@ -71,9 +74,16 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Mutation Engine: child candidate only; parent immutable; PAPER/SHADOW only
 - Evolution: Bot Score fitness; PAPER children; LIVE/LIVE_ELIGIBLE protected
 - Crossover: compatible schemas only; PAPER/CANDIDATE child; parents immutable
+- Market Intelligence: versioned MarketContext v1; public read-only market data; 15-second cache and per-source freshness checks
+- Missing BTC dominance/news/social/whale numeric sources: nullable with `UNKNOWN` status; no inferred or fabricated values
+- Market Intelligence trade execution: NONE
 - Production exchange environment: NOT PRESENT
 
 ## Migration
+
+PROMPT 16: migration yok.
+
+- Yalnızca read-only Market Intelligence servis/API katmanı eklendi; production schema veya verisi değiştirilmedi.
 
 PROMPT 15: `20260821060000_add_bot_crossovers`
 
@@ -127,8 +137,8 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 16 kapsamında gerçek mevcut kaynaklardan nullable/unknown alanlı, versioned MarketContext üretmek.
-- Kaynak timestamp/freshness ve cache kontrollerini eklemek; sahte market/intelligence verisi veya trade execution üretmemek.
+- PROMPT 17 kapsamında MarketContext ve rejim performansına göre deterministik Strategy Router geliştirmek.
+- Router'ın yalnızca uygun PAPER/SHADOW bot havuzunu seçmesini; trade emri veya live aktivasyonu üretmemesini sağlamak.
 
 ## Known Risks for Next Prompts
 
