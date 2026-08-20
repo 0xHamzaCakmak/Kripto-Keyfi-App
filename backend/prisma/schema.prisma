@@ -174,6 +174,76 @@ enum TradingBotSignalStatus {
   EXPIRED
 }
 
+enum AutonomousTradingStatus {
+  DRAFT
+  CANDIDATE
+  TESTING
+  PAPER
+  REJECTED
+  CHALLENGER
+  CHAMPION
+  LIVE_ELIGIBLE
+  LIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum StrategyFamily {
+  GRID
+  TREND
+  SMA_CROSSOVER
+  EMA_TREND
+  MACD_TREND
+  RSI_MEAN_REVERSION
+  BOLLINGER_MEAN_REVERSION
+  DONCHIAN_BREAKOUT
+  ATR_BREAKOUT
+  MOMENTUM
+  VOLUME_SPIKE
+  FUNDING_SKEW
+  BASIS_ARBITRAGE
+  NEWS_REACTIVE
+  DCA
+  AI_LIMIT
+  MULTI_AGENT
+  CUSTOM
+}
+
+enum GenerationStatus {
+  DRAFT
+  RUNNING
+  EVALUATING
+  COMPLETED
+  FAILED
+  ARCHIVED
+}
+
+enum PaperTradeStatus {
+  OPEN
+  CLOSED
+  LIQUIDATED
+  CANCELED
+}
+
+enum MarketRegime {
+  TRENDING_UP
+  TRENDING_DOWN
+  RANGING
+  BREAKOUT
+  HIGH_VOLATILITY
+  LOW_VOLATILITY
+  CHAOTIC
+  UNKNOWN
+}
+
+enum ChampionCandidateStatus {
+  PENDING
+  ELIGIBLE
+  PROMOTED
+  REJECTED
+  DEMOTED
+}
+
 enum NewsIntegrationType {
   RSS
   API
@@ -367,6 +437,9 @@ model User {
   tradingBots               TradingBot[]
   tradingBotDecisions       TradingBotDecision[]
   tradingBotSignals         TradingBotSignal[]
+  strategies                Strategy[]             @relation("strategy_created_by")
+  strategyVersions          StrategyVersion[]      @relation("strategy_version_created_by")
+  generations               Generation[]           @relation("generation_created_by")
   identities                UserIdentity[]
   profileRoles              UserProfileRole[]
   capabilities              UserCapability[]
@@ -1174,6 +1247,12 @@ model TradingBot {
   startedAt         DateTime?
   stoppedAt         DateTime?
   version           Int                    @default(0)
+  strategyVersionId String?
+  generationId      String?
+  parentBotId       String?
+  riskProfileId     String?
+  lifecycleStatus   AutonomousTradingStatus @default(DRAFT)
+  startingPaperBalance Decimal              @default(100) @db.Decimal(36, 18)
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
 
@@ -1183,13 +1262,88 @@ model TradingBot {
   paperPosition   TradingBotPaperPosition?
   paperFills      TradingBotPaperFill[]
   signals         TradingBotSignal[]
+  strategyVersion StrategyVersion?         @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
+  generation      Generation?              @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  parentBot       TradingBot?              @relation("trading_bot_lineage", fields: [parentBotId], references: [id], onDelete: SetNull)
+  childBots       TradingBot[]              @relation("trading_bot_lineage")
+  riskProfile     TradingRiskProfile?       @relation(fields: [riskProfileId], references: [id], onDelete: SetNull)
+  paperTrades     PaperTrade[]
+  metrics         BotMetric[]
+  championCandidates ChampionCandidate[]
 
   @@unique([userId, name])
   @@index([userId, state])
   @@index([exchangeAccountId, state])
   @@index([desiredState, leaseExpiresAt])
   @@index([schedulerOwner, leaseExpiresAt])
+  @@index([strategyVersionId, lifecycleStatus])
+  @@index([generationId, lifecycleStatus])
+  @@index([parentBotId])
+  @@index([riskProfileId])
   @@map("trading_bots")
+}
+
+model Strategy {
+  id          String                  @id @default(cuid())
+  createdById String
+  family      StrategyFamily
+  name        String                  @db.VarChar(120)
+  description String?                 @db.VarChar(1000)
+  status      AutonomousTradingStatus @default(DRAFT)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  createdBy User              @relation("strategy_created_by", fields: [createdById], references: [id], onDelete: Restrict)
+  versions  StrategyVersion[]
+
+  @@unique([createdById, name])
+  @@index([family, status])
+  @@map("trading_strategies")
+}
+
+model StrategyVersion {
+  id                  String                  @id @default(cuid())
+  strategyId          String
+  createdById         String
+  version             Int
+  parameterSchema     Json
+  defaultParameters   Json
+  allowedMarkets      Json?
+  supportedTimeframes Json?
+  status              AutonomousTradingStatus @default(DRAFT)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  strategy    Strategy    @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  createdBy   User        @relation("strategy_version_created_by", fields: [createdById], references: [id], onDelete: Restrict)
+  tradingBots TradingBot[]
+  paperTrades PaperTrade[]
+  metrics     BotMetric[]
+
+  @@unique([strategyId, version])
+  @@index([status, createdAt])
+  @@index([createdById])
+  @@map("trading_strategy_versions")
+}
+
+model Generation {
+  id               String           @id @default(cuid())
+  createdById      String
+  number           Int
+  status           GenerationStatus @default(DRAFT)
+  populationTarget Int              @default(100)
+  metadata         Json?
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  createdBy User         @relation("generation_created_by", fields: [createdById], references: [id], onDelete: Restrict)
+  bots      TradingBot[]
+
+  @@unique([createdById, number])
+  @@index([status, createdAt])
+  @@map("trading_generations")
 }
 
 model TradingBotDecision {
@@ -1394,10 +1548,109 @@ model TradingRiskProfile {
 
   user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   exchangeAccount ExchangeAccount @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+  autonomousBots TradingBot[]
 
   @@index([userId])
   @@index([enabled, accountKillSwitch])
   @@map("trading_risk_profiles")
+}
+
+model MarketRegimeSnapshot {
+  id         BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  symbol     String       @db.VarChar(40)
+  timeframe  String       @db.VarChar(20)
+  regime     MarketRegime @default(UNKNOWN)
+  confidence Decimal      @default(0) @db.Decimal(5, 4)
+  features   Json?
+  observedAt DateTime
+  createdAt  DateTime     @default(now())
+
+  paperTrades PaperTrade[]
+  metrics     BotMetric[]
+
+  @@index([symbol, timeframe, observedAt])
+  @@index([regime, observedAt])
+  @@map("market_regime_snapshots")
+}
+
+model PaperTrade {
+  id                     String           @id @default(cuid())
+  tradingBotId           String
+  strategyVersionId      String?
+  marketRegimeSnapshotId BigInt?          @db.UnsignedBigInt
+  symbol                 String           @db.VarChar(40)
+  side                   TradingBotPaperSide
+  status                 PaperTradeStatus @default(OPEN)
+  entryPrice             Decimal          @db.Decimal(36, 18)
+  exitPrice              Decimal?         @db.Decimal(36, 18)
+  quantity               Decimal          @db.Decimal(36, 18)
+  leverage               Int              @default(1)
+  fees                   Decimal          @default(0) @db.Decimal(36, 18)
+  funding                Decimal          @default(0) @db.Decimal(36, 18)
+  slippageCost           Decimal          @default(0) @db.Decimal(36, 18)
+  realizedPnl            Decimal          @default(0) @db.Decimal(36, 18)
+  openedAt               DateTime
+  closedAt               DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  tradingBot           TradingBot           @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
+  strategyVersion      StrategyVersion?      @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
+  marketRegimeSnapshot MarketRegimeSnapshot? @relation(fields: [marketRegimeSnapshotId], references: [id], onDelete: SetNull)
+
+  @@index([tradingBotId, openedAt])
+  @@index([strategyVersionId, openedAt])
+  @@index([symbol, status, openedAt])
+  @@index([marketRegimeSnapshotId])
+  @@map("paper_trades")
+}
+
+model BotMetric {
+  id                     BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tradingBotId           String
+  strategyVersionId      String?
+  marketRegimeSnapshotId BigInt?  @db.UnsignedBigInt
+  startingBalance        Decimal  @db.Decimal(36, 18)
+  currentEquity          Decimal  @db.Decimal(36, 18)
+  realizedPnl            Decimal  @default(0) @db.Decimal(36, 18)
+  unrealizedPnl          Decimal  @default(0) @db.Decimal(36, 18)
+  netPnl                 Decimal  @default(0) @db.Decimal(36, 18)
+  totalTrades            Int      @default(0)
+  wins                   Int      @default(0)
+  losses                 Int      @default(0)
+  maxDrawdown            Decimal  @default(0) @db.Decimal(12, 6)
+  score                  Decimal? @db.Decimal(8, 4)
+  metrics                Json?
+  snapshotAt             DateTime
+  createdAt              DateTime @default(now())
+
+  tradingBot           TradingBot           @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
+  strategyVersion      StrategyVersion?      @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
+  marketRegimeSnapshot MarketRegimeSnapshot? @relation(fields: [marketRegimeSnapshotId], references: [id], onDelete: SetNull)
+
+  @@index([tradingBotId, snapshotAt])
+  @@index([strategyVersionId, snapshotAt])
+  @@index([marketRegimeSnapshotId, snapshotAt])
+  @@index([score, snapshotAt])
+  @@map("bot_metrics")
+}
+
+model ChampionCandidate {
+  id           String                  @id @default(cuid())
+  tradingBotId String
+  status       ChampionCandidateStatus @default(PENDING)
+  score        Decimal?                @db.Decimal(8, 4)
+  evidence     Json?
+  evaluatedAt  DateTime?
+  promotedAt   DateTime?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+
+  tradingBot TradingBot @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
+
+  @@index([tradingBotId, createdAt])
+  @@index([status, score])
+  @@map("champion_candidates")
 }
 
 model TradingRiskControl {

@@ -2,24 +2,25 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 0
-Current prompt: PROMPT 1
+Last completed prompt: PROMPT 1
+Current prompt: PROMPT 2
 Status: READY
 Updated at: 2026-08-20
 
 ## Completed
 
 - PROMPT 0 — COMPLETED
+- PROMPT 1 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 1 — Core Domain Models
+PROMPT 2 — Strategy Registry
 
-Henüz başlanmadı. Sonraki oturum/çalışma adımı PROMPT 1 kapsamını `AI_TRADING_CURRENT_STATE.md` bulgularıyla birlikte değerlendirmelidir.
+Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 35 files, 147 tests
+- Backend unit/integration tests: PASS — 36 files, 151 tests
 - Backend typecheck: PASS
 - Backend build: PASS
 - Go unit/integration tests: PASS — `go test ./...`
@@ -27,18 +28,18 @@ Henüz başlanmadı. Sonraki oturum/çalışma adımı PROMPT 1 kapsamını `AI_
 - Go build: PASS — `go build ./cmd/trading-engine`
 - Frontend typecheck/lint: PASS
 - Frontend production build: PASS
-- Manual/grid/exchange regression baseline: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation test suites and full builds
+- Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation test suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 
 Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyarı logları vardır; 147 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- Mevcut Node.js Trade Operations backend'i audit edildi.
-- Go trading engine, exchange adapterları, manual order lifecycle, grid bot, PAPER/SHADOW akışı, risk engine, reconciliation, realtime/outbox ve scheduler incelendi.
-- Prisma trade modelleri ve admin API endpointleri envanterlendi.
-- Mevcut parçalar, hedef mimari boşlukları, entegrasyon noktaları ve riskli değişiklik alanları `docs/AI_TRADING_CURRENT_STATE.md` içinde belgelendi.
-- Runtime/application code değiştirilmedi.
+- Additive `Strategy`, `StrategyVersion`, `Generation`, `PaperTrade`, `BotMetric`, `MarketRegimeSnapshot` ve `ChampionCandidate` Prisma modelleri eklendi.
+- Mevcut `TradingBot`, BotInstance olarak strategy version, generation, parent lineage, lifecycle, paper balance ve mevcut risk profile ilişkileriyle geriye uyumlu genişletildi.
+- Mevcut `TradingRiskProfile`, duplicate RiskProfile oluşturulmadan yeniden kullanıldı.
+- Merkezi autonomous lifecycle/regime değerleri ve güvenli PAPER default sabitleri eklendi.
+- Core domain ve additive migration contract testleri eklendi.
 
 ## Safety State
 
@@ -51,14 +52,17 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Migration
 
-None.
+`20260820010000_add_ai_trading_core_domain`
+
+- Additive migration.
+- Mevcut tablo veya kolon silmiyor.
+- Mevcut trading bot kayıtlarını değiştirmiyor; yeni alanlar nullable veya güvenli default içeriyor.
+- Production verisine uygulanmadı.
 
 ## Open TODO
 
-- PROMPT 1 kapsamında mevcut modelleri duplicate etmeden core autonomous trading domain tasarımını yapmak.
-- `TradingBot` runtime lifecycle ile autonomous qualification lifecycle'ını ayrı tutmak.
-- PAPER varsayılanını geriye uyumlu bir uygulama contract'ıyla güvenceye almak.
-- Additive ve geri alınabilir migration hazırlamak; destructive değişiklik yapmamak.
+- PROMPT 2 kapsamında Strategy Registry service, validation ve internal/admin API oluşturmak.
+- Parameter schema/range doğrulamasını kontrolsüz JSON kullanımını engelleyecek şekilde uygulamak.
 
 ## Known Risks for Next Prompts
 
