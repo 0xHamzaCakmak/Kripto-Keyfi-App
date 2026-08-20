@@ -19,6 +19,8 @@ import { clone as cloneFactoryBot, create as createFactoryBot, factoryBot, facto
 import { cloneFactoryBotBodySchema, createFactoryBotBodySchema, createParameterVariantBodySchema, factoryBotIdParamsSchema, transitionFactoryBotBodySchema } from '../ai-trading/bot-factory.schema.js';
 import { leaderboard, score as botScore } from '../ai-trading/bot-score.controller.js';
 import { leaderboardQuerySchema } from '../ai-trading/bot-score.schema.js';
+import { regimeLeaderboard } from '../ai-trading/market-regime.controller.js';
+import { marketRegimeLeaderboardParamsSchema, marketRegimeLeaderboardQuerySchema } from '../ai-trading/market-regime.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -36,6 +38,7 @@ tradingRouter.post('/bot-factory/bots/:id/parameter-variant', validateRequest({ 
 tradingRouter.post('/bot-factory/bots/:id/transition', validateRequest({ params: factoryBotIdParamsSchema, body: transitionFactoryBotBodySchema }), asyncHandler(transitionFactoryBot));
 tradingRouter.get('/leaderboard', validateRequest({ query: leaderboardQuerySchema }), asyncHandler(leaderboard));
 tradingRouter.get('/bot-factory/bots/:id/score', validateRequest({ params: factoryBotIdParamsSchema }), asyncHandler(botScore));
+tradingRouter.get('/regimes/:regime/leaderboard', validateRequest({ params: marketRegimeLeaderboardParamsSchema, query: marketRegimeLeaderboardQuerySchema }), asyncHandler(regimeLeaderboard));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));

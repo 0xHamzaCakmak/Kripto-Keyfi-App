@@ -2,10 +2,10 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 7
-Current prompt: PROMPT 8
+Last completed prompt: PROMPT 8
+Current prompt: PROMPT 9
 Status: READY
-Updated at: 2026-08-20
+Updated at: 2026-08-21
 
 ## Completed
 
@@ -17,16 +17,17 @@ Updated at: 2026-08-20
 - PROMPT 5 — COMPLETED
 - PROMPT 6 — COMPLETED
 - PROMPT 7 — COMPLETED
+- PROMPT 8 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 8 — Market Regime Performance
+PROMPT 9 — Champion / Challenger
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 39 files, 164 tests
+- Backend unit/integration tests: PASS — 40 files, 166 tests
 - Backend typecheck: PASS
 - Backend build: PASS
 - Go unit/integration tests: PASS — `go test ./...`
@@ -42,11 +43,11 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Last Changes
 
-- Configurable positive quality ve negative risk/cost bileşenleriyle 0-100 Bot Score eklendi.
-- Düşük trade count için sample confidence penalty ve breakdown persistence eklendi.
-- Yüksek PnL fakat yüksek drawdown/liquidation/cost profillerinin stable botlardan düşük puanlanması test edildi.
-- Admin leaderboard, score breakdown ve global competition rank endpointleri eklendi.
-- Automatic Champion promotion eklenmedi.
+- AI/LLM kullanmayan deterministic Market Regime classifier ve snapshot persistence eklendi.
+- Sekiz merkezi regime için trade count, PnL, win rate, profit factor, drawdown ve score aggregation eklendi.
+- Arena market eventinden PaperTrade'e regime snapshot bağı geçirildi; BotMetric zaten regime ID ile snapshot yazabiliyor.
+- Regime-specific leaderboard/rank admin endpointi eklendi.
+- Global score/leaderboard korunarak regime-aware sorgu ayrı tutuldu.
 
 ## Safety State
 
@@ -59,7 +60,7 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Migration
 
-PROMPT 7: Migration yok; mevcut `bot_metrics.score` ve JSON metrics alanları kullanılıyor.
+PROMPT 8: Migration yok; mevcut `market_regime_snapshots`, `paper_trades.marketRegimeSnapshotId` ve `bot_metrics.marketRegimeSnapshotId` alanları kullanılıyor.
 
 Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
@@ -76,8 +77,8 @@ Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
 ## Open TODO
 
-- PROMPT 8 kapsamında Market Regime bazlı performans kırılımı oluşturmak.
-- Regime snapshot ilişkisi ve regime-aware metric sorgularını test etmek.
+- PROMPT 9 kapsamında minimum evidence gate ile Champion/Challenger seçim sistemi oluşturmak.
+- Promotion audit ve regime coverage doğrulamasını eklemek; LIVE aktivasyonu yapmamak.
 
 ## Known Risks for Next Prompts
 

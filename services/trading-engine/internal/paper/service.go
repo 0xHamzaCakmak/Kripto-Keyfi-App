@@ -9,22 +9,23 @@ import (
 )
 
 type TradeRecord struct {
-	ID                string
-	TradingBotID      string
-	StrategyVersionID string
-	Symbol            string
-	Side              string
-	Status            string
-	EntryPrice        string
-	ExitPrice         string
-	Quantity          string
-	Leverage          int
-	Fees              string
-	Funding           string
-	SlippageCost      string
-	RealizedPnL       string
-	OpenedAt          time.Time
-	ClosedAt          *time.Time
+	ID                     string
+	TradingBotID           string
+	StrategyVersionID      string
+	MarketRegimeSnapshotID *uint64
+	Symbol                 string
+	Side                   string
+	Status                 string
+	EntryPrice             string
+	ExitPrice              string
+	Quantity               string
+	Leverage               int
+	Fees                   string
+	Funding                string
+	SlippageCost           string
+	RealizedPnL            string
+	OpenedAt               time.Time
+	ClosedAt               *time.Time
 }
 
 type TradeStore interface {
@@ -39,10 +40,11 @@ type Service struct {
 }
 
 type OpenTradeRequest struct {
-	TradingBotID      string
-	StrategyVersionID string
-	Symbol            string
-	Entry             EntryRequest
+	TradingBotID           string
+	StrategyVersionID      string
+	MarketRegimeSnapshotID *uint64
+	Symbol                 string
+	Entry                  EntryRequest
 }
 
 func NewService(engine *Engine, store TradeStore) (*Service, error) {
@@ -63,7 +65,8 @@ func (service *Service) Open(ctx context.Context, request OpenTradeRequest) (Tra
 	now := service.now().UTC()
 	record := TradeRecord{
 		ID: newTradeID(), TradingBotID: request.TradingBotID, StrategyVersionID: request.StrategyVersionID,
-		Symbol: request.Symbol, Side: databaseSide(request.Entry.Side), Status: "OPEN",
+		MarketRegimeSnapshotID: request.MarketRegimeSnapshotID,
+		Symbol:                 request.Symbol, Side: databaseSide(request.Entry.Side), Status: "OPEN",
 		EntryPrice: entry.FillPrice, Quantity: entry.FilledQuantity, Leverage: request.Entry.Leverage,
 		Fees: entry.Fee, Funding: entry.Position.Funding, SlippageCost: entry.Position.SlippageCost,
 		RealizedPnL: format(zero()), OpenedAt: now,

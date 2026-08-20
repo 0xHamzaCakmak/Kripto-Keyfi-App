@@ -14,13 +14,14 @@ import (
 )
 
 type MarketEvent struct {
-	Symbol       string
-	Timeframe    string
-	MarkPrice    string
-	FundingRate  string
-	ApplyFunding bool
-	Sequence     uint64
-	OccurredAt   time.Time
+	Symbol           string
+	Timeframe        string
+	MarkPrice        string
+	FundingRate      string
+	ApplyFunding     bool
+	RegimeSnapshotID *uint64
+	Sequence         uint64
+	OccurredAt       time.Time
 }
 
 type Bot struct {

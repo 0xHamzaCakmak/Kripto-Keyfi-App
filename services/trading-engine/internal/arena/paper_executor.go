@@ -53,7 +53,8 @@ func (executor *PaperExecutor) Handle(ctx context.Context, bot Bot, event Market
 			side = paper.Short
 		}
 		record, position, err := executor.service.Open(ctx, paper.OpenTradeRequest{
-			TradingBotID: bot.ID, StrategyVersionID: bot.StrategyVersionID, Symbol: event.Symbol,
+			TradingBotID: bot.ID, StrategyVersionID: bot.StrategyVersionID,
+			MarketRegimeSnapshotID: event.RegimeSnapshotID, Symbol: event.Symbol,
 			Entry: paper.EntryRequest{
 				Side: side, Quantity: signal.Quantity, MarkPrice: event.MarkPrice, LimitPrice: signal.LimitPrice,
 				Liquidity: signal.Liquidity, Leverage: signal.Leverage, StopLoss: signal.StopLoss, TakeProfit: signal.TakeProfit,

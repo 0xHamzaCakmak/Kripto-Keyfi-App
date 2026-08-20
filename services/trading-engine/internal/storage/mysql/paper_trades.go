@@ -10,10 +10,10 @@ import (
 
 func (s *AccountStore) CreatePaperTrade(ctx context.Context, trade paper.TradeRecord) error {
 	_, err := s.database.ExecContext(ctx, `INSERT INTO paper_trades
-(id, tradingBotId, strategyVersionId, symbol, side, status, entryPrice, quantity, leverage,
+(id, tradingBotId, strategyVersionId, marketRegimeSnapshotId, symbol, side, status, entryPrice, quantity, leverage,
  fees, funding, slippageCost, realizedPnl, openedAt, createdAt, updatedAt)
-VALUES (?, ?, NULLIF(?, ''), ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
-		trade.ID, trade.TradingBotID, trade.StrategyVersionID, trade.Symbol, trade.Side,
+VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
+		trade.ID, trade.TradingBotID, trade.StrategyVersionID, trade.MarketRegimeSnapshotID, trade.Symbol, trade.Side,
 		trade.EntryPrice, trade.Quantity, trade.Leverage, trade.Fees, trade.Funding,
 		trade.SlippageCost, trade.RealizedPnL, trade.OpenedAt,
 	)
