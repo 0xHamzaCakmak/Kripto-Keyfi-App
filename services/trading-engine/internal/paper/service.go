@@ -26,6 +26,15 @@ type TradeRecord struct {
 	RealizedPnL            string
 	OpenedAt               time.Time
 	ClosedAt               *time.Time
+	StopLoss               string
+	TakeProfit             string
+	MaxFavorableExcursion  string
+	MaxAdverseExcursion    string
+	HoldingSeconds         *int64
+	MarketContext          map[string]any
+	CloseReason            string
+	AIConfidence           *float64
+	DecisionSummary        string
 }
 
 type TradeStore interface {
@@ -45,6 +54,9 @@ type OpenTradeRequest struct {
 	MarketRegimeSnapshotID *uint64
 	Symbol                 string
 	Entry                  EntryRequest
+	MarketContext          map[string]any
+	AIConfidence           *float64
+	DecisionSummary        string
 }
 
 func NewService(engine *Engine, store TradeStore) (*Service, error) {
@@ -70,6 +82,10 @@ func (service *Service) Open(ctx context.Context, request OpenTradeRequest) (Tra
 		EntryPrice: entry.FillPrice, Quantity: entry.FilledQuantity, Leverage: request.Entry.Leverage,
 		Fees: entry.Fee, Funding: entry.Position.Funding, SlippageCost: entry.Position.SlippageCost,
 		RealizedPnL: format(zero()), OpenedAt: now,
+		StopLoss: entry.Position.StopLoss, TakeProfit: entry.Position.TakeProfit,
+		MaxFavorableExcursion: entry.Position.MaxFavorableExcursion,
+		MaxAdverseExcursion:   entry.Position.MaxAdverseExcursion,
+		MarketContext:         request.MarketContext, AIConfidence: request.AIConfidence, DecisionSummary: request.DecisionSummary,
 	}
 	if err := service.store.CreatePaperTrade(ctx, record); err != nil {
 		return TradeRecord{}, Position{}, err
@@ -89,6 +105,10 @@ func (service *Service) Close(ctx context.Context, record TradeRecord, position 
 	}
 	record.ExitPrice, record.Fees, record.Funding = exit.ExitPrice, exit.Fees, exit.Funding
 	record.SlippageCost, record.RealizedPnL, record.ClosedAt = exit.SlippageCost, exit.RealizedPnL, &now
+	holding := int64(now.Sub(record.OpenedAt).Seconds())
+	record.HoldingSeconds = &holding
+	record.MaxFavorableExcursion, record.MaxAdverseExcursion = position.MaxFavorableExcursion, position.MaxAdverseExcursion
+	record.CloseReason = string(request.Reason)
 	if err := service.store.ClosePaperTrade(ctx, record); err != nil {
 		return TradeRecord{}, ExitResult{}, err
 	}

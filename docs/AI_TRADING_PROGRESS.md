@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 9
-Current prompt: PROMPT 10
+Last completed prompt: PROMPT 10
+Current prompt: PROMPT 11
 Status: READY
 Updated at: 2026-08-21
 
@@ -19,36 +19,38 @@ Updated at: 2026-08-21
 - PROMPT 7 — COMPLETED
 - PROMPT 8 — COMPLETED
 - PROMPT 9 — COMPLETED
+- PROMPT 10 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 10 — Trade Memory
+PROMPT 11 — Teacher
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 41 files, 170 tests
+- Backend unit/integration tests: PASS — 42 files, 174 tests
+- Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
 - Frontend typecheck/lint: PASS
 - Frontend production build: PASS
-- Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation test suites and full builds
+- Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
-- Arena 100-bot benchmark: PASS — 100 iterations, ~174902 ns/op on local Windows amd64
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
 
-Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyarı logları vardır; 156 testin tamamı geçmiştir.
+Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 174 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- Configurable min trades/duration/profit factor/drawdown/score/regime coverage evidence gate eklendi.
-- Top-N Challenger/Champion seçimi lifecycle aşamalarını atlamadan uygulanıyor.
-- 100 PAPER bot hedefi için ilk geçişte 20 Challenger, sonraki geçişte en fazla 10 Champion seçimi test edildi.
-- Promotion/demotion işlemleri candidate evidence ve trading audit log'a yazılıyor.
-- Selection hiçbir koşulda `LIVE` veya `LIVE_ELIGIBLE` durumuna geçmiyor ve execution/outbox çağrısı yapmıyor.
+- Mevcut `PaperTrade` ledger'ı duplicate edilmeden stop/TP, MFE/MAE, holding time, market context, close reason ve optional AI context alanlarıyla genişletildi.
+- Go paper engine MFE/MAE'yi deterministik şekilde izliyor; arena market ve karar context'ini memory kaydına taşıyor.
+- Trade Memory okuma API'si bot, strategy version, symbol, regime, side, best ve failure filtreleriyle kullanıcı izolasyonlu çalışıyor.
+- Bot, strategy, regime ve symbol bazlı performans özetleri; PnL, win/loss, average PnL ve profit factor sonuçları eklendi.
+- Sorgu yolları salt okunur; exchange execution, live activation ve risk bypass bağlantısı eklenmedi.
+- Embedding veya vector database eklenmedi.
 
 ## Safety State
 
@@ -57,36 +59,40 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 - Autonomous bot live mode: NOT PRESENT
 - PAPER: safe supported mode; autonomous default PAPER
 - AI observer: default OFF, comparison-only, no paper fill or order execution permission
+- Trade Memory endpoints: read-only
 - Production exchange environment: NOT PRESENT
 
 ## Migration
 
-PROMPT 9: Migration yok; mevcut `champion_candidates`, `trading_bots.lifecycleStatus` ve audit log kullanılıyor.
+PROMPT 10: `20260821010000_add_trade_memory_context`
 
-Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
+- Additive migration; mevcut `paper_trades` tablosuna nullable veya güvenli sıfır default'lu context alanları ve sorgu indexleri ekler.
+- Tablo/kolon silmez, veri dönüştürmez ve mevcut trade kayıtlarını silmez.
+- Production verisine uygulanmadı.
+
+Önceki migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
 - Additive migration; `TradingBotType` enum'una `AUTONOMOUS` ekler.
 - Nullable factory creation method, symbols ve timeframe alanları ile additive index ekler.
-- Tablo/kolon silmez ve production verisine uygulanmadı.
+- Production verisine uygulanmadı.
 
-Önceki migration: `20260820010000_add_ai_trading_core_domain` (PROMPT 1)
+İlk AI trading migration: `20260820010000_add_ai_trading_core_domain` (PROMPT 1)
 
-- Additive migration.
-- Mevcut tablo veya kolon silmiyor.
-- Mevcut trading bot kayıtlarını değiştirmiyor; yeni alanlar nullable veya güvenli default içeriyor.
+- Additive migration; mevcut tablo veya kolon silmez.
+- Mevcut trading bot kayıtlarını değiştirmez; yeni alanlar nullable veya güvenli default içerir.
 - Production verisine uygulanmadı.
 
 ## Open TODO
 
-- PROMPT 10 kapsamında mevcut PaperTrade'i genişleten Trade Memory oluşturmak.
-- Context alanları ve memory sorgu index/API'lerini destructive migration olmadan eklemek.
+- PROMPT 11 kapsamında Teacher backend modülünü eklemek.
+- Teacher önerilerini yalnızca yapılandırılmış evaluation olarak saklamak; kodu, canlı strategy parametrelerini veya risk limitlerini değiştirmesine izin vermemek.
 
 ## Known Risks for Next Prompts
 
 - Mevcut `TradingBot` Prisma enum/table yapısı Node, Go raw SQL ve frontend tarafından ortak kullanılıyor.
 - TypeScript manual executor merkezi Go risk evaluator yolundan geçmiyor; PROMPT 0'da yalnız audit bulgusu olarak kaydedildi.
 - Mevcut scheduler ortak market stream kullanmıyor ve aynı symbol için bot başına REST mark-price isteği yapıyor.
-- Paper ledger yalnız temel fee/slippage ve tek net pozisyon muhasebesi sağlıyor.
+- Teacher çıktıları daha sonraki promptlar tarafından tüketilse bile doğrudan mutation veya execution yetkisi kazanmamalı.
 - User-owned dirty worktree changes exist outside these AI Trading documents; preserve them.
 
 ## Blockers
@@ -95,4 +101,4 @@ None.
 
 ## Source Note
 
-Requested `docs/AI_TRADING_IMPLEMENTATION_PROMPTS.md` was absent. Repository contains `docs/AI_TRADING_IMPLEMENTATION_PROMPTS_UPDATED.md`; it was used as the authoritative prompt sequence for PROMPT 0.
+Requested prompt filenames were absent. Repository contains `docs/AI_TRADING_IMPLEMENTATION_PROMPTS_UPDATED.md`; it is used as the authoritative prompt sequence.

@@ -63,17 +63,19 @@ type EntryRequest struct {
 }
 
 type Position struct {
-	Side             Side
-	Quantity         string
-	EntryPrice       string
-	Leverage         int
-	IsolatedMargin   string
-	EntryFee         string
-	Funding          string
-	SlippageCost     string
-	StopLoss         string
-	TakeProfit       string
-	LiquidationPrice string
+	Side                  Side
+	Quantity              string
+	EntryPrice            string
+	Leverage              int
+	IsolatedMargin        string
+	EntryFee              string
+	Funding               string
+	SlippageCost          string
+	StopLoss              string
+	TakeProfit            string
+	LiquidationPrice      string
+	MaxFavorableExcursion string
+	MaxAdverseExcursion   string
 }
 
 type EntryResult struct {
@@ -178,12 +180,37 @@ func (engine *Engine) Enter(request EntryRequest) (EntryResult, error) {
 		Side: request.Side, Quantity: format(filledQuantity), EntryPrice: format(fillPrice), Leverage: request.Leverage,
 		IsolatedMargin: format(margin), EntryFee: format(fee), Funding: format(zero()),
 		SlippageCost: format(slippageCost), StopLoss: formatOptional(stop), TakeProfit: formatOptional(takeProfit),
-		LiquidationPrice: format(liquidation),
+		LiquidationPrice: format(liquidation), MaxFavorableExcursion: format(zero()), MaxAdverseExcursion: format(zero()),
 	}
 	return EntryResult{
 		Position: position, RequestedQuantity: format(quantity), FilledQuantity: position.Quantity,
 		Notional: format(notional), Fee: position.EntryFee, FillPrice: position.EntryPrice,
 	}, nil
+}
+
+func (engine *Engine) UpdateExcursions(position Position, markPrice string) (Position, error) {
+	quantity, entry, mark, _, _, _, err := parsePosition(position, markPrice)
+	if err != nil {
+		return Position{}, err
+	}
+	pnl := directionalPnL(position.Side, entry, mark, quantity)
+	favorable, favorableOK := decimal(position.MaxFavorableExcursion)
+	adverse, adverseOK := decimal(position.MaxAdverseExcursion)
+	if !favorableOK || !adverseOK || favorable.Sign() < 0 || adverse.Sign() < 0 {
+		return Position{}, errors.New("paper position excursions are invalid")
+	}
+	if pnl.Sign() > 0 && pnl.Cmp(favorable) > 0 {
+		favorable = pnl
+	}
+	if pnl.Sign() < 0 {
+		magnitude := abs(pnl)
+		if magnitude.Cmp(adverse) > 0 {
+			adverse = magnitude
+		}
+	}
+	position.MaxFavorableExcursion = format(favorable)
+	position.MaxAdverseExcursion = format(adverse)
+	return position, nil
 }
 
 func (engine *Engine) Mark(position Position, markPrice string) (MarkResult, error) {

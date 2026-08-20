@@ -29,6 +29,11 @@ func (executor *PaperExecutor) Handle(ctx context.Context, bot Bot, event Market
 		state.Position = &position
 	}
 	if state.Position != nil {
+		position, err := executor.engine.UpdateExcursions(*state.Position, event.MarkPrice)
+		if err != nil {
+			return err
+		}
+		state.Position = &position
 		mark, err := executor.engine.Mark(*state.Position, event.MarkPrice)
 		if err != nil {
 			return err
@@ -55,6 +60,7 @@ func (executor *PaperExecutor) Handle(ctx context.Context, bot Bot, event Market
 		record, position, err := executor.service.Open(ctx, paper.OpenTradeRequest{
 			TradingBotID: bot.ID, StrategyVersionID: bot.StrategyVersionID,
 			MarketRegimeSnapshotID: event.RegimeSnapshotID, Symbol: event.Symbol,
+			MarketContext: event.Context, AIConfidence: signal.AIConfidence, DecisionSummary: signal.DecisionSummary,
 			Entry: paper.EntryRequest{
 				Side: side, Quantity: signal.Quantity, MarkPrice: event.MarkPrice, LimitPrice: signal.LimitPrice,
 				Liquidity: signal.Liquidity, Leverage: signal.Leverage, StopLoss: signal.StopLoss, TakeProfit: signal.TakeProfit,

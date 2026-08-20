@@ -1600,6 +1600,15 @@ model PaperTrade {
   funding                Decimal          @default(0) @db.Decimal(36, 18)
   slippageCost           Decimal          @default(0) @db.Decimal(36, 18)
   realizedPnl            Decimal          @default(0) @db.Decimal(36, 18)
+  stopLoss               Decimal?         @db.Decimal(36, 18)
+  takeProfit             Decimal?         @db.Decimal(36, 18)
+  maxFavorableExcursion  Decimal          @default(0) @db.Decimal(36, 18)
+  maxAdverseExcursion    Decimal          @default(0) @db.Decimal(36, 18)
+  holdingSeconds         Int?
+  marketContext          Json?
+  closeReason            String?          @db.VarChar(80)
+  aiConfidence           Decimal?         @db.Decimal(5, 4)
+  decisionSummary        String?          @db.VarChar(1000)
   openedAt               DateTime
   closedAt               DateTime?
   createdAt              DateTime         @default(now())
@@ -1613,6 +1622,10 @@ model PaperTrade {
   @@index([strategyVersionId, openedAt])
   @@index([symbol, status, openedAt])
   @@index([marketRegimeSnapshotId])
+  @@index([tradingBotId, status, realizedPnl])
+  @@index([strategyVersionId, status, realizedPnl])
+  @@index([marketRegimeSnapshotId, status, realizedPnl])
+  @@index([symbol, side, status, realizedPnl])
   @@map("paper_trades")
 }
 

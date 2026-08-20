@@ -27,10 +27,13 @@ func TestServicePersistsOpenAndClosedPaperTradeWithoutExchange(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixed := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
-	service.now = func() time.Time { return fixed }
+	now := fixed
+	service.now = func() time.Time { return now }
+	confidence := 0.81
 	record, position, err := service.Open(context.Background(), OpenTradeRequest{
 		TradingBotID: "bot-1", StrategyVersionID: "strategy-version-1", Symbol: "BTCUSDT",
-		Entry: EntryRequest{Side: Long, Quantity: "1", MarkPrice: "100", Liquidity: Taker, Leverage: 5},
+		Entry:         EntryRequest{Side: Long, Quantity: "1", MarkPrice: "100", Liquidity: Taker, Leverage: 5, StopLoss: "95", TakeProfit: "120"},
+		MarketContext: map[string]any{"regime": "TRENDING_UP"}, AIConfidence: &confidence, DecisionSummary: "trend continuation",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -38,6 +41,10 @@ func TestServicePersistsOpenAndClosedPaperTradeWithoutExchange(t *testing.T) {
 	if len(store.created) != 1 || record.Status != "OPEN" || record.Side != "BUY" {
 		t.Fatalf("open was not persisted: %#v", record)
 	}
+	if record.StopLoss != "95.000000000000000000" || record.MarketContext["regime"] != "TRENDING_UP" || record.AIConfidence == nil {
+		t.Fatalf("trade context was not persisted: %#v", record)
+	}
+	now = fixed.Add(90 * time.Second)
 	closed, _, err := service.Close(context.Background(), record, position, ExitRequest{
 		MarkPrice: "110", Liquidity: Taker, Reason: CloseTakeProfit,
 	})
@@ -46,6 +53,9 @@ func TestServicePersistsOpenAndClosedPaperTradeWithoutExchange(t *testing.T) {
 	}
 	if len(store.closed) != 1 || closed.Status != "CLOSED" || closed.ClosedAt == nil {
 		t.Fatalf("close was not persisted: %#v", closed)
+	}
+	if closed.HoldingSeconds == nil || *closed.HoldingSeconds != 90 || closed.CloseReason != string(CloseTakeProfit) {
+		t.Fatalf("close memory was not persisted: %#v", closed)
 	}
 }
 

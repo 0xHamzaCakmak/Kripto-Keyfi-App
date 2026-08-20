@@ -167,7 +167,8 @@ type lifecycleStrategy struct{}
 func (lifecycleStrategy) OnMarket(_ context.Context, _ Bot, _ MarketEvent, state map[string]string) (Signal, map[string]string, error) {
 	if state["opened"] == "" {
 		state["opened"] = "yes"
-		return Signal{Action: SignalOpenLong, Quantity: "1", Leverage: 5, Liquidity: paper.Taker}, state, nil
+		confidence := 0.76
+		return Signal{Action: SignalOpenLong, Quantity: "1", Leverage: 5, Liquidity: paper.Taker, AIConfidence: &confidence, DecisionSummary: "arena test signal"}, state, nil
 	}
 	return Signal{Action: SignalClose, Liquidity: paper.Taker, CloseReason: paper.CloseManual}, state, nil
 }
@@ -205,7 +206,7 @@ func TestSignalsFlowThroughPaperEngineAndTradeStore(t *testing.T) {
 	for sequence, price := range []string{"100", "110"} {
 		_, err := arena.Publish(context.Background(), MarketEvent{
 			Symbol: "BTCUSDT", Timeframe: "1m", MarkPrice: price,
-			Sequence: uint64(sequence + 1), OccurredAt: base.Add(time.Duration(sequence) * time.Minute),
+			Sequence: uint64(sequence + 1), OccurredAt: base.Add(time.Duration(sequence) * time.Minute), Context: map[string]any{"source": "shared-stream"},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -213,6 +214,12 @@ func TestSignalsFlowThroughPaperEngineAndTradeStore(t *testing.T) {
 	}
 	if len(tradeStore.created) != 1 || len(tradeStore.closed) != 1 {
 		t.Fatalf("paper persistence missing: %#v %#v", tradeStore.created, tradeStore.closed)
+	}
+	if tradeStore.created[0].MarketContext["source"] != "shared-stream" || tradeStore.created[0].AIConfidence == nil || tradeStore.created[0].DecisionSummary == "" {
+		t.Fatalf("decision context did not reach trade memory: %#v", tradeStore.created[0])
+	}
+	if tradeStore.closed[0].MaxFavorableExcursion == "0.000000000000000000" {
+		t.Fatalf("trade excursion was not updated: %#v", tradeStore.closed[0])
 	}
 	state, _ := arena.State("bot-1")
 	if state.Position != nil || state.RealizedPnL == "0" || state.Equity == "100" {

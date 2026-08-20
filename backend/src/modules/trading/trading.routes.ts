@@ -23,6 +23,8 @@ import { regimeLeaderboard } from '../ai-trading/market-regime.controller.js';
 import { marketRegimeLeaderboardParamsSchema, marketRegimeLeaderboardQuerySchema } from '../ai-trading/market-regime.schema.js';
 import { champions, evaluateChampions } from '../ai-trading/champion-selection.controller.js';
 import { runChampionSelectionBodySchema } from '../ai-trading/champion-selection.schema.js';
+import { tradeMemory, tradeMemorySummary } from '../ai-trading/trade-memory.controller.js';
+import { tradeMemoryQuerySchema, tradeMemorySummaryQuerySchema } from '../ai-trading/trade-memory.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -43,6 +45,8 @@ tradingRouter.get('/bot-factory/bots/:id/score', validateRequest({ params: facto
 tradingRouter.get('/regimes/:regime/leaderboard', validateRequest({ params: marketRegimeLeaderboardParamsSchema, query: marketRegimeLeaderboardQuerySchema }), asyncHandler(regimeLeaderboard));
 tradingRouter.get('/champions', asyncHandler(champions));
 tradingRouter.post('/champions/evaluate', validateRequest({ body: runChampionSelectionBodySchema }), asyncHandler(evaluateChampions));
+tradingRouter.get('/trade-memory', validateRequest({ query: tradeMemoryQuerySchema }), asyncHandler(tradeMemory));
+tradingRouter.get('/trade-memory/summary', validateRequest({ query: tradeMemorySummaryQuerySchema }), asyncHandler(tradeMemorySummary));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));

@@ -88,6 +88,28 @@ func TestStopTakeProfitAndLiquidationTriggers(t *testing.T) {
 	}
 }
 
+func TestExcursionsTrackBestAndWorstUnrealizedPnL(t *testing.T) {
+	engine := testEngine(t)
+	entry, err := engine.Enter(EntryRequest{Side: Long, Quantity: "1", MarkPrice: "100", Liquidity: Taker, Leverage: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	position, err := engine.UpdateExcursions(entry.Position, "110")
+	if err != nil {
+		t.Fatal(err)
+	}
+	position, err = engine.UpdateExcursions(position, "90")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if position.MaxFavorableExcursion != "9.970000000000000000" {
+		t.Fatalf("unexpected MFE: %s", position.MaxFavorableExcursion)
+	}
+	if position.MaxAdverseExcursion != "10.030000000000000000" {
+		t.Fatalf("unexpected MAE: %s", position.MaxAdverseExcursion)
+	}
+}
+
 func TestTickLotMinimumsAndPartialFillAreDeterministic(t *testing.T) {
 	config := DefaultFillConfig()
 	config.PartialFillRatio = "0.5"

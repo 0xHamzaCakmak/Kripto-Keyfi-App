@@ -20,6 +20,7 @@ type MarketEvent struct {
 	FundingRate      string
 	ApplyFunding     bool
 	RegimeSnapshotID *uint64
+	Context          map[string]any
 	Sequence         uint64
 	OccurredAt       time.Time
 }
@@ -35,14 +36,16 @@ type Bot struct {
 }
 
 type Signal struct {
-	Action      string
-	Quantity    string
-	Leverage    int
-	Liquidity   paper.Liquidity
-	LimitPrice  string
-	StopLoss    string
-	TakeProfit  string
-	CloseReason paper.CloseReason
+	Action          string
+	Quantity        string
+	Leverage        int
+	Liquidity       paper.Liquidity
+	LimitPrice      string
+	StopLoss        string
+	TakeProfit      string
+	CloseReason     paper.CloseReason
+	AIConfidence    *float64
+	DecisionSummary string
 }
 
 const (
