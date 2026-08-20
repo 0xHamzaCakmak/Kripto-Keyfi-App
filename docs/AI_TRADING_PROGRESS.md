@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 8
-Current prompt: PROMPT 9
+Last completed prompt: PROMPT 9
+Current prompt: PROMPT 10
 Status: READY
 Updated at: 2026-08-21
 
@@ -18,16 +18,17 @@ Updated at: 2026-08-21
 - PROMPT 6 — COMPLETED
 - PROMPT 7 — COMPLETED
 - PROMPT 8 — COMPLETED
+- PROMPT 9 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 9 — Champion / Challenger
+PROMPT 10 — Trade Memory
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 40 files, 166 tests
+- Backend unit/integration tests: PASS — 41 files, 170 tests
 - Backend typecheck: PASS
 - Backend build: PASS
 - Go unit/integration tests: PASS — `go test ./...`
@@ -43,11 +44,11 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Last Changes
 
-- AI/LLM kullanmayan deterministic Market Regime classifier ve snapshot persistence eklendi.
-- Sekiz merkezi regime için trade count, PnL, win rate, profit factor, drawdown ve score aggregation eklendi.
-- Arena market eventinden PaperTrade'e regime snapshot bağı geçirildi; BotMetric zaten regime ID ile snapshot yazabiliyor.
-- Regime-specific leaderboard/rank admin endpointi eklendi.
-- Global score/leaderboard korunarak regime-aware sorgu ayrı tutuldu.
+- Configurable min trades/duration/profit factor/drawdown/score/regime coverage evidence gate eklendi.
+- Top-N Challenger/Champion seçimi lifecycle aşamalarını atlamadan uygulanıyor.
+- 100 PAPER bot hedefi için ilk geçişte 20 Challenger, sonraki geçişte en fazla 10 Champion seçimi test edildi.
+- Promotion/demotion işlemleri candidate evidence ve trading audit log'a yazılıyor.
+- Selection hiçbir koşulda `LIVE` veya `LIVE_ELIGIBLE` durumuna geçmiyor ve execution/outbox çağrısı yapmıyor.
 
 ## Safety State
 
@@ -60,7 +61,7 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Migration
 
-PROMPT 8: Migration yok; mevcut `market_regime_snapshots`, `paper_trades.marketRegimeSnapshotId` ve `bot_metrics.marketRegimeSnapshotId` alanları kullanılıyor.
+PROMPT 9: Migration yok; mevcut `champion_candidates`, `trading_bots.lifecycleStatus` ve audit log kullanılıyor.
 
 Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
@@ -77,8 +78,8 @@ Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
 ## Open TODO
 
-- PROMPT 9 kapsamında minimum evidence gate ile Champion/Challenger seçim sistemi oluşturmak.
-- Promotion audit ve regime coverage doğrulamasını eklemek; LIVE aktivasyonu yapmamak.
+- PROMPT 10 kapsamında mevcut PaperTrade'i genişleten Trade Memory oluşturmak.
+- Context alanları ve memory sorgu index/API'lerini destructive migration olmadan eklemek.
 
 ## Known Risks for Next Prompts
 

@@ -21,6 +21,8 @@ import { leaderboard, score as botScore } from '../ai-trading/bot-score.controll
 import { leaderboardQuerySchema } from '../ai-trading/bot-score.schema.js';
 import { regimeLeaderboard } from '../ai-trading/market-regime.controller.js';
 import { marketRegimeLeaderboardParamsSchema, marketRegimeLeaderboardQuerySchema } from '../ai-trading/market-regime.schema.js';
+import { champions, evaluateChampions } from '../ai-trading/champion-selection.controller.js';
+import { runChampionSelectionBodySchema } from '../ai-trading/champion-selection.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -39,6 +41,8 @@ tradingRouter.post('/bot-factory/bots/:id/transition', validateRequest({ params:
 tradingRouter.get('/leaderboard', validateRequest({ query: leaderboardQuerySchema }), asyncHandler(leaderboard));
 tradingRouter.get('/bot-factory/bots/:id/score', validateRequest({ params: factoryBotIdParamsSchema }), asyncHandler(botScore));
 tradingRouter.get('/regimes/:regime/leaderboard', validateRequest({ params: marketRegimeLeaderboardParamsSchema, query: marketRegimeLeaderboardQuerySchema }), asyncHandler(regimeLeaderboard));
+tradingRouter.get('/champions', asyncHandler(champions));
+tradingRouter.post('/champions/evaluate', validateRequest({ body: runChampionSelectionBodySchema }), asyncHandler(evaluateChampions));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));
