@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 5
-Current prompt: PROMPT 6
+Last completed prompt: PROMPT 6
+Current prompt: PROMPT 7
 Status: READY
 Updated at: 2026-08-20
 
@@ -15,10 +15,11 @@ Updated at: 2026-08-20
 - PROMPT 3 — COMPLETED
 - PROMPT 4 — COMPLETED
 - PROMPT 5 — COMPLETED
+- PROMPT 6 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 6 — Performance Engine
+PROMPT 7 — Risk-Adjusted Bot Score
 
 Henüz başlanmadı.
 
@@ -40,11 +41,11 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Last Changes
 
-- Go engine içinde bounded-worker `internal/arena` coordinator ve strategy runtime registry eklendi.
-- Tek shared market snapshot symbol/timeframe abonelerine fan-out ediliyor; bot başına exchange fetch yapılmıyor.
-- Bot bazlı runtime/equity state, pause/resume, stale/duplicate event guard ve hata izolasyonu eklendi.
-- Strategy signal'larını PROMPT 4 Paper Engine/PaperTrade store'una bağlayan executor eklendi.
-- MySQL active PAPER bot loader ve bot-scope error kaydı eklendi; Champion seçimi eklenmedi.
+- DB'den bağımsız Go `internal/performance` metrics servisi eklendi.
+- Balance/PnL/ROI, trade dağılımı, expectancy, R:R, profit factor, drawdown, Sharpe/Sortino/Calmar, holding, turnover, maliyet ve streak metrikleri eklendi.
+- Düşük örneklem ve sıfır denominator sonuçları `nil`; NaN/Infinity ve overflow fail-closed işleniyor.
+- Mevcut `bot_metrics` tablosuna immutable snapshot yazan service/MySQL store eklendi.
+- Deterministic metrik, edge-case ve snapshot persistence testleri eklendi.
 
 ## Safety State
 
@@ -57,7 +58,7 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Migration
 
-PROMPT 5: Migration yok.
+PROMPT 6: Migration yok; PROMPT 1'de eklenen `bot_metrics` tablosu kullanılıyor.
 
 Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
@@ -74,8 +75,8 @@ Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
 ## Open TODO
 
-- PROMPT 6 kapsamında Bot Arena sonuçları için saf ve edge-case güvenli Performance Engine oluşturmak.
-- BotMetric snapshot persistence ve metrik testlerini eklemek.
+- PROMPT 7 kapsamında configurable risk-adjusted Bot Score hesaplamak.
+- PnL dışı kalite bileşenlerini ve penalty sınırlarını test etmek.
 
 ## Known Risks for Next Prompts
 
