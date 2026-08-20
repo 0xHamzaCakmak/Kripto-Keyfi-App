@@ -121,6 +121,7 @@ enum BotCreationMethod {
   MANUAL
   CLONE
   PARAMETER_VARIANT
+  CROSSOVER
 }
 
 enum TradingBotMode {
@@ -1283,6 +1284,9 @@ model TradingBot {
   teacherEvaluations TeacherEvaluation[]
   parentMutations    BotMutation[]            @relation("mutation_parent")
   childMutation      BotMutation?             @relation("mutation_child")
+  crossoversAsParentA BotCrossover[]           @relation("crossover_parent_a")
+  crossoversAsParentB BotCrossover[]           @relation("crossover_parent_b")
+  crossoverChild      BotCrossover?            @relation("crossover_child")
 
   @@unique([userId, name])
   @@index([userId, state])
@@ -1358,6 +1362,7 @@ model Generation {
   mutations BotMutation[]
   sourceEvolutionRuns EvolutionRun[] @relation("evolution_source_generation")
   targetEvolutionRuns EvolutionRun[] @relation("evolution_target_generation")
+  crossovers BotCrossover[]
 
   @@unique([createdById, number])
   @@index([status, createdAt])
@@ -1744,6 +1749,27 @@ model EvolutionRun {
   @@index([createdById, status, createdAt])
   @@index([sourceGenerationId, createdAt])
   @@map("evolution_runs")
+}
+
+model BotCrossover {
+  id              String   @id @default(cuid())
+  parentABotId    String
+  parentBBotId    String
+  childBotId      String   @unique
+  generationId    String
+  inheritedFields Json
+  generatedFields Json
+  createdAt       DateTime @default(now())
+
+  parentA    TradingBot @relation("crossover_parent_a", fields: [parentABotId], references: [id], onDelete: Restrict)
+  parentB    TradingBot @relation("crossover_parent_b", fields: [parentBBotId], references: [id], onDelete: Restrict)
+  child      TradingBot @relation("crossover_child", fields: [childBotId], references: [id], onDelete: Cascade)
+  generation Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  @@index([parentABotId, createdAt])
+  @@index([parentBBotId, createdAt])
+  @@index([generationId, createdAt])
+  @@map("bot_crossovers")
 }
 
 model ChampionCandidate {

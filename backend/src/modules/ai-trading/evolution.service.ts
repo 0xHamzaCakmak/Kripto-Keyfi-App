@@ -2,6 +2,7 @@ import { Prisma, type AutonomousTradingStatus } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import { createMutation } from './mutation.service.js';
+import { createCrossover, schemasAreCompatible } from './crossover.service.js';
 import { strategyParameterSchemaSchema, type StrategyParameterSchema } from './strategy-registry.schema.js';
 import { DEFAULT_EVOLUTION_CONFIG, evolutionConfigSchema, type EvolutionConfig, type EvolutionRunsQuery, type RunEvolutionInput } from './evolution.schema.js';
 
@@ -71,6 +72,17 @@ export async function runEvolution(userId: string, input: RunEvolutionInput, ipA
         reason: `EvolutionRun ${run.id}: score-based survivor mutation`, mutations: [mutation], mode: 'PAPER',
       }, ipAddress));
     }
+    const crossoverPairs = compatibleCrossoverPairs(survivorBots);
+    if (config.crossoverCount > 0 && crossoverPairs.length === 0) throw new ApiError(409, 'No compatible survivor pair exists for crossover.', 'EVOLUTION_CROSSOVER_UNAVAILABLE');
+    for (let index = 0; index < config.crossoverCount; index++) {
+      const [parentA, parentB, schema] = crossoverPairs[index % crossoverPairs.length]!;
+      const fields = Object.keys(schema.parameters);
+      children.push(await createCrossover(userId, {
+        parentABotId: parentA.id, parentBBotId: parentB.id, generationId: target.id,
+        name: `g${target.number}-x${index + 1}-${parentA.name}`.slice(0, 100),
+        inheritFromB: fields.slice(Math.ceil(fields.length / 2)), generatedFields: {},
+      }, ipAddress));
+    }
     for (let index = 0; index < config.researcherCandidateCount; index++) {
       const hypothesis = hypotheses[index % hypotheses.length]!;
       const compatible = survivorBots.filter((bot) => bot.strategyVersion?.strategy.family === hypothesis.targetStrategyFamily);
@@ -133,4 +145,18 @@ function suggestedKeyword(value: Prisma.JsonValue) {
   if (typeof type !== 'string') return undefined;
   if (type.includes('CONFIDENCE')) return 'confidence'; if (type.includes('COOLDOWN')) return 'cooldown'; if (type.includes('FUNDING')) return 'funding';
   return undefined;
+}
+
+function compatibleCrossoverPairs<T extends { id: string; strategyVersion: { parameterSchema: Prisma.JsonValue; strategy: { family: string } } | null }>(bots: T[]) {
+  const pairs: Array<[T, T, StrategyParameterSchema]> = [];
+  for (let left = 0; left < bots.length; left++) {
+    for (let right = left + 1; right < bots.length; right++) {
+      const parentA = bots[left]!; const parentB = bots[right]!;
+      if (!parentA.strategyVersion || !parentB.strategyVersion || parentA.strategyVersion.strategy.family !== parentB.strategyVersion.strategy.family) continue;
+      const schemaA = strategyParameterSchemaSchema.safeParse(parentA.strategyVersion.parameterSchema);
+      const schemaB = strategyParameterSchemaSchema.safeParse(parentB.strategyVersion.parameterSchema);
+      if (schemaA.success && schemaB.success && schemasAreCompatible(schemaA.data, schemaB.data)) pairs.push([parentA, parentB, schemaA.data]);
+    }
+  }
+  return pairs;
 }

@@ -9,9 +9,9 @@ function bot(index: number, score: number | null, totalTrades = 250, lifecycleSt
 
 describe('Evolution Engine', () => {
   it('defaults to a 100 PAPER-candidate population and validates count consistency', () => {
-    expect(DEFAULT_EVOLUTION_CONFIG).toMatchObject({ populationSize: 100, survivorCount: 20, mutationCount: 100, researcherCandidateCount: 0 });
-    expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 80, researcherCandidateCount: 20 }).success).toBe(true);
-    expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 79, researcherCandidateCount: 20 }).success).toBe(false);
+    expect(DEFAULT_EVOLUTION_CONFIG).toMatchObject({ populationSize: 100, survivorCount: 20, mutationCount: 100, crossoverCount: 0, researcherCandidateCount: 0 });
+    expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 60, crossoverCount: 20, researcherCandidateCount: 20 }).success).toBe(true);
+    expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 59, crossoverCount: 20, researcherCandidateCount: 20 }).success).toBe(false);
     expect(runEvolutionBodySchema.safeParse({ sourceGenerationId: 'generation-1', config: { minimumTrades: 300 } }).success).toBe(true);
   });
 

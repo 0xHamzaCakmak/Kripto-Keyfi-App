@@ -34,6 +34,7 @@ type FactoryCreateData = {
   creationMethod: BotCreationMethod;
   lifecycleStatus: AutonomousTradingStatus;
   mutation?: { reason: string; diff: Prisma.InputJsonObject };
+  crossover?: { parentBBotId: string; inheritedFields: Prisma.InputJsonObject; generatedFields: Prisma.InputJsonObject };
 };
 
 export type MutationFactoryInput = {
@@ -44,6 +45,11 @@ export type MutationFactoryInput = {
   reason: string;
   diff: Prisma.InputJsonObject;
   mode?: 'PAPER' | 'SHADOW';
+};
+
+export type CrossoverFactoryInput = {
+  name: string; parameters: Record<string, unknown>; generationId: string; parentBBotId: string;
+  inheritedFields: Prisma.InputJsonObject; generatedFields: Prisma.InputJsonObject;
 };
 
 export function mergeParameterVariant(
@@ -142,6 +148,24 @@ export async function createMutationFactoryBot(
   }, ipAddress);
 }
 
+export async function createCrossoverFactoryBot(
+  userId: string, parentABotId: string, input: CrossoverFactoryInput, ipAddress?: string,
+) {
+  const [parentA, parentB] = await Promise.all([ownedFactoryBot(userId, parentABotId), ownedFactoryBot(userId, input.parentBBotId)]);
+  if (parentA.id === parentB.id) throw new ApiError(400, 'Crossover parents must be different.', 'CROSSOVER_PARENTS_IDENTICAL');
+  if (parentA.exchangeAccountId !== parentB.exchangeAccountId || parentA.riskProfileId !== parentB.riskProfileId) {
+    throw new ApiError(409, 'Crossover parents must share account and risk profile.', 'CROSSOVER_EXECUTION_CONTEXT_MISMATCH');
+  }
+  return persistFactoryBot(userId, {
+    name: input.name, strategyVersionId: parentA.strategyVersionId!, exchangeAccountId: parentA.exchangeAccountId,
+    parameters: input.parameters, startingPaperBalance: parentA.startingPaperBalance.toString(),
+    symbols: jsonStringArray(parentA.symbols, parentA.symbol),
+    timeframe: parentA.timeframe ?? secondsToTimeframe(parentA.intervalSeconds), mode: 'PAPER', riskProfileId: parentA.riskProfileId!,
+    generationId: input.generationId, parentBotId: parentABotId, creationMethod: 'CROSSOVER', lifecycleStatus: 'CANDIDATE',
+    crossover: { parentBBotId: input.parentBBotId, inheritedFields: input.inheritedFields, generatedFields: input.generatedFields },
+  }, ipAddress);
+}
+
 export async function transitionFactoryBot(
   userId: string,
   id: string,
@@ -208,6 +232,12 @@ async function persistFactoryBot(userId: string, data: FactoryCreateData, ipAddr
           reason: data.mutation.reason, diff: data.mutation.diff,
         } });
       }
+      if (data.crossover && data.generationId && data.parentBotId) {
+        await tx.botCrossover.create({ data: {
+          parentABotId: data.parentBotId, parentBBotId: data.crossover.parentBBotId, childBotId: bot.id,
+          generationId: data.generationId, inheritedFields: data.crossover.inheritedFields, generatedFields: data.crossover.generatedFields,
+        } });
+      }
       await tx.tradingAuditLog.create({ data: {
         userId,
         exchangeAccountId: data.exchangeAccountId,
@@ -221,6 +251,7 @@ async function persistFactoryBot(userId: string, data: FactoryCreateData, ipAddr
           strategyVersionId: data.strategyVersionId,
           parentBotId: data.parentBotId ?? null,
           mutation: data.mutation ?? null,
+          crossover: data.crossover ?? null,
           liveTradingEnabled: false,
         },
         ...(ipAddress ? { ipAddress } : {}),

@@ -4,14 +4,15 @@ const evolutionConfigObject = z.object({
   populationSize: z.number().int().min(1).max(1000).default(100),
   survivorCount: z.number().int().min(1).max(500).default(20),
   mutationCount: z.number().int().min(0).max(1000).default(100),
+  crossoverCount: z.number().int().min(0).max(1000).default(0),
   researcherCandidateCount: z.number().int().min(0).max(1000).default(0),
   maxGenerations: z.number().int().min(1).max(1000).default(20),
   minimumTrades: z.number().int().min(1).max(1_000_000).default(200),
 }).strict();
 
 export const evolutionConfigSchema = evolutionConfigObject.superRefine((value, context) => {
-  if (value.mutationCount + value.researcherCandidateCount !== value.populationSize) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['populationSize'], message: 'Population size must equal mutation plus researcher candidates.' });
+  if (value.mutationCount + value.crossoverCount + value.researcherCandidateCount !== value.populationSize) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['populationSize'], message: 'Population size must equal mutation, crossover and researcher candidates.' });
   }
   if (value.survivorCount > value.populationSize) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['survivorCount'], message: 'Survivor count cannot exceed population size.' });

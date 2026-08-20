@@ -33,6 +33,8 @@ import { mutate, mutations } from '../ai-trading/mutation.controller.js';
 import { createMutationBodySchema, mutationsQuerySchema } from '../ai-trading/mutation.schema.js';
 import { evolve, runs as evolutionRuns } from '../ai-trading/evolution.controller.js';
 import { evolutionRunsQuerySchema, runEvolutionBodySchema } from '../ai-trading/evolution.schema.js';
+import { cross, crossovers } from '../ai-trading/crossover.controller.js';
+import { createCrossoverBodySchema, crossoversQuerySchema } from '../ai-trading/crossover.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -63,6 +65,8 @@ tradingRouter.get('/mutations', validateRequest({ query: mutationsQuerySchema })
 tradingRouter.post('/mutations', validateRequest({ body: createMutationBodySchema }), asyncHandler(mutate));
 tradingRouter.get('/evolution/runs', validateRequest({ query: evolutionRunsQuerySchema }), asyncHandler(evolutionRuns));
 tradingRouter.post('/evolution/run', validateRequest({ body: runEvolutionBodySchema }), asyncHandler(evolve));
+tradingRouter.get('/crossovers', validateRequest({ query: crossoversQuerySchema }), asyncHandler(crossovers));
+tradingRouter.post('/crossovers', validateRequest({ body: createCrossoverBodySchema }), asyncHandler(cross));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));
