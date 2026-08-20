@@ -25,7 +25,11 @@ const allowedActions: Record<BotAction, readonly TradingBotState[]> = {
 };
 
 export async function listBots(userId: string) {
-  return prisma.tradingBot.findMany({ where: { userId }, select: botSelect, orderBy: { createdAt: 'desc' } });
+  return prisma.tradingBot.findMany({
+    where: { userId, type: { in: ['SCALPING', 'GRID'] } },
+    select: botSelect,
+    orderBy: { createdAt: 'desc' },
+  });
 }
 
 export async function listBotDecisions(userId: string, botId: string) {
@@ -160,9 +164,12 @@ export async function emergencyStopBot(userId: string, botId: string, ipAddress?
 
 async function ownedBot(userId: string, id: string) {
   const bot = await prisma.tradingBot.findFirst({ where: { id, userId }, select: {
-    id: true, userId: true, exchangeAccountId: true, state: true, mode: true, version: true,
+    id: true, userId: true, exchangeAccountId: true, state: true, mode: true, version: true, type: true,
   } });
   if (!bot) throw new ApiError(404, 'Bot bulunamadı.', 'TRADING_BOT_NOT_FOUND');
+  if (bot.type === 'AUTONOMOUS') {
+    throw new ApiError(404, 'Bot bulunamadı.', 'TRADING_BOT_NOT_FOUND');
+  }
   return bot;
 }
 

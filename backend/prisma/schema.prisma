@@ -114,6 +114,13 @@ enum TradingRiskDecision {
 enum TradingBotType {
   SCALPING
   GRID
+  AUTONOMOUS
+}
+
+enum BotCreationMethod {
+  MANUAL
+  CLONE
+  PARAMETER_VARIANT
 }
 
 enum TradingBotMode {
@@ -1253,6 +1260,9 @@ model TradingBot {
   riskProfileId     String?
   lifecycleStatus   AutonomousTradingStatus @default(DRAFT)
   startingPaperBalance Decimal              @default(100) @db.Decimal(36, 18)
+  factoryCreationMethod BotCreationMethod?
+  symbols           Json?
+  timeframe         String?                 @db.VarChar(20)
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
 
@@ -1280,6 +1290,7 @@ model TradingBot {
   @@index([generationId, lifecycleStatus])
   @@index([parentBotId])
   @@index([riskProfileId])
+  @@index([userId, factoryCreationMethod, lifecycleStatus])
   @@map("trading_bots")
 }
 

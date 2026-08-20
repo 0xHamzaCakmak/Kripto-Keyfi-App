@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 2
-Current prompt: PROMPT 3
+Last completed prompt: PROMPT 3
+Current prompt: PROMPT 4
 Status: READY
 Updated at: 2026-08-20
 
@@ -12,16 +12,17 @@ Updated at: 2026-08-20
 - PROMPT 0 — COMPLETED
 - PROMPT 1 — COMPLETED
 - PROMPT 2 — COMPLETED
+- PROMPT 3 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 3 — Bot Factory
+PROMPT 4 — Paper Execution Engine
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 37 files, 156 tests
+- Backend unit/integration tests: PASS — 38 files, 162 tests
 - Backend typecheck: PASS
 - Backend build: PASS
 - Go unit/integration tests: PASS — `go test ./...`
@@ -35,10 +36,11 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Last Changes
 
-- Strategy Registry için create/list/detail/version oluşturma ve parameter validation servisleri eklendi.
-- Strategy family, allowed market, timeframe ve typed/ranged parameter schema doğrulaması eklendi.
-- Bilinmeyen, eksik, yanlış tipli, range/step dışı strategy parametreleri reddediliyor.
-- Admin/internal Strategy Registry endpointleri ve 5 yeni test eklendi.
+- Bot Factory manual creation, clone ve parameter variant servis/API sözleşmeleri eklendi.
+- BotInstance lineage, generation, symbols, timeframe, starting paper balance ve zorunlu risk profile bağları eklendi.
+- Autonomous bot lifecycle transition doğrulaması eklendi; LIVE geçişi açıkça kilitli tutuldu.
+- Legacy manual/grid bot listeleme ve action yolları autonomous factory botlarından ayrıldı.
+- Factory yolu scheduler, outbox, exchange adapter veya gerçek emir çağrısı üretmiyor.
 
 ## Safety State
 
@@ -51,9 +53,13 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Migration
 
-PROMPT 2: Migration yok.
+PROMPT 3: `20260820020000_add_bot_factory_fields`
 
-Son migration: `20260820010000_add_ai_trading_core_domain` (PROMPT 1)
+- Additive migration; `TradingBotType` enum'una `AUTONOMOUS` ekler.
+- Nullable factory creation method, symbols ve timeframe alanları ile additive index ekler.
+- Tablo/kolon silmez ve production verisine uygulanmadı.
+
+Önceki migration: `20260820010000_add_ai_trading_core_domain` (PROMPT 1)
 
 - Additive migration.
 - Mevcut tablo veya kolon silmiyor.
@@ -62,8 +68,8 @@ Son migration: `20260820010000_add_ai_trading_core_domain` (PROMPT 1)
 
 ## Open TODO
 
-- PROMPT 3 kapsamında güvenli varsayılan PAPER modlu Bot Factory oluşturmak.
-- Bot lifecycle transition kurallarını ve clone/parameter variant lineage desteğini eklemek.
+- PROMPT 4 kapsamında gerçekçi fakat tamamen izole Paper Execution Engine oluşturmak.
+- Fee, spread, slippage, funding ve fill muhasebesini deterministic testlerle doğrulamak.
 
 ## Known Risks for Next Prompts
 

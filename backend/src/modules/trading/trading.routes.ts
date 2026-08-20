@@ -15,6 +15,8 @@ import { bots, create as createBot, decisions as botDecisions, emergencyStop, gr
 import { botIdParamsSchema, createBotBodySchema, gridPlanPreviewBodySchema } from './bot.schema.js';
 import { create as createStrategy, createVersion as createStrategyVersion, strategies, strategy, validateParameters as validateStrategyParameters } from '../ai-trading/strategy-registry.controller.js';
 import { createStrategyBodySchema, createStrategyVersionBodySchema, strategyIdParamsSchema, validateStrategyParametersBodySchema } from '../ai-trading/strategy-registry.schema.js';
+import { clone as cloneFactoryBot, create as createFactoryBot, factoryBot, factoryBots, parameterVariant as createParameterVariant, transition as transitionFactoryBot } from '../ai-trading/bot-factory.controller.js';
+import { cloneFactoryBotBodySchema, createFactoryBotBodySchema, createParameterVariantBodySchema, factoryBotIdParamsSchema, transitionFactoryBotBodySchema } from '../ai-trading/bot-factory.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -24,6 +26,12 @@ tradingRouter.post('/strategies', validateRequest({ body: createStrategyBodySche
 tradingRouter.get('/strategies/:id', validateRequest({ params: strategyIdParamsSchema }), asyncHandler(strategy));
 tradingRouter.post('/strategies/:id/versions', validateRequest({ params: strategyIdParamsSchema, body: createStrategyVersionBodySchema }), asyncHandler(createStrategyVersion));
 tradingRouter.post('/strategies/:id/validate-parameters', validateRequest({ params: strategyIdParamsSchema, body: validateStrategyParametersBodySchema }), asyncHandler(validateStrategyParameters));
+tradingRouter.get('/bot-factory/bots', asyncHandler(factoryBots));
+tradingRouter.post('/bot-factory/bots', validateRequest({ body: createFactoryBotBodySchema }), asyncHandler(createFactoryBot));
+tradingRouter.get('/bot-factory/bots/:id', validateRequest({ params: factoryBotIdParamsSchema }), asyncHandler(factoryBot));
+tradingRouter.post('/bot-factory/bots/:id/clone', validateRequest({ params: factoryBotIdParamsSchema, body: cloneFactoryBotBodySchema }), asyncHandler(cloneFactoryBot));
+tradingRouter.post('/bot-factory/bots/:id/parameter-variant', validateRequest({ params: factoryBotIdParamsSchema, body: createParameterVariantBodySchema }), asyncHandler(createParameterVariant));
+tradingRouter.post('/bot-factory/bots/:id/transition', validateRequest({ params: factoryBotIdParamsSchema, body: transitionFactoryBotBodySchema }), asyncHandler(transitionFactoryBot));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));
