@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 const positiveDecimal = z.string().trim().regex(/^(?!0+(?:\.0+)?$)\d{1,18}(?:\.\d{1,18})?$/);
 const symbol = z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,40}$/);
+const ratio = z.string().trim().regex(/^(?:0(?:\.\d{1,6})?|1(?:\.0{1,6})?)$/);
 
 export const updateRiskProfileBodySchema = z.object({
   enabled: z.boolean().optional(),
@@ -14,6 +15,16 @@ export const updateRiskProfileBodySchema = z.object({
   minAvailableBalance: positiveDecimal.optional(),
   maxOrdersPerMinute: z.number().int().min(1).max(1000).optional(),
   maxDailyOrders: z.number().int().min(1).max(100_000).optional(),
+  maxRiskPerTradePct: ratio.optional(),
+  maxDailyLossPct: ratio.optional(),
+  maxWeeklyLossPct: ratio.optional(),
+  maxDrawdownPct: ratio.optional(),
+  maxSymbolOpenNotional: positiveDecimal.optional(),
+  minRiskRewardRatio: positiveDecimal.optional(),
+  stopLossRequired: z.literal(true).optional(),
+  marginModePolicy: z.enum(['ISOLATED_ONLY', 'ALLOW_CROSS']).optional(),
+  cooldownSeconds: z.number().int().min(0).max(604_800).optional(),
+  maxConsecutiveLosses: z.number().int().min(1).max(100).optional(),
   allowedSymbols: z.array(symbol).max(100).nullable().optional(),
   blockedSymbols: z.array(symbol).max(100).nullable().optional(),
 }).strict().superRefine((value, context) => {

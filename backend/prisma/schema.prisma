@@ -1564,6 +1564,16 @@ model TradingRiskProfile {
   maxOrdersPerMinute     Int      @default(10)
   maxDailyOrders         Int      @default(100)
   maxDailyLoss           Decimal? @db.Decimal(36, 18)
+  maxRiskPerTradePct     Decimal  @default(0.01) @db.Decimal(8, 6)
+  maxDailyLossPct        Decimal  @default(0.05) @db.Decimal(8, 6)
+  maxWeeklyLossPct       Decimal  @default(0.10) @db.Decimal(8, 6)
+  maxDrawdownPct         Decimal  @default(0.20) @db.Decimal(8, 6)
+  maxSymbolOpenNotional Decimal  @default(200) @db.Decimal(36, 18)
+  minRiskRewardRatio     Decimal  @default(1.5) @db.Decimal(12, 6)
+  stopLossRequired       Boolean  @default(true)
+  marginModePolicy       String   @default("ISOLATED_ONLY") @db.VarChar(30)
+  cooldownSeconds        Int      @default(60)
+  maxConsecutiveLosses   Int      @default(3)
   allowedSymbols         Json?
   blockedSymbols         Json?
   createdAt              DateTime @default(now())

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/autonomousrisk"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/bot"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
 )
@@ -183,16 +184,31 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, UTC_TIMESTAMP(3))`,
 	if err != nil {
 		return fmt.Errorf("read bot decision id: %w", err)
 	}
+	riskApproved := true
+	var autonomousRiskDecision *autonomousrisk.Decision
+	if instance.Type == "AUTONOMOUS" && decision.HypotheticalOrder != nil {
+		result, riskErr := evaluateAutonomousPaperRisk(ctx, tx, instance, decision, now)
+		if riskErr != nil {
+			return fmt.Errorf("evaluate autonomous paper risk: %w", riskErr)
+		}
+		riskApproved = result.Approved
+		autonomousRiskDecision = &result
+	}
 	safetyChecks, err := json.Marshal(map[string]any{
-		"mode": instance.Mode, "riskGatePassed": true, "submittedToExchange": false, "orderExecutionAllowed": false,
+		"mode": instance.Mode, "riskGatePassed": true, "autonomousRiskApproved": riskApproved,
+		"autonomousRiskDecision": autonomousRiskDecision, "submittedToExchange": false, "orderExecutionAllowed": false,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal bot signal safety checks: %w", err)
 	}
+	signalStatus := "ACCEPTED"
+	if !riskApproved {
+		signalStatus = "REJECTED"
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO trading_bot_signals
 (tradingBotId, userId, exchangeAccountId, decisionId, source, action, status, confidence, rationale, features, safetyChecks, decidedAt, createdAt)
-VALUES (?, ?, ?, ?, 'RULE_ENGINE', ?, 'ACCEPTED', ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
-		instance.ID, instance.UserID, instance.ExchangeAccountID, decisionID, signalAction(decision.Kind), signalConfidence(decision.Kind),
+VALUES (?, ?, ?, ?, 'RULE_ENGINE', ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
+		instance.ID, instance.UserID, instance.ExchangeAccountID, decisionID, signalAction(decision.Kind), signalStatus, signalConfidence(decision.Kind),
 		decision.Summary, metrics, safetyChecks, now)
 	if err != nil {
 		return fmt.Errorf("insert bot signal: %w", err)
@@ -225,7 +241,7 @@ VALUES (?, ?, ?, ?, 'AI_MODEL', ?, 'OBSERVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TI
 		}
 	}
 	var paperExecution *bot.PaperExecution
-	if instance.Mode == "PAPER" {
+	if instance.Mode == "PAPER" && riskApproved {
 		paperExecution, err = persistPaperCycle(ctx, tx, instance, decision, decisionID, now)
 		if err != nil {
 			return err
@@ -235,7 +251,8 @@ VALUES (?, ?, ?, ?, 'AI_MODEL', ?, 'OBSERVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TI
 		"botId": instance.ID, "mode": instance.Mode, "state": instance.State,
 		"decision": decision.Kind, "summary": decision.Summary, "markPrice": decision.MarkPrice,
 		"referencePrice": decision.ReferencePrice, "metrics": decision.Metrics, "hypotheticalOrder": decision.HypotheticalOrder,
-		"paperExecution": paperExecution, "signalSource": "RULE_ENGINE", "signalAction": signalAction(decision.Kind),
+		"paperExecution": paperExecution, "autonomousRiskDecision": autonomousRiskDecision,
+		"signalSource": "RULE_ENGINE", "signalAction": signalAction(decision.Kind),
 	})
 	if err != nil {
 		return fmt.Errorf("marshal bot decision: %w", err)

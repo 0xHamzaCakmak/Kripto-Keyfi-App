@@ -10,6 +10,9 @@ const riskSelect = {
   maxOrderNotional: true, maxInitialMargin: true, maxAccountOpenNotional: true,
   maxOpenPositions: true, maxSymbolPositions: true, maxLeverage: true, minAvailableBalance: true,
   maxOrdersPerMinute: true, maxDailyOrders: true, maxDailyLoss: true,
+  maxRiskPerTradePct: true, maxDailyLossPct: true, maxWeeklyLossPct: true, maxDrawdownPct: true,
+  maxSymbolOpenNotional: true, minRiskRewardRatio: true, stopLossRequired: true,
+  marginModePolicy: true, cooldownSeconds: true, maxConsecutiveLosses: true,
   allowedSymbols: true, blockedSymbols: true, createdAt: true, updatedAt: true,
 } satisfies Prisma.TradingRiskProfileSelect;
 
@@ -41,6 +44,16 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
   if (input.minAvailableBalance !== undefined) data.minAvailableBalance = input.minAvailableBalance;
   if (input.maxOrdersPerMinute !== undefined) data.maxOrdersPerMinute = input.maxOrdersPerMinute;
   if (input.maxDailyOrders !== undefined) data.maxDailyOrders = input.maxDailyOrders;
+  if (input.maxRiskPerTradePct !== undefined) data.maxRiskPerTradePct = input.maxRiskPerTradePct;
+  if (input.maxDailyLossPct !== undefined) data.maxDailyLossPct = input.maxDailyLossPct;
+  if (input.maxWeeklyLossPct !== undefined) data.maxWeeklyLossPct = input.maxWeeklyLossPct;
+  if (input.maxDrawdownPct !== undefined) data.maxDrawdownPct = input.maxDrawdownPct;
+  if (input.maxSymbolOpenNotional !== undefined) data.maxSymbolOpenNotional = input.maxSymbolOpenNotional;
+  if (input.minRiskRewardRatio !== undefined) data.minRiskRewardRatio = input.minRiskRewardRatio;
+  if (input.stopLossRequired !== undefined) data.stopLossRequired = input.stopLossRequired;
+  if (input.marginModePolicy !== undefined) data.marginModePolicy = input.marginModePolicy;
+  if (input.cooldownSeconds !== undefined) data.cooldownSeconds = input.cooldownSeconds;
+  if (input.maxConsecutiveLosses !== undefined) data.maxConsecutiveLosses = input.maxConsecutiveLosses;
   if (input.allowedSymbols !== undefined) data.allowedSymbols = input.allowedSymbols === null ? Prisma.DbNull : input.allowedSymbols;
   if (input.blockedSymbols !== undefined) data.blockedSymbols = input.blockedSymbols === null ? Prisma.DbNull : input.blockedSymbols;
 
@@ -110,8 +123,11 @@ export async function listRiskEvents(userId: string, exchangeAccountId: string) 
   return events.map((event) => ({ ...event, id: event.id.toString() }));
 }
 
-function serializeProfile<T extends { maxOrderNotional: Prisma.Decimal; maxInitialMargin: Prisma.Decimal; maxAccountOpenNotional: Prisma.Decimal; minAvailableBalance: Prisma.Decimal; maxDailyLoss: Prisma.Decimal | null }>(profile: T) {
+function serializeProfile<T extends { maxOrderNotional: Prisma.Decimal; maxInitialMargin: Prisma.Decimal; maxAccountOpenNotional: Prisma.Decimal; minAvailableBalance: Prisma.Decimal; maxDailyLoss: Prisma.Decimal | null; maxRiskPerTradePct: Prisma.Decimal; maxDailyLossPct: Prisma.Decimal; maxWeeklyLossPct: Prisma.Decimal; maxDrawdownPct: Prisma.Decimal; maxSymbolOpenNotional: Prisma.Decimal; minRiskRewardRatio: Prisma.Decimal }>(profile: T) {
   return { ...profile, maxOrderNotional: profile.maxOrderNotional.toString(), maxInitialMargin: profile.maxInitialMargin.toString(),
     maxAccountOpenNotional: profile.maxAccountOpenNotional.toString(), minAvailableBalance: profile.minAvailableBalance.toString(),
-    maxDailyLoss: profile.maxDailyLoss?.toString() ?? null };
+    maxDailyLoss: profile.maxDailyLoss?.toString() ?? null,
+    maxRiskPerTradePct: profile.maxRiskPerTradePct.toString(), maxDailyLossPct: profile.maxDailyLossPct.toString(),
+    maxWeeklyLossPct: profile.maxWeeklyLossPct.toString(), maxDrawdownPct: profile.maxDrawdownPct.toString(),
+    maxSymbolOpenNotional: profile.maxSymbolOpenNotional.toString(), minRiskRewardRatio: profile.minRiskRewardRatio.toString() };
 }

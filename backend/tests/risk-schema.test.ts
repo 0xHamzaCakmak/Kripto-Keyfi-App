@@ -6,6 +6,9 @@ describe('trading risk request validation', () => {
     const result = updateRiskProfileBodySchema.safeParse({
       maxOrderNotional: '75.5', maxInitialMargin: '25', maxOpenPositions: 5,
       maxSymbolPositions: 1, maxLeverage: 3, allowedSymbols: ['btcusdt'], blockedSymbols: ['DOGEUSDT'],
+      maxRiskPerTradePct: '0.01', maxDailyLossPct: '0.05', maxWeeklyLossPct: '0.1', maxDrawdownPct: '0.2',
+      maxSymbolOpenNotional: '200', minRiskRewardRatio: '1.5', stopLossRequired: true,
+      marginModePolicy: 'ISOLATED_ONLY', cooldownSeconds: 60, maxConsecutiveLosses: 3,
     });
     expect(result.success).toBe(true);
     if (result.success) expect(result.data.allowedSymbols).toEqual(['BTCUSDT']);
@@ -15,6 +18,8 @@ describe('trading risk request validation', () => {
     expect(updateRiskProfileBodySchema.safeParse({ maxOrderNotional: '0' }).success).toBe(false);
     expect(updateRiskProfileBodySchema.safeParse({ allowedSymbols: ['BTCUSDT'], blockedSymbols: ['BTCUSDT'] }).success).toBe(false);
     expect(updateRiskProfileBodySchema.safeParse({ maxOpenPositions: 2, maxSymbolPositions: 3 }).success).toBe(false);
+    expect(updateRiskProfileBodySchema.safeParse({ maxRiskPerTradePct: '1.01' }).success).toBe(false);
+    expect(updateRiskProfileBodySchema.safeParse({ stopLossRequired: false }).success).toBe(false);
   });
 
   it('requires a reason and account identity for account kill switch', () => {

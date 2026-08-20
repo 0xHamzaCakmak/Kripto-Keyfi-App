@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 17
-Current prompt: PROMPT 18
+Last completed prompt: PROMPT 18
+Current prompt: PROMPT 19
 Status: READY
 Updated at: 2026-08-21
 
@@ -27,16 +27,17 @@ Updated at: 2026-08-21
 - PROMPT 15 — COMPLETED
 - PROMPT 16 — COMPLETED
 - PROMPT 17 — COMPLETED
+- PROMPT 18 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 18 — Immutable Risk Engine
+PROMPT 19 — Portfolio Allocator
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 49 files, 209 tests
+- Backend unit/integration tests: PASS — 50 files, 213 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
@@ -81,9 +82,19 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Strategy Router: deterministic PAPER-only selection; regime score, risk state and recent health gates; normalized weights
 - Strategy Router audit: `AI_STRATEGY_ROUTED`; order submission and live activation paths absent
 - Strategy Router fail-closed states: unknown/stale regime, kill switch, disabled risk/account, disconnected account, stale health/metrics
+- Immutable autonomous Risk Engine: max trade risk, daily/weekly loss, drawdown, leverage, total/symbol exposure, concurrent positions, min R:R, required stop, margin policy, position size, cooldown, consecutive-loss lock and emergency stops
+- Autonomous PAPER enforcement: risk approval is evaluated in the same DB transaction before paper fill; rejected/blocked signals cannot create fills
+- Risk policy ownership: admin risk API only; Teacher/Researcher/Mutation/Evolution have no risk mutation or order submission path
+- Existing manual/grid/live execution behavior: unchanged; autonomous controls are scoped by `instance.Type == "AUTONOMOUS"`
 - Production exchange environment: NOT PRESENT
 
 ## Migration
+
+PROMPT 18: `20260821070000_add_autonomous_risk_limits`
+
+- Additive migration; yalnız `trading_risk_profiles` tablosuna güvenli default değerli autonomous risk policy kolonları ekler.
+- Tablo/kolon silmez, mevcut veriyi dönüştürmez veya silmez; mevcut manual/live Go risk değerlendirmesi bu yeni kolonlara bağlanmadı.
+- Production verisine uygulanmadı.
 
 PROMPT 17: migration yok.
 
@@ -145,8 +156,8 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 18 kapsamında merkezi, immutable ve bypass edilemeyen autonomous Risk Engine gereksinimlerini uygulamak.
-- Mevcut manual/grid/exchange davranışını bozmadan tüm autonomous execution girişlerini aynı fail-closed risk değerlendirmesine bağlamak.
+- PROMPT 19 kapsamında Champion botlar için deterministic, PAPER/SHADOW-only Portfolio Allocator geliştirmek.
+- Allocation çıktılarının immutable Risk Engine limitlerini aşmamasını ve live execution'a otomatik bağlanmamasını sağlamak.
 
 ## Known Risks for Next Prompts
 
