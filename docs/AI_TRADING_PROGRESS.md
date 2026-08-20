@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 6
-Current prompt: PROMPT 7
+Last completed prompt: PROMPT 7
+Current prompt: PROMPT 8
 Status: READY
 Updated at: 2026-08-20
 
@@ -16,16 +16,17 @@ Updated at: 2026-08-20
 - PROMPT 4 — COMPLETED
 - PROMPT 5 — COMPLETED
 - PROMPT 6 — COMPLETED
+- PROMPT 7 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 7 — Risk-Adjusted Bot Score
+PROMPT 8 — Market Regime Performance
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 38 files, 162 tests
+- Backend unit/integration tests: PASS — 39 files, 164 tests
 - Backend typecheck: PASS
 - Backend build: PASS
 - Go unit/integration tests: PASS — `go test ./...`
@@ -41,11 +42,11 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Last Changes
 
-- DB'den bağımsız Go `internal/performance` metrics servisi eklendi.
-- Balance/PnL/ROI, trade dağılımı, expectancy, R:R, profit factor, drawdown, Sharpe/Sortino/Calmar, holding, turnover, maliyet ve streak metrikleri eklendi.
-- Düşük örneklem ve sıfır denominator sonuçları `nil`; NaN/Infinity ve overflow fail-closed işleniyor.
-- Mevcut `bot_metrics` tablosuna immutable snapshot yazan service/MySQL store eklendi.
-- Deterministic metrik, edge-case ve snapshot persistence testleri eklendi.
+- Configurable positive quality ve negative risk/cost bileşenleriyle 0-100 Bot Score eklendi.
+- Düşük trade count için sample confidence penalty ve breakdown persistence eklendi.
+- Yüksek PnL fakat yüksek drawdown/liquidation/cost profillerinin stable botlardan düşük puanlanması test edildi.
+- Admin leaderboard, score breakdown ve global competition rank endpointleri eklendi.
+- Automatic Champion promotion eklenmedi.
 
 ## Safety State
 
@@ -58,7 +59,7 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Migration
 
-PROMPT 6: Migration yok; PROMPT 1'de eklenen `bot_metrics` tablosu kullanılıyor.
+PROMPT 7: Migration yok; mevcut `bot_metrics.score` ve JSON metrics alanları kullanılıyor.
 
 Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
@@ -75,8 +76,8 @@ Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
 ## Open TODO
 
-- PROMPT 7 kapsamında configurable risk-adjusted Bot Score hesaplamak.
-- PnL dışı kalite bileşenlerini ve penalty sınırlarını test etmek.
+- PROMPT 8 kapsamında Market Regime bazlı performans kırılımı oluşturmak.
+- Regime snapshot ilişkisi ve regime-aware metric sorgularını test etmek.
 
 ## Known Risks for Next Prompts
 

@@ -17,6 +17,8 @@ import { create as createStrategy, createVersion as createStrategyVersion, strat
 import { createStrategyBodySchema, createStrategyVersionBodySchema, strategyIdParamsSchema, validateStrategyParametersBodySchema } from '../ai-trading/strategy-registry.schema.js';
 import { clone as cloneFactoryBot, create as createFactoryBot, factoryBot, factoryBots, parameterVariant as createParameterVariant, transition as transitionFactoryBot } from '../ai-trading/bot-factory.controller.js';
 import { cloneFactoryBotBodySchema, createFactoryBotBodySchema, createParameterVariantBodySchema, factoryBotIdParamsSchema, transitionFactoryBotBodySchema } from '../ai-trading/bot-factory.schema.js';
+import { leaderboard, score as botScore } from '../ai-trading/bot-score.controller.js';
+import { leaderboardQuerySchema } from '../ai-trading/bot-score.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -32,6 +34,8 @@ tradingRouter.get('/bot-factory/bots/:id', validateRequest({ params: factoryBotI
 tradingRouter.post('/bot-factory/bots/:id/clone', validateRequest({ params: factoryBotIdParamsSchema, body: cloneFactoryBotBodySchema }), asyncHandler(cloneFactoryBot));
 tradingRouter.post('/bot-factory/bots/:id/parameter-variant', validateRequest({ params: factoryBotIdParamsSchema, body: createParameterVariantBodySchema }), asyncHandler(createParameterVariant));
 tradingRouter.post('/bot-factory/bots/:id/transition', validateRequest({ params: factoryBotIdParamsSchema, body: transitionFactoryBotBodySchema }), asyncHandler(transitionFactoryBot));
+tradingRouter.get('/leaderboard', validateRequest({ query: leaderboardQuerySchema }), asyncHandler(leaderboard));
+tradingRouter.get('/bot-factory/bots/:id/score', validateRequest({ params: factoryBotIdParamsSchema }), asyncHandler(botScore));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));
