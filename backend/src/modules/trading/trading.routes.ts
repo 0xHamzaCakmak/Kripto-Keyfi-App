@@ -31,6 +31,8 @@ import { hypotheses as researchHypotheses, research as runResearch } from '../ai
 import { researchHypothesesQuerySchema, runResearcherBodySchema } from '../ai-trading/researcher.schema.js';
 import { mutate, mutations } from '../ai-trading/mutation.controller.js';
 import { createMutationBodySchema, mutationsQuerySchema } from '../ai-trading/mutation.schema.js';
+import { evolve, runs as evolutionRuns } from '../ai-trading/evolution.controller.js';
+import { evolutionRunsQuerySchema, runEvolutionBodySchema } from '../ai-trading/evolution.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -59,6 +61,8 @@ tradingRouter.get('/research/hypotheses', validateRequest({ query: researchHypot
 tradingRouter.post('/research/run', validateRequest({ body: runResearcherBodySchema }), asyncHandler(runResearch));
 tradingRouter.get('/mutations', validateRequest({ query: mutationsQuerySchema }), asyncHandler(mutations));
 tradingRouter.post('/mutations', validateRequest({ body: createMutationBodySchema }), asyncHandler(mutate));
+tradingRouter.get('/evolution/runs', validateRequest({ query: evolutionRunsQuerySchema }), asyncHandler(evolutionRuns));
+tradingRouter.post('/evolution/run', validateRequest({ body: runEvolutionBodySchema }), asyncHandler(evolve));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));

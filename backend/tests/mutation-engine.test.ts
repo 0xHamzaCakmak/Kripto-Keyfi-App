@@ -38,7 +38,7 @@ describe('Mutation Engine', () => {
       mutations: [{ parameter: 'confidenceThreshold', operation: 'SET', value: 0.8 }], timeframe: '15M',
     });
     expect(parsed.success).toBe(true);
-    if (parsed.success) expect(parsed.data.timeframe).toBe('15m');
+    if (parsed.success) expect(parsed.data).toMatchObject({ timeframe: '15m', mode: 'PAPER' });
     expect(createMutationBodySchema.safeParse({ parentBotId: 'p', name: 'child', reason: 'reason', mutations: [] }).success).toBe(false);
   });
 

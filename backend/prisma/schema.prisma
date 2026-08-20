@@ -1356,6 +1356,8 @@ model Generation {
   createdBy User         @relation("generation_created_by", fields: [createdById], references: [id], onDelete: Restrict)
   bots      TradingBot[]
   mutations BotMutation[]
+  sourceEvolutionRuns EvolutionRun[] @relation("evolution_source_generation")
+  targetEvolutionRuns EvolutionRun[] @relation("evolution_target_generation")
 
   @@unique([createdById, number])
   @@index([status, createdAt])
@@ -1719,6 +1721,29 @@ model BotMutation {
   @@index([parentBotId, createdAt])
   @@index([generationId, createdAt])
   @@map("bot_mutations")
+}
+
+model EvolutionRun {
+  id                 String   @id @default(cuid())
+  createdById        String
+  sourceGenerationId String
+  targetGenerationId String?  @unique
+  status             String   @default("RUNNING") @db.VarChar(30)
+  config             Json
+  evidence           Json?
+  selection          Json?
+  errorMessage       String?  @db.VarChar(1000)
+  startedAt          DateTime @default(now())
+  completedAt        DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  sourceGeneration Generation  @relation("evolution_source_generation", fields: [sourceGenerationId], references: [id], onDelete: Restrict)
+  targetGeneration Generation? @relation("evolution_target_generation", fields: [targetGenerationId], references: [id], onDelete: SetNull)
+
+  @@index([createdById, status, createdAt])
+  @@index([sourceGenerationId, createdAt])
+  @@map("evolution_runs")
 }
 
 model ChampionCandidate {

@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 13
-Current prompt: PROMPT 14
+Last completed prompt: PROMPT 14
+Current prompt: PROMPT 15
 Status: READY
 Updated at: 2026-08-21
 
@@ -23,16 +23,17 @@ Updated at: 2026-08-21
 - PROMPT 11 — COMPLETED
 - PROMPT 12 — COMPLETED
 - PROMPT 13 — COMPLETED
+- PROMPT 14 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 14 — Evolution / Generations
+PROMPT 15 — Crossover
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 45 files, 189 tests
+- Backend unit/integration tests: PASS — 46 files, 194 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
@@ -44,15 +45,17 @@ Henüz başlanmadı.
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
 
-Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 189 testin tamamı geçmiştir.
+Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 194 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- Numeric parameter, threshold, cooldown ve position factor mutation işlemleri registry schema/range/step doğrulamasından geçiyor.
-- Timeframe varyantı yalnız strategy version'ın `supportedTimeframes` listesinde varsa kabul ediliyor.
-- Her mutation parent bot, yeni child bot, generation, reason ve structured diff ile `BotMutation` kaydına bağlanıyor.
-- Child bot atomik factory transaction'ında `CANDIDATE` ve PAPER/SHADOW olarak oluşturuluyor; testnet/demo account ve risk profile kontrolleri korunuyor.
-- Parent/Champion bot parametreleri yerinde güncellenmiyor; live execution veya outbox çağrısı eklenmedi.
+- Evolution config population size, survivor count, mutation count, researcher candidate count, max generations ve minimum evidence sınırlarını doğruluyor.
+- Fitness yalnız latest Bot Score/Performance evidence üzerinden hesaplanıyor; raw profit selection kullanılmıyor.
+- Minimum evidence'i geçen top performers survivor seçiliyor; zayıf PAPER/candidate botlar reject/archive ediliyor.
+- LIVE ve LIVE_ELIGIBLE botlar selection/mutation/archive kapsamından tamamen korunuyor; Champion bot yerinde güncellenmiyor.
+- Mutation ve Researcher hypothesis kaynaklı child botlar yeni generation içinde açıkça PAPER ve CANDIDATE doğuyor.
+- Evolution failure durumunda hedef generation FAILED olarak audit ediliyor; zayıf botlar child üretimi tamamlanmadan archive edilmiyor.
+- Her run source/target generation, config, evidence, selection ve sonucu ile `EvolutionRun` kaydına ve trading audit log'a yazılıyor.
 
 ## Safety State
 
@@ -65,11 +68,18 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Teacher: recommendation-only; automatic application disabled
 - Researcher: hypothesis-only; candidate/live creation disabled
 - Mutation Engine: child candidate only; parent immutable; PAPER/SHADOW only
+- Evolution: Bot Score fitness; PAPER children; LIVE/LIVE_ELIGIBLE protected
 - Production exchange environment: NOT PRESENT
 
 ## Migration
 
-PROMPT 13: `20260821040000_add_bot_mutations`
+PROMPT 14: `20260821050000_add_evolution_runs`
+
+- Additive migration; yalnız `evolution_runs` audit tablosunu, source/target generation foreign key'lerini ve indexleri oluşturur.
+- Mevcut tablo/kolon silmez, production verisini dönüştürmez veya silmez.
+- Production verisine uygulanmadı.
+
+Önceki migration: `20260821040000_add_bot_mutations` (PROMPT 13)
 
 - Additive migration; yalnız `bot_mutations` lineage tablosunu, foreign key'leri ve indexleri oluşturur.
 - Parent bot foreign key'i `RESTRICT`; mutation mevcut parent kaydı değiştirmez.
@@ -109,8 +119,8 @@ PROMPT 13: `20260821040000_add_bot_mutations`
 
 ## Open TODO
 
-- PROMPT 14 kapsamında Generation lifecycle ve population orchestration geliştirmek.
-- Evolution akışının yalnız candidate/paper-safe botlar üretmesini ve promotion/live adımlarını atlamamasını sağlamak.
+- PROMPT 15 kapsamında yalnız compatible strategy schema'ları arasında kontrollü Crossover geliştirmek.
+- Parent A/B, inherited/generated fields ve generation lineage bilgisini kaydetmek; child'ı PAPER/CANDIDATE tutmak.
 
 ## Known Risks for Next Prompts
 

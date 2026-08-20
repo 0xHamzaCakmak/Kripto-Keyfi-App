@@ -13,6 +13,7 @@ export const createMutationBodySchema = z.object({
   reason: z.string().trim().min(3).max(1000),
   mutations: z.array(mutationOperationSchema).min(1).max(10),
   timeframe: z.string().trim().toLowerCase().regex(/^\d{1,4}[mhdw]$/).max(20).optional(),
+  mode: z.enum(['PAPER', 'SHADOW']).default('PAPER'),
 }).strict().superRefine((value, context) => {
   if (new Set(value.mutations.map((item) => item.parameter)).size !== value.mutations.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['mutations'], message: 'Each parameter may be mutated once.' });

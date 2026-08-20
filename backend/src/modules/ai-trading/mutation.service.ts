@@ -51,6 +51,7 @@ export async function createMutation(userId: string, input: CreateMutationInput,
   return createMutationFactoryBot(userId, input.parentBotId, {
     name: input.name, parameters: result.parameters, generationId: input.generationId, reason: input.reason,
     diff: { parameters: result.diff, timeframe: input.timeframe && input.timeframe !== parent.timeframe ? { from: parent.timeframe, to: input.timeframe } : null },
+    mode: input.mode,
     ...(timeframe ? { timeframe } : {}),
   }, ipAddress);
 }

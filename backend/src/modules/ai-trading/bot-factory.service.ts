@@ -43,6 +43,7 @@ export type MutationFactoryInput = {
   generationId: string;
   reason: string;
   diff: Prisma.InputJsonObject;
+  mode?: 'PAPER' | 'SHADOW';
 };
 
 export function mergeParameterVariant(
@@ -135,7 +136,7 @@ export async function createMutationFactoryBot(
     parameters: input.parameters, startingPaperBalance: parent.startingPaperBalance.toString(),
     symbols: jsonStringArray(parent.symbols, parent.symbol),
     timeframe: input.timeframe ?? parent.timeframe ?? secondsToTimeframe(parent.intervalSeconds),
-    mode: parent.mode === 'SHADOW' ? 'SHADOW' : 'PAPER', riskProfileId: parent.riskProfileId!,
+    mode: input.mode ?? (parent.mode === 'SHADOW' ? 'SHADOW' : 'PAPER'), riskProfileId: parent.riskProfileId!,
     generationId: input.generationId, parentBotId, creationMethod: 'PARAMETER_VARIANT', lifecycleStatus: 'CANDIDATE',
     mutation: { reason: input.reason, diff: input.diff },
   }, ipAddress);
