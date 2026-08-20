@@ -25,6 +25,8 @@ import { champions, evaluateChampions } from '../ai-trading/champion-selection.c
 import { runChampionSelectionBodySchema } from '../ai-trading/champion-selection.schema.js';
 import { tradeMemory, tradeMemorySummary } from '../ai-trading/trade-memory.controller.js';
 import { tradeMemoryQuerySchema, tradeMemorySummaryQuerySchema } from '../ai-trading/trade-memory.schema.js';
+import { evaluate as evaluateTeacher, evaluations as teacherEvaluations } from '../ai-trading/teacher.controller.js';
+import { runTeacherBodySchema, teacherEvaluationsQuerySchema } from '../ai-trading/teacher.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -47,6 +49,8 @@ tradingRouter.get('/champions', asyncHandler(champions));
 tradingRouter.post('/champions/evaluate', validateRequest({ body: runChampionSelectionBodySchema }), asyncHandler(evaluateChampions));
 tradingRouter.get('/trade-memory', validateRequest({ query: tradeMemoryQuerySchema }), asyncHandler(tradeMemory));
 tradingRouter.get('/trade-memory/summary', validateRequest({ query: tradeMemorySummaryQuerySchema }), asyncHandler(tradeMemorySummary));
+tradingRouter.get('/teacher/evaluations', validateRequest({ query: teacherEvaluationsQuerySchema }), asyncHandler(teacherEvaluations));
+tradingRouter.post('/teacher/evaluate', validateRequest({ body: runTeacherBodySchema }), asyncHandler(evaluateTeacher));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));

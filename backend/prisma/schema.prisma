@@ -1280,6 +1280,7 @@ model TradingBot {
   paperTrades     PaperTrade[]
   metrics         BotMetric[]
   championCandidates ChampionCandidate[]
+  teacherEvaluations TeacherEvaluation[]
 
   @@unique([userId, name])
   @@index([userId, state])
@@ -1306,6 +1307,7 @@ model Strategy {
 
   createdBy User              @relation("strategy_created_by", fields: [createdById], references: [id], onDelete: Restrict)
   versions  StrategyVersion[]
+  teacherEvaluations TeacherEvaluation[]
 
   @@unique([createdById, name])
   @@index([family, status])
@@ -1657,6 +1659,27 @@ model BotMetric {
   @@index([marketRegimeSnapshotId, snapshotAt])
   @@index([score, snapshotAt])
   @@map("bot_metrics")
+}
+
+model TeacherEvaluation {
+  id                BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tradingBotId      String?
+  strategyId        String?
+  observation       String   @db.VarChar(1000)
+  severity          String   @db.VarChar(20)
+  confidence        Decimal  @db.Decimal(5, 4)
+  metricEvidence    Json
+  recommendedAction Json
+  analyzer          String   @default("RULE_BASED") @db.VarChar(40)
+  createdAt         DateTime @default(now())
+
+  tradingBot TradingBot? @relation(fields: [tradingBotId], references: [id], onDelete: SetNull)
+  strategy   Strategy?   @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+
+  @@index([tradingBotId, createdAt])
+  @@index([strategyId, createdAt])
+  @@index([severity, createdAt])
+  @@map("teacher_evaluations")
 }
 
 model ChampionCandidate {
