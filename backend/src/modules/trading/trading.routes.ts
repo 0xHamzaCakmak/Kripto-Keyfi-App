@@ -13,10 +13,17 @@ import { changeKillSwitch, changeRiskProfile, riskEvents, riskProfile } from './
 import { updateKillSwitchBodySchema, updateRiskProfileBodySchema } from './risk.schema.js';
 import { bots, create as createBot, decisions as botDecisions, emergencyStop, gridPlan, gridPlanPreview, paperPerformance, pause as pauseBot, resume as resumeBot, signals as botSignals, start as startBot, stop as stopBot, validate as validateBot } from './bot.controller.js';
 import { botIdParamsSchema, createBotBodySchema, gridPlanPreviewBodySchema } from './bot.schema.js';
+import { create as createStrategy, createVersion as createStrategyVersion, strategies, strategy, validateParameters as validateStrategyParameters } from '../ai-trading/strategy-registry.controller.js';
+import { createStrategyBodySchema, createStrategyVersionBodySchema, strategyIdParamsSchema, validateStrategyParametersBodySchema } from '../ai-trading/strategy-registry.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
 tradingRouter.get('/overview', asyncHandler(overview));
+tradingRouter.get('/strategies', asyncHandler(strategies));
+tradingRouter.post('/strategies', validateRequest({ body: createStrategyBodySchema }), asyncHandler(createStrategy));
+tradingRouter.get('/strategies/:id', validateRequest({ params: strategyIdParamsSchema }), asyncHandler(strategy));
+tradingRouter.post('/strategies/:id/versions', validateRequest({ params: strategyIdParamsSchema, body: createStrategyVersionBodySchema }), asyncHandler(createStrategyVersion));
+tradingRouter.post('/strategies/:id/validate-parameters', validateRequest({ params: strategyIdParamsSchema, body: validateStrategyParametersBodySchema }), asyncHandler(validateStrategyParameters));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));
