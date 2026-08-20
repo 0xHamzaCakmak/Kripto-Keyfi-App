@@ -20,6 +20,8 @@ import { adminCreatorRouter, creatorRouter } from './modules/videos/creator.rout
 import { favoriteChannelRouter } from './modules/videos/favorite.routes.js';
 import { videoReactionRouter } from './modules/videos/video-reaction.routes.js';
 import { adminYoutubeScoreRouter } from './modules/videos/youtube-score.routes.js';
+import { adminAnalyticsRouter, analyticsRouter } from './modules/analytics/analytics.routes.js';
+import { adminChatRouter, chatRouter } from './modules/chat/chat.routes.js';
 
 export function createApp() {
   const app = express();
@@ -60,6 +62,8 @@ export function createApp() {
   app.use(`${API_PREFIX}/favorites/channels`, favoriteChannelRouter);
   app.use(`${API_PREFIX}/video-reactions`, videoReactionRouter);
   app.use(`${API_PREFIX}/creator`, creatorRouter);
+  app.use(`${API_PREFIX}/analytics`, analyticsRouter);
+  app.use(`${API_PREFIX}/chat`, chatRouter);
   app.use(`${API_PREFIX}/admin`, adminRouter);
   app.use(`${API_PREFIX}/admin/kols`, adminKOLRouter);
   app.use(`${API_PREFIX}/admin/news`, adminNewsRouter);
@@ -67,6 +71,8 @@ export function createApp() {
   app.use(`${API_PREFIX}/admin/youtube-channels`, adminYoutubeChannelRouter);
   app.use(`${API_PREFIX}/admin/youtube-scores`, adminYoutubeScoreRouter);
   app.use(`${API_PREFIX}/admin/creator-applications`, adminCreatorRouter);
+  app.use(`${API_PREFIX}/admin/analytics`, adminAnalyticsRouter);
+  app.use(`${API_PREFIX}/admin/chat`, adminChatRouter);
   app.use('/r', kolTrackingRouter);
   app.use(notFound);
   app.use(errorHandler);

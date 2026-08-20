@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertTriangle,
@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { trackPlatformEvent } from '../services/platformAnalytics';
 
 const MOCK_WALLET_ADDRESS = '0x7Ea8...93bD';
 const MOCK_NETWORK = 'Ethereum';
@@ -71,6 +72,7 @@ function shorten(address: string) {
 }
 
 export default function TokenAirdropManager() {
+  useEffect(() => { trackPlatformEvent('airdrop_view'); }, []);
   const [contractAddress, setContractAddress] = useState('0x8Fb3c9a3dA6f6b6C10c4A7d3f8C9B7d3c4A9d2F1');
   const [fileName, setFileName] = useState('wallet-list.csv');
   const [fileSize, setFileSize] = useState('24.1 KB');

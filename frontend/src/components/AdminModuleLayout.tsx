@@ -18,6 +18,11 @@ import {
   Link2,
   RadioTower,
   UserRoundCheck,
+  BarChart3,
+  MonitorSmartphone,
+  Route,
+  FileText,
+  MessageSquare,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { cn } from '../lib/utils';
@@ -101,6 +106,19 @@ const videoTabs: AdminModuleTab[] = [
   { label: 'Creator Başvuruları', to: '/admin/videos/creators', icon: UserRoundCheck },
 ];
 
+const analyticsTabs: AdminModuleTab[] = [
+  { label: 'Genel Bakış', to: '/admin/analytics', icon: LayoutDashboard, end: true },
+  { label: 'Sayfalar', to: '/admin/analytics/pages', icon: FileText },
+  { label: 'Kaynaklar', to: '/admin/analytics/referrers', icon: RadioTower },
+  { label: 'Cihazlar', to: '/admin/analytics/devices', icon: MonitorSmartphone },
+  { label: 'Funnel', to: '/admin/analytics/funnel', icon: Route },
+  { label: 'İçerikler', to: '/admin/analytics/content', icon: BarChart3 },
+];
+
+const chatTabs: AdminModuleTab[] = [
+  { label: 'Oda Yönetimi', to: '/admin/chat', icon: MessageSquare, end: true },
+];
+
 export function TradingModuleLayout() {
   return <AdminModuleLayout eyebrow="Yönetim modülü" title="Trading Bot" description="Botlar, hesaplar, işlemler ve risk kontrolleri tek çalışma alanında." tabs={tradingTabs} />;
 }
@@ -111,4 +129,12 @@ export function KolModuleLayout() {
 
 export function VideoModuleLayout() {
   return <AdminModuleLayout eyebrow="İçerik modülü" title="Videolar" description="YouTube bağlantılarını yönetin ve Video Merkezi’nde yayınlayın." tabs={videoTabs} />;
+}
+
+export function AnalyticsModuleLayout() {
+  return <AdminModuleLayout eyebrow="Ölçüm modülü" title="Analytics" description="Trafik, kullanıcı dönüşümü ve içerik performansını tek çalışma alanında izleyin." tabs={analyticsTabs} />;
+}
+
+export function ChatModuleLayout() {
+  return <AdminModuleLayout eyebrow="Topluluk modülü" title="Sohbet" description="Canlı topluluk odalarını, görünürlüklerini ve mesaj saklama durumunu yönetin." tabs={chatTabs} />;
 }

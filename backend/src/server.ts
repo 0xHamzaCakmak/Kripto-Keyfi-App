@@ -1,4 +1,8 @@
 import type { Server } from 'node:http';
+import { createServer } from 'node:http';
+import type { ChatIo } from './modules/chat/chat.socket.js';
+import { attachChatSocket } from './modules/chat/chat.socket.js';
+import { scheduleChatReconciliation } from './modules/chat/chat.service.js';
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { prisma } from './database/prisma.js';
@@ -13,6 +17,8 @@ let shuttingDown = false;
 let stopNewsSync: (() => void) | undefined;
 let stopYoutubeSync: (() => void) | undefined;
 let stopYoutubeMetricsCollection: (() => void) | undefined;
+let stopChatReconciliation: (() => void) | undefined;
+let chatIo: ChatIo | undefined;
 
 async function shutdown(signal: string) {
   if (shuttingDown) return;
@@ -20,6 +26,8 @@ async function shutdown(signal: string) {
   stopNewsSync?.();
   stopYoutubeSync?.();
   stopYoutubeMetricsCollection?.();
+  stopChatReconciliation?.();
+  chatIo?.close();
   logger.info({ signal }, 'graceful shutdown started');
   server?.close((error) => {
     void prisma.$disconnect().then(() => {
@@ -38,8 +46,10 @@ async function start() {
     await ensureDefaultNewsCatalog();
     logger.info('database connection established');
     const app = createApp();
+    const httpServer = createServer(app);
+    chatIo = attachChatSocket(httpServer);
     server = await new Promise<Server>((resolve, reject) => {
-      const listener = app.listen(env.PORT);
+      const listener = httpServer.listen(env.PORT);
       listener.once('listening', () => resolve(listener));
       listener.once('error', reject);
     });
@@ -47,6 +57,7 @@ async function start() {
     if (env.NEWS_SYNC_ENABLED) stopNewsSync = scheduleNewsSync();
     if (env.YOUTUBE_SYNC_ENABLED) stopYoutubeSync = scheduleYoutubeSync();
     if (env.YOUTUBE_METRICS_ENABLED) stopYoutubeMetricsCollection = scheduleYoutubeMetricsCollection();
+    stopChatReconciliation = scheduleChatReconciliation();
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : undefined;
     logger.fatal({ err: error instanceof Error ? { name: error.name, message: error.message, ...(code ? { code } : {}) } : error }, code === 'EADDRINUSE' ? `Port ${env.PORT} is already in use; stop the existing backend process before starting another.` : 'application startup failed');

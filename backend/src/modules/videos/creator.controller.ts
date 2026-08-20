@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { success } from '../../utils/response.js';
 import { presentVideo, presentYoutubeChannel } from './video.presenter.js';
 import { addCreatorVideo, connectMyYoutubeChannel, getMyCreatorState, listCreatorApplications, reviewCreatorApplication, submitCreatorApplication } from './creator.service.js';
+import { trackEvent } from '../analytics/analytics-events.service.js';
 
 function presentCapability(capability: { status: string; appliedAt: Date; approvedAt: Date | null; rejectedAt: Date | null } | null) {
   return capability ? { status: capability.status.toLowerCase(), appliedAt: capability.appliedAt.toISOString(), approvedAt: capability.approvedAt?.toISOString() ?? null, rejectedAt: capability.rejectedAt?.toISOString() ?? null } : { status: 'not_applied', appliedAt: null, approvedAt: null, rejectedAt: null };
@@ -14,11 +15,13 @@ export async function myState(req: Request, res: Response) {
 
 export async function connectChannel(req: Request, res: Response) {
   const channel = await connectMyYoutubeChannel(req.user!.id, req.body.channel_url);
+  await trackEvent('youtube_connect', { userId: req.user!.id, sessionId: req.user!.sessionId, pagePath: '/profile', metadata: { channel_id: channel.id } });
   return success(res, { channel: presentYoutubeChannel(channel) }, 201);
 }
 
 export async function apply(req: Request, res: Response) {
   const application = await submitCreatorApplication(req.user!.id);
+  await trackEvent('creator_application', { userId: req.user!.id, sessionId: req.user!.sessionId, pagePath: '/profile' });
   return success(res, { application: presentCapability(application) }, 201);
 }
 

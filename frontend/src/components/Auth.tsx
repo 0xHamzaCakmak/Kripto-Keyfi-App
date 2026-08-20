@@ -5,6 +5,7 @@ import { cn } from '../lib/utils';
 import { getAuthState, loginWithEmail, loginWithGoogle, loginWithWalletMock, registerWithEmail } from '../services/authService';
 import { completeOnboarding } from '../services/onboardingService';
 import { connectWalletMock, WalletProvider } from '../services/walletService';
+import { trackPlatformEvent } from '../services/platformAnalytics';
 import { getApiErrorMessage } from '../services/apiClient';
 import { GoogleSignInButton } from './GoogleSignInButton';
 
@@ -235,7 +236,7 @@ export function ConnectWalletPage() {
   function connect(provider: WalletProvider) {
     setStatus('Bağlanıyor...');
     window.setTimeout(() => setStatus('İmza isteği mock olarak hazırlandı...'), 500);
-    connectWalletMock(provider).then(() => setStatus(`${provider} başarıyla bağlandı.`));
+    connectWalletMock(provider).then(() => { setStatus(`${provider} başarıyla bağlandı.`); trackPlatformEvent('wallet_connect', { provider }); });
   }
 
   return (

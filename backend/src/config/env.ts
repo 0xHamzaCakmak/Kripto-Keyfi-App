@@ -59,6 +59,11 @@ const envSchema = z.object({
   YOUTUBE_INITIAL_SYNC_LIMIT: z.coerce.number().int().min(1).max(50).default(20),
   YOUTUBE_METRICS_ENABLED: booleanString.default('true'),
   YOUTUBE_METRICS_INTERVAL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
+  UMAMI_API_URL: z.union([z.literal(''), z.string().url()]).default(''),
+  UMAMI_WEBSITE_ID: z.string().trim().default(''),
+  UMAMI_USERNAME: z.string().trim().default(''),
+  UMAMI_PASSWORD: z.string().default(''),
+  GA4_DASHBOARD_URL: z.union([z.literal(''), z.string().url()]).default('https://analytics.google.com/analytics/web/'),
 }).superRefine((value, context) => {
   if (value.NODE_ENV === 'production' && !value.COOKIE_SECURE) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['COOKIE_SECURE'], message: 'must be true in production' });
@@ -81,6 +86,11 @@ const envSchema = z.object({
   const configuredOkxValues = okxValues.filter(Boolean).length;
   if (configuredOkxValues > 0 && configuredOkxValues < okxValues.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['OKX_ONCHAIN_API_KEY'], message: 'all OKX OnchainOS credentials must be configured together' });
+  }
+  const umamiValues = [value.UMAMI_API_URL, value.UMAMI_WEBSITE_ID, value.UMAMI_USERNAME, value.UMAMI_PASSWORD];
+  const configuredUmamiValues = umamiValues.filter(Boolean).length;
+  if (configuredUmamiValues > 0 && configuredUmamiValues < umamiValues.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['UMAMI_API_URL'], message: 'all Umami variables must be configured together' });
   }
 });
 

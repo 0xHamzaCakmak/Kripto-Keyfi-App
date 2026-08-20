@@ -11,6 +11,7 @@ import {
   toggleVideoReaction, type PublicVideo, type PublicYoutubeChannel, type VideoCounts, type VideoPagination,
   type VideoReaction,
 } from '../services/videoService';
+import { trackPlatformEvent } from '../services/platformAnalytics';
 
 type VideoFilter = 'all' | 'long' | 'short';
 type CenterView = 'videos' | 'liked' | 'favorite-creators' | 'creators';
@@ -282,7 +283,7 @@ export default function VideoCenter() {
       ) : (
         <div className={view === 'favorite-creators' ? 'grid gap-6 lg:grid-cols-[250px_minmax(0,1fr)]' : ''}>
           {view === 'favorite-creators' && <aside className="h-fit rounded-[24px] border border-outline/10 bg-surface p-4 lg:sticky lg:top-24"><h2 className="px-2 font-headline text-lg font-bold text-white">Favori YouTuberlar</h2><div className="mt-3 space-y-1"><button type="button" onClick={() => setChannelId(undefined)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${channelId === undefined ? 'bg-primary text-background' : 'text-on-surface-variant hover:bg-surface-high hover:text-white'}`}><LayoutGrid size={17} /> Tüm Videolar</button>{favoriteChannels.map((channel) => <button key={channel.id} type="button" onClick={() => setChannelId(channel.id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${channelId === channel.id ? 'bg-primary/15 text-primary' : 'text-on-surface-variant hover:bg-surface-high hover:text-white'}`}><span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-highest"><ChannelAvatar name={channel.channelName} url={channel.avatarUrl} /></span><span className="min-w-0"><span className="block truncate text-sm font-bold">{channel.channelName}</span><span className="block text-[10px] opacity-70">{channel.videoCount} video</span></span></button>)}</div>{favoriteChannels.length === 0 && <p className="px-2 py-5 text-xs leading-5 text-on-surface-variant">Henüz favori YouTuber eklemediniz. Video kartlarındaki yıldız simgesini kullanabilirsiniz.</p>}</aside>}
-          <VideoResults loading={loading} error={error} videos={videos} heading={heading ?? 'Videolar'} pagination={pagination} page={page} favoriteIds={favoriteIds} reactions={reactions} creatorBusyId={creatorBusyId} reactionBusyId={reactionBusyId} onPage={setPage} onPlay={setSelectedVideo} onCreatorFavorite={(video) => video.channelId && void favoriteCreator(video.channelId)} onReaction={(videoId, reaction) => void reactToVideo(videoId, reaction)} />
+          <VideoResults loading={loading} error={error} videos={videos} heading={heading ?? 'Videolar'} pagination={pagination} page={page} favoriteIds={favoriteIds} reactions={reactions} creatorBusyId={creatorBusyId} reactionBusyId={reactionBusyId} onPage={setPage} onPlay={(video) => { setSelectedVideo(video); trackPlatformEvent('video_open', { video_id: video.id }); }} onCreatorFavorite={(video) => video.channelId && void favoriteCreator(video.channelId)} onReaction={(videoId, reaction) => void reactToVideo(videoId, reaction)} />
         </div>
       )}
 

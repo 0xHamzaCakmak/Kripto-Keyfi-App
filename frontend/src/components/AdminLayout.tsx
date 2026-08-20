@@ -11,6 +11,8 @@ import {
   UsersRound,
   Youtube,
   X,
+  BarChart3,
+  MessageSquare,
 } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -24,6 +26,8 @@ const primaryLinks = [
   { label: 'Videolar', to: '/admin/videos', icon: Youtube },
   { label: 'KOL Intelligence', to: '/admin/kol', icon: UsersRound },
   { label: 'Trading Bot', to: '/admin/trading', icon: Bot },
+  { label: 'Analytics', to: '/admin/analytics', icon: BarChart3 },
+  { label: 'Sohbet', to: '/admin/chat', icon: MessageSquare },
 ];
 
 export default function AdminLayout() {

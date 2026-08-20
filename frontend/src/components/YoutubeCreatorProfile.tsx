@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, ExternalLink, Link2, LoaderCircle, Send, Youtube } from 'lucide-react';
 import { getApiErrorMessage } from '../services/apiClient';
 import { addMyCreatorVideo, applyForYoutubeCreator, connectMyYoutubeChannel, getMyCreatorState, type MyCreatorState } from '../services/videoService';
+import { trackUmamiEvent } from '../services/platformAnalytics';
 
 const statusText = {
   not_applied: 'Başvuru yapılmadı', pending: 'Admin incelemesinde', approved: 'Onaylı Creator', rejected: 'Başvuru reddedildi', suspended: 'Creator hesabı askıda',
@@ -23,6 +24,7 @@ export default function YoutubeCreatorProfile() {
     event.preventDefault(); setBusy('channel'); setError(''); setNotice('');
     try {
       const channel = await connectMyYoutubeChannel(channelUrl);
+      trackUmamiEvent('youtube_connect', { channel_id: channel.id });
       setState((current) => ({ channel, application: current?.application ?? { status: 'not_applied', appliedAt: null, approvedAt: null, rejectedAt: null } }));
       setChannelUrl(''); setNotice('YouTube kanalınız bağlandı. Şimdi YouTuber başvurunuzu gönderebilirsiniz.');
     } catch (reason) { setError(getApiErrorMessage(reason, 'YouTube kanalı bağlanamadı.')); }
@@ -31,7 +33,7 @@ export default function YoutubeCreatorProfile() {
 
   async function apply() {
     setBusy('apply'); setError(''); setNotice('');
-    try { const application = await applyForYoutubeCreator(); setState((current) => current ? { ...current, application } : current); setNotice('YouTuber başvurunuz yönetim ekibine gönderildi.'); }
+    try { const application = await applyForYoutubeCreator(); trackUmamiEvent('creator_application'); setState((current) => current ? { ...current, application } : current); setNotice('YouTuber başvurunuz yönetim ekibine gönderildi.'); }
     catch (reason) { setError(getApiErrorMessage(reason, 'Başvuru gönderilemedi.')); }
     finally { setBusy(null); }
   }

@@ -413,6 +413,12 @@ enum CampaignEventType {
   CUSTOM_CONVERSION
 }
 
+enum ChatRoomStatus {
+  ACTIVE @map("active")
+  CLOSED @map("closed")
+  HIDDEN @map("hidden")
+}
+
 model User {
   id                        String                @id @default(cuid())
   email                     String                @unique
@@ -465,6 +471,10 @@ model User {
   favoriteYoutubeChannels   UserFavoriteChannel[]
   youtubeScoreWeightUpdates YoutubeScoreWeight[]  @relation("youtube_score_weight_updated_by")
   videoReactions            UserVideoReaction[]
+  analyticsEvents           AnalyticsEvent[]
+  chatRoomsCreated          ChatRoom[]            @relation("chat_room_creator")
+  chatMessages              ChatMessage[]
+  chatMessageReactions      ChatMessageReaction[]
   createdByAdmin            User?                 @relation("user_created_by_admin", fields: [createdByAdminId], references: [id], onDelete: SetNull)
   adminCreatedUsers         User[]                @relation("user_created_by_admin")
   adminAuditLogs            UserAdminAuditLog[]   @relation("user_admin_audit_actor")
@@ -472,6 +482,71 @@ model User {
 
   @@index([createdByAdminId])
   @@map("users")
+}
+
+model AnalyticsEvent {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  eventName String   @map("event_name") @db.VarChar(100)
+  userId    String?  @map("user_id")
+  sessionId String?  @map("session_id") @db.VarChar(64)
+  pagePath  String?  @map("page_path") @db.VarChar(500)
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([eventName, createdAt], map: "idx_event_date")
+  @@index([userId], map: "idx_user")
+  @@map("analytics_events")
+}
+
+model ChatRoom {
+  id           Int            @id @default(autoincrement())
+  slug         String         @unique @db.VarChar(100)
+  name         String         @db.VarChar(100)
+  category     String         @db.VarChar(50)
+  icon         String?        @db.VarChar(50)
+  displayOrder Int            @default(0) @map("display_order")
+  status       ChatRoomStatus @default(ACTIVE)
+  messageCount Int            @default(0) @map("message_count")
+  createdById  String?        @map("created_by")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  createdBy    User?          @relation("chat_room_creator", fields: [createdById], references: [id], onDelete: SetNull)
+  messages     ChatMessage[]
+
+  @@index([category, displayOrder])
+  @@index([createdById])
+  @@map("chat_rooms")
+}
+
+model ChatMessage {
+  id        BigInt                @id @default(autoincrement()) @db.UnsignedBigInt
+  roomId    Int                   @map("room_id")
+  userId    String                @map("user_id")
+  content   String                @db.Text
+  metadata  Json?
+  createdAt DateTime              @default(now()) @map("created_at")
+  room      ChatRoom              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions ChatMessageReaction[]
+
+  @@index([roomId, createdAt], map: "idx_room_created")
+  @@index([userId, createdAt])
+  @@map("chat_messages")
+}
+
+model ChatMessageReaction {
+  id           BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  messageId    BigInt      @map("message_id") @db.UnsignedBigInt
+  userId       String      @map("user_id")
+  reactionType String      @map("reaction_type") @db.VarChar(30)
+  createdAt    DateTime    @default(now()) @map("created_at")
+  message      ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, reactionType], map: "unique_reaction")
+  @@index([userId])
+  @@map("chat_message_reactions")
 }
 
 model UserAdminAuditLog {

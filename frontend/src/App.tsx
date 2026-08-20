@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Navigate, Routes, Route, useLocation } from 'r
 import { lazy, Suspense } from 'react';
 import Navbar from './components/Navbar';
 import PrivacyConsent from './components/PrivacyConsent';
+import AnalyticsTracker from './components/AnalyticsTracker';
 import Insights, { SavedNewsPage } from './components/Insights';
 import { AdminRoute, ProtectedRoute } from './auth/RouteGuards';
 
@@ -69,10 +70,18 @@ const KOLModuleOverview = lazy(() => import('./components/KOLModuleOverview'));
 const TradingModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.TradingModuleLayout })));
 const KolModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.KolModuleLayout })));
 const VideoModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.VideoModuleLayout })));
+const AnalyticsModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.AnalyticsModuleLayout })));
+const AnalyticsOverview = lazy(() => import('./components/AdminAnalytics'));
+const AnalyticsTraffic = lazy(() => import('./components/AdminAnalytics').then((module) => ({ default: module.AnalyticsTraffic })));
+const AnalyticsFunnel = lazy(() => import('./components/AdminAnalytics').then((module) => ({ default: module.AnalyticsFunnel })));
+const AnalyticsContent = lazy(() => import('./components/AdminAnalytics').then((module) => ({ default: module.AnalyticsContent })));
+const ChatModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.ChatModuleLayout })));
+const AdminChatRooms = lazy(() => import('./components/AdminChatRooms'));
 
 export default function App() {
   return (
     <Router>
+      <AnalyticsTracker />
       <div className="min-h-screen bg-background text-on-surface">
         <Navbar />
         <main className="mx-auto max-w-[1600px] px-4 pb-20 pt-24 sm:px-6 lg:px-8">
@@ -114,6 +123,17 @@ export default function App() {
               <Route path="kols" element={<Navigate to="/admin/kol/intelligence" replace />} />
               <Route path="kols/predictions" element={<Navigate to="/admin/kol/predictions" replace />} />
               <Route path="kols/campaigns" element={<Navigate to="/admin/kol/campaigns" replace />} />
+              <Route path="analytics" element={<AnalyticsModuleLayout />}>
+                <Route index element={<AnalyticsOverview />} />
+                <Route path="pages" element={<AnalyticsTraffic type="top-pages" />} />
+                <Route path="referrers" element={<AnalyticsTraffic type="referrers" />} />
+                <Route path="devices" element={<AnalyticsTraffic type="devices" />} />
+                <Route path="funnel" element={<AnalyticsFunnel />} />
+                <Route path="content" element={<AnalyticsContent />} />
+              </Route>
+              <Route path="chat" element={<ChatModuleLayout />}>
+                <Route index element={<AdminChatRooms />} />
+              </Route>
             </Route>
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -132,7 +152,7 @@ export default function App() {
             <Route path="/ecosystem/:section" element={<Ecosystem />} />
             <Route path="/ecosystem/:section/:tool" element={<Ecosystem />} />
             <Route path="/ecosystem/launchpad" element={<Ecosystem />} />
-            <Route path="/chat" element={<Chat />} />
+            <Route path="/chat" element={<ProtectedRoute feature="Sohbet"><Chat /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute feature="Profil"><UserProfilePage /></ProtectedRoute>} />
             <Route path="/kol-intelligence" element={<KOLExplorer />} />
             <Route path="/kol-intelligence/methodology" element={<ScoreMethodology />} />

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -10,6 +10,7 @@ import {
   Globe,
   Image as ImageIcon,
   Link2,
+  LoaderCircle,
   Menu,
   MessageSquare,
   Paperclip,
@@ -32,7 +33,9 @@ import { cn } from '../lib/utils';
 import { getCoinBySymbol, getMentionedCoins, MOCK_COINS } from '../services/coinService';
 import { askKriptoKeyfiAi } from '../services/aiService';
 import { getWhaleFeed } from '../services/whaleService';
-import { getChatChannels, getChatMessages, getChatNews, getChatUsers } from '../services/chatService';
+import { getChatMessages, getChatNews, getChatRooms } from '../services/chatService';
+import { disconnectChatSocket, getChatSocket, joinChatRoom, leaveChatRoom, mapSocketMessage, mapSocketReactions, mapSocketUsers, reactToChatMessage, sendChatMessage } from '../services/chatSocket';
+import { getApiErrorMessage } from '../services/apiClient';
 
 const reactionOptions = [
   { id: 'useful', label: 'Faydalı' },
@@ -110,17 +113,18 @@ function EmptyState({ label }: { label: string }) {
 }
 
 function ChatSidebar({
+  channels,
   activeChannel,
   setActiveChannel,
   mobileOpen,
   setMobileOpen
 }: {
+  channels: import('../types').ChatChannel[];
   activeChannel: string;
   setActiveChannel: (id: string) => void;
   mobileOpen: boolean;
   setMobileOpen: (open: boolean) => void;
 }) {
-  const channels = getChatChannels();
   const grouped = channels.reduce<Record<string, typeof channels>>((groups, channel) => {
     groups[channel.group] = [...(groups[channel.group] || []), channel];
     return groups;
@@ -323,7 +327,7 @@ function ChatMessage({
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-bold text-white">{user.name}</span>
           <UserBadge user={user} />
-          <span className="text-[10px] font-medium text-on-surface-variant">{message.createdAt}</span>
+          <span className="text-[10px] font-medium text-on-surface-variant">{Number.isNaN(Date.parse(message.createdAt)) ? message.createdAt : new Intl.DateTimeFormat('tr-TR', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.createdAt))}</span>
         </div>
         <p className="whitespace-pre-wrap text-sm leading-7 text-on-surface/90">{message.text}</p>
         {message.code && (
@@ -361,14 +365,14 @@ function ChatMessageList({
   return (
     <div className="space-y-8">
       {messages.map((message) => {
-        const user = users.find((item) => item.id === message.userId) || users[0];
+        const user = message.user || users.find((item) => item.id === message.userId) || { id: message.userId, name: 'Kullanıcı', avatar: `https://api.dicebear.com/9.x/initials/svg?seed=user`, role: 'Yeni Üye', badge: '', isOnline: false, reputation: 0 };
         return <ChatMessage key={message.id} message={message} user={user} onReact={onReact} />;
       })}
     </div>
   );
 }
 
-function MessageInput({ onSend }: { onSend: (text: string) => void }) {
+function MessageInput({ onSend, disabled, sending }: { onSend: (text: string) => Promise<void>; disabled?: boolean; sending?: boolean }) {
   const [text, setText] = useState('');
   const coinTerm = text.match(/\$[A-Za-z]*$/)?.[0]?.replace('$', '').toUpperCase();
   const showCoins = text.endsWith('$') || Boolean(coinTerm);
@@ -392,10 +396,12 @@ function MessageInput({ onSend }: { onSend: (text: string) => void }) {
           </div>
         )}
         <textarea
+          disabled={disabled || sending}
+          maxLength={2000}
           value={text}
           onChange={(event) => setText(event.target.value)}
           className="h-14 w-full resize-none border-none bg-transparent text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:ring-0 no-scrollbar"
-          placeholder="Mesaj yaz... $ ile coin ara, link veya wallet adresi paylaş"
+          placeholder={disabled ? 'Bu oda salt okunur durumda' : 'Mesaj yaz... $ ile coin ara, link veya wallet adresi paylaş'}
         />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-1 text-on-surface-variant">
@@ -407,14 +413,14 @@ function MessageInput({ onSend }: { onSend: (text: string) => void }) {
           </div>
           <button
             type="button"
+            disabled={disabled || sending}
             onClick={() => {
               if (!text.trim()) return;
-              onSend(text);
-              setText('');
+              void onSend(text).then(() => setText('')).catch(() => undefined);
             }}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-primary to-primary-dim px-6 py-2 text-sm font-bold text-background hover:shadow-[0_0_20px_rgba(141,172,255,0.4)]"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-primary to-primary-dim px-6 py-2 text-sm font-bold text-background hover:shadow-[0_0_20px_rgba(141,172,255,0.4)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Gönder <Send size={14} />
+            {sending ? 'Gönderiliyor' : 'Gönder'} {sending ? <LoaderCircle className="animate-spin" size={14}/> : <Send size={14} />}
           </button>
         </div>
       </div>
@@ -572,38 +578,86 @@ function ChatRightPanel({ users }: { users: ChatUser[] }) {
 }
 
 export default function Chat() {
-  const users = getChatUsers();
-  const [activeChannel, setActiveChannel] = useState('global');
+  const [channels, setChannels] = useState<import('../types').ChatChannel[]>([]);
+  const [activeChannel, setActiveChannel] = useState('');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessageType[]>(() => getChatMessages('global'));
+  const [messages, setMessages] = useState<ChatMessageType[]>([]);
+  const [users, setUsers] = useState<ChatUser[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [connected, setConnected] = useState(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
 
-  const activeChannelName = getChatChannels().find((channel) => channel.id === activeChannel)?.name || 'Global Stream';
+  const activeRoom = channels.find((channel) => channel.id === activeChannel);
+  const activeChannelName = activeRoom?.name || 'Sohbet';
   const visibleMessages = useMemo(() => messages.filter((message) => message.channelId === activeChannel), [messages, activeChannel]);
 
+  useEffect(() => {
+    let active = true;
+    void getChatRooms().then((rooms) => {
+      if (!active) return;
+      setChannels(rooms);
+      setActiveChannel((current) => current || rooms[0]?.id || '');
+    }).catch((reason) => { if (active) setError(getApiErrorMessage(reason, 'Sohbet odaları yüklenemedi.')); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => () => disconnectChatSocket(), []);
+
+  useEffect(() => {
+    if (!activeChannel) return;
+    let active = true;
+    const socket = getChatSocket();
+    const onConnect = () => { setConnected(true); void joinChatRoom(activeChannel).catch((reason) => setError(reason instanceof Error ? reason.message : 'Odaya katılınamadı.')); };
+    const onDisconnect = () => setConnected(false);
+    const onMessage = (payload: Parameters<typeof mapSocketMessage>[0]) => {
+      const message = mapSocketMessage(payload);
+      if (!active || message.channelId !== activeChannel) return;
+      setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      setChannels((current) => current.map((room) => room.id === activeChannel ? { ...room, messageCount: (room.messageCount ?? 0) + 1 } : room));
+    };
+    const onReaction = (payload: { messageId: string; reactions: Array<{ type: string; count: number }> }) => {
+      if (!active) return;
+      setMessages((current) => current.map((message) => message.id === payload.messageId ? { ...message, reactions: mapSocketReactions(payload.reactions) } : message));
+    };
+    const onPresence = (payload: { roomSlug: string; users: Parameters<typeof mapSocketUsers>[0] }) => {
+      if (active && payload.roomSlug === activeChannel) setUsers(mapSocketUsers(payload.users));
+    };
+    setLoading(true); setError(''); setMessages([]); setUsers([]);
+    void getChatMessages(activeChannel).then((result) => { if (active) { setMessages(result.messages); setNextCursor(result.nextCursor); } }).catch((reason) => { if (active) setError(getApiErrorMessage(reason, 'Mesaj geçmişi yüklenemedi.')); }).finally(() => { if (active) setLoading(false); });
+    socket.on('connect', onConnect); socket.on('disconnect', onDisconnect); socket.on('new_message', onMessage); socket.on('reaction_updated', onReaction); socket.on('presence_update', onPresence);
+    if (socket.connected) onConnect();
+    return () => {
+      active = false;
+      socket.off('connect', onConnect); socket.off('disconnect', onDisconnect); socket.off('new_message', onMessage); socket.off('reaction_updated', onReaction); socket.off('presence_update', onPresence);
+      if (socket.connected) void leaveChatRoom(activeChannel).catch(() => undefined);
+    };
+  }, [activeChannel]);
+
+  useEffect(() => { if (!loading) endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [loading, messages.length]);
+
   function handleReact(messageId: string, reactionId: string) {
-    const reactionLabel = reactionOptions.find((reaction) => reaction.id === reactionId)?.label || reactionId;
-    setMessages((current) => current.map((message) => {
-      if (message.id !== messageId) return message;
-      const existing = message.reactions.find((reaction) => reaction.id === reactionId);
-      const reactions = existing
-        ? message.reactions.map((reaction) => reaction.id === reactionId ? { ...reaction, count: reaction.count + 1 } : reaction)
-        : [...message.reactions, { id: reactionId, label: reactionLabel, count: 1 }];
-      return { ...message, reactions };
-    }));
+    void reactToChatMessage(messageId, reactionId).catch((reason) => setError(reason instanceof Error ? reason.message : 'Reaksiyon güncellenemedi.'));
   }
 
-  function handleSend(text: string) {
-    setMessages((current) => [
-      ...current,
-      {
-        id: `local-${Date.now()}`,
-        userId: 'u6',
-        channelId: activeChannel,
-        text,
-        createdAt: 'Şimdi',
-        reactions: []
-      }
-    ]);
+  async function handleSend(text: string) {
+    if (!activeChannel || sending) return;
+    setSending(true); setError('');
+    try { await sendChatMessage(activeChannel, text); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Mesaj gönderilemedi.'); throw reason; }
+    finally { setSending(false); }
+  }
+
+  function loadOlder() {
+    if (!activeChannel || !nextCursor || loadingOlder) return;
+    setLoadingOlder(true);
+    void getChatMessages(activeChannel, nextCursor).then((result) => {
+      setMessages((current) => [...result.messages.filter((item) => !current.some((existing) => existing.id === item.id)), ...current]);
+      setNextCursor(result.nextCursor);
+    }).catch((reason) => setError(getApiErrorMessage(reason, 'Eski mesajlar yüklenemedi.'))).finally(() => setLoadingOlder(false));
   }
 
   return (
@@ -611,7 +665,7 @@ export default function Chat() {
       {mobileSidebarOpen && (
         <button type="button" aria-label="Close channel drawer" onClick={() => setMobileSidebarOpen(false)} className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm xl:hidden" />
       )}
-      <ChatSidebar activeChannel={activeChannel} setActiveChannel={setActiveChannel} mobileOpen={mobileSidebarOpen} setMobileOpen={setMobileSidebarOpen} />
+      <ChatSidebar channels={channels} activeChannel={activeChannel} setActiveChannel={setActiveChannel} mobileOpen={mobileSidebarOpen} setMobileOpen={setMobileSidebarOpen} />
 
       <section className="flex min-h-[720px] flex-col overflow-hidden xl:min-h-0">
         <header className="flex h-16 items-center justify-between border-b border-outline/5 bg-surface-high/10 px-4 md:px-6">
@@ -622,7 +676,7 @@ export default function Chat() {
             <Globe className="text-primary" size={20} />
             <div>
               <h1 className="text-sm font-bold text-white">{activeChannelName}</h1>
-              <p className="text-[10px] font-medium text-secondary">Akıllı topluluk merkezi / {visibleMessages.length} mesaj</p>
+              <p className="text-[10px] font-medium text-secondary">{connected ? 'Canlı bağlantı' : 'Yeniden bağlanıyor'} / {activeRoom?.messageCount ?? visibleMessages.length} mesaj</p>
             </div>
           </div>
           <div className="flex items-center gap-4 text-on-surface-variant">
@@ -633,7 +687,9 @@ export default function Chat() {
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6 no-scrollbar">
-          <ChatMessageList messages={visibleMessages} users={users} onReact={handleReact} />
+          {error && <div className="mb-4 flex items-center gap-2 rounded-2xl border border-error/20 bg-error/10 p-3 text-sm text-error"><AlertTriangle size={17}/>{error}</div>}
+          {nextCursor && <div className="mb-6 text-center"><button type="button" disabled={loadingOlder} onClick={loadOlder} className="rounded-xl bg-surface-high px-4 py-2 text-xs font-bold text-primary disabled:opacity-50">{loadingOlder ? 'Yükleniyor…' : 'Daha eski mesajları yükle'}</button></div>}
+          {loading ? <div className="space-y-5">{[1,2,3].map((item) => <div key={item} className="h-20 animate-pulse rounded-2xl bg-surface-high/60"/>)}</div> : <ChatMessageList messages={visibleMessages} users={users} onReact={handleReact} />}
           <div className="mt-8 flex items-center gap-4 py-2 opacity-60">
             <div className="h-px flex-1 bg-outline/30" />
             <span className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
@@ -641,9 +697,10 @@ export default function Chat() {
             </span>
             <div className="h-px flex-1 bg-outline/30" />
           </div>
+          <div ref={endRef}/>
         </div>
 
-        <MessageInput onSend={handleSend} />
+        <MessageInput onSend={handleSend} sending={sending} disabled={!connected || activeRoom?.status === 'closed'} />
       </section>
 
       <ChatRightPanel users={users} />

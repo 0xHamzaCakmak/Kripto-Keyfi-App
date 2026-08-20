@@ -9,6 +9,7 @@ import type { AuthResult, PublicUser, RequestMetadata } from './auth.types.js';
 import type { GoogleInput, LoginInput, RegisterInput } from './auth.schema.js';
 import { verifyGoogleCredential } from './google-identity.js';
 import { publicUserSelect, serializePublicUser, type SelectedPublicUser } from '../users/user.presenter.js';
+import { trackEvent } from '../analytics/analytics-events.service.js';
 
 const sessionExpiry = () => new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
 
@@ -27,7 +28,9 @@ export async function login(input: LoginInput, metadata: RequestMetadata): Promi
   }
   if (user.status !== 'ACTIVE') throw new ApiError(403, 'This account is not active', 'ACCOUNT_INACTIVE');
 
-  return createSession(user, metadata);
+  const result = await createSession(user, metadata);
+  await trackEvent('user_login', { userId: user.id });
+  return result;
 }
 
 export async function register(input: RegisterInput, metadata: RequestMetadata): Promise<AuthResult & { refreshToken: string }> {
@@ -48,7 +51,9 @@ export async function register(input: RegisterInput, metadata: RequestMetadata):
     }
     throw error;
   }
-  return createSession(user, metadata);
+  const result = await createSession(user, metadata);
+  await trackEvent('user_register', { userId: user.id });
+  return result;
 }
 
 export async function google(input: GoogleInput, metadata: RequestMetadata): Promise<AuthResult & { refreshToken: string }> {
@@ -59,7 +64,9 @@ export async function google(input: GoogleInput, metadata: RequestMetadata): Pro
   });
   if (linked) {
     if (linked.user.status !== UserStatus.ACTIVE) throw new ApiError(403, 'Bu hesap aktif değil.', 'ACCOUNT_INACTIVE');
-    return createSession(linked.user, metadata);
+    const result = await createSession(linked.user, metadata);
+    await trackEvent('user_login', { userId: linked.user.id });
+    return result;
   }
 
   const existing = await prisma.user.findUnique({ where: { email: identity.email }, select: publicUserSelect });
@@ -85,7 +92,9 @@ export async function google(input: GoogleInput, metadata: RequestMetadata): Pro
       identities: { create: { provider: AuthProvider.GOOGLE, providerSubject: identity.subject, emailAtLink: identity.email } },
     }, select: publicUserSelect }));
   }
-  return createSession(user, metadata);
+  const result = await createSession(user, metadata);
+  await trackEvent(existing ? 'user_login' : 'user_register', { userId: user.id });
+  return result;
 }
 
 export async function refresh(rawToken: string, metadata: RequestMetadata): Promise<AuthResult & { refreshToken: string }> {

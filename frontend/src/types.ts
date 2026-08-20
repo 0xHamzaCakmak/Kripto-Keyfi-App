@@ -248,6 +248,7 @@ export interface ChatMessage {
   text: string;
   createdAt: string;
   reactions: ChatReaction[];
+  user?: ChatUser;
   code?: string;
 }
 
@@ -257,6 +258,8 @@ export interface ChatChannel {
   group: string;
   online?: number;
   unread?: number;
+  status?: 'active' | 'closed' | 'hidden';
+  messageCount?: number;
 }
 
 export interface WhaleEvent {

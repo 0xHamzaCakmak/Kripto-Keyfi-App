@@ -1,5 +1,6 @@
 import { api, setAccessToken } from './apiClient';
 import { getCurrentUser } from './userService';
+import { trackUmamiEvent } from './platformAnalytics';
 
 export type UserRole = 'ADMIN' | 'USER';
 export type AccountStatus = 'ACTIVE' | 'PENDING' | 'PASSIVE' | 'SUSPENDED' | 'DELETED';
@@ -109,6 +110,7 @@ export async function loginWithEmail(email: string, password: string) {
   const response = await api.post<{ data: { accessToken: string; user: ApiUser } }>('/auth/login', { email, password });
   setAccessToken(response.data.data.accessToken);
   markBackendSession(true);
+  trackUmamiEvent('user_login');
   return publish(fromApiUser(response.data.data.user))!;
 }
 
@@ -119,6 +121,7 @@ export async function registerWithEmail(data: {
   const response = await api.post<{ data: { accessToken: string; user: ApiUser } }>('/auth/register', data);
   setAccessToken(response.data.data.accessToken);
   markBackendSession(true);
+  trackUmamiEvent('user_register');
   return publish(fromApiUser(response.data.data.user))!;
 }
 
@@ -128,6 +131,7 @@ export async function loginWithGoogle(credential: string, termsAccepted = false,
   });
   setAccessToken(response.data.data.accessToken);
   markBackendSession(true);
+  trackUmamiEvent('user_login');
   return publish(fromApiUser(response.data.data.user))!;
 }
 

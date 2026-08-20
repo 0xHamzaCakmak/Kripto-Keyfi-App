@@ -6,6 +6,7 @@ import { getNewsBySlug, saveNews, unsaveNews } from '../services/newsService';
 import { applyNewsSeo } from '../lib/newsSeo';
 import NewsArtwork from './NewsArtwork';
 import { trackNewsEvent } from '../services/newsAnalytics';
+import { trackPlatformEvent } from '../services/platformAnalytics';
 
 const formatDate = (value: string) => new Intl.DateTimeFormat('tr-TR', { dateStyle: 'long', timeStyle: 'short' }).format(new Date(value));
 const slugify = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('tr-TR').replace(/ı/g,'i').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
@@ -45,6 +46,7 @@ export default function ArticleDetail() {
       setPopular(data.popular);
       setSaved(data.saved);
       applyNewsSeo(data.article);
+      trackPlatformEvent('news_open', { news_id: data.article.id, slug: data.article.slug });
     }).catch(() => setError('Haber bulunamadı veya şu anda erişilemiyor.'));
   }, [slug]);
 
@@ -60,6 +62,7 @@ export default function ArticleDetail() {
       const durationMs = Math.round(performance.now() - readingStartedAt.current);
       if (!summaryViewed.current && summarySeen && durationMs >= 10_000 && maximumScrollDepth.current >= 35) {
         summaryViewed.current = true;
+        trackPlatformEvent('article_read', { article_id: article.id, slug: article.slug });
         trackNewsEvent({ type: 'NEWS_SUMMARY_VIEW', articleId: article.id, sourceSlug: article.source?.slug, category: article.category ?? undefined, summaryWordCount: article.aiSummary?.wordCount ?? article.excerpt?.split(/\s+/).filter(Boolean).length ?? 0, durationMs, scrollDepth: maximumScrollDepth.current });
       }
     }, 1_000);
