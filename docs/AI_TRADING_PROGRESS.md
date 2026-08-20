@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 4
-Current prompt: PROMPT 5
+Last completed prompt: PROMPT 5
+Current prompt: PROMPT 6
 Status: READY
 Updated at: 2026-08-20
 
@@ -14,10 +14,11 @@ Updated at: 2026-08-20
 - PROMPT 2 — COMPLETED
 - PROMPT 3 — COMPLETED
 - PROMPT 4 — COMPLETED
+- PROMPT 5 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 5 — Bot Arena
+PROMPT 6 — Performance Engine
 
 Henüz başlanmadı.
 
@@ -32,16 +33,18 @@ Henüz başlanmadı.
 - Frontend production build: PASS
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation test suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
+- Arena 100-bot benchmark: PASS — 100 iterations, ~174902 ns/op on local Windows amd64
+- Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
 
 Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyarı logları vardır; 156 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- Go engine içinde exchange bağımlılığı olmayan ayrık `internal/paper` simülasyon katmanı eklendi.
-- Entry/exit, maker-taker fee, spread, slippage, funding, leverage, isolated margin ve realized/unrealized PnL hesapları eklendi.
-- Stop loss, take profit, liquidation approximation, tick/lot/minimum order ve partial-fill config desteği eklendi.
-- `PaperTrade` open/close persistence interface'i ve MySQL implementasyonu eklendi.
-- Deterministic engine ve persistence service testleri eklendi; mevcut legacy paper ledger değiştirilmedi.
+- Go engine içinde bounded-worker `internal/arena` coordinator ve strategy runtime registry eklendi.
+- Tek shared market snapshot symbol/timeframe abonelerine fan-out ediliyor; bot başına exchange fetch yapılmıyor.
+- Bot bazlı runtime/equity state, pause/resume, stale/duplicate event guard ve hata izolasyonu eklendi.
+- Strategy signal'larını PROMPT 4 Paper Engine/PaperTrade store'una bağlayan executor eklendi.
+- MySQL active PAPER bot loader ve bot-scope error kaydı eklendi; Champion seçimi eklenmedi.
 
 ## Safety State
 
@@ -54,7 +57,7 @@ Not: Backend testlerinde mevcut analytics test double'ına ait yakalanmış uyar
 
 ## Migration
 
-PROMPT 4: Migration yok; PROMPT 1'de eklenen `paper_trades` tablosu kullanılıyor.
+PROMPT 5: Migration yok.
 
 Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
@@ -71,8 +74,8 @@ Son migration: `20260820020000_add_bot_factory_fields` (PROMPT 3)
 
 ## Open TODO
 
-- PROMPT 5 kapsamında ortak market event fan-out kullanan Bot Arena oluşturmak.
-- Aynı market eventini tekrar fetch etmeden en az 100 paper botuna dağıtan benchmark/test eklemek.
+- PROMPT 6 kapsamında Bot Arena sonuçları için saf ve edge-case güvenli Performance Engine oluşturmak.
+- BotMetric snapshot persistence ve metrik testlerini eklemek.
 
 ## Known Risks for Next Prompts
 
