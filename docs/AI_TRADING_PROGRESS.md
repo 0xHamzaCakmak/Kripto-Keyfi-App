@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 35
-Current prompt: PROMPT 36
+Last completed prompt: PROMPT 36
+Current prompt: PROMPT 37
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -45,12 +45,13 @@ Updated at: 2026-08-22
 - PROMPT 33 — COMPLETED
 - PROMPT 34 — COMPLETED
 - PROMPT 35 — COMPLETED
+- PROMPT 36 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 36 — Risk Frontend
+PROMPT 37 — Shadow & Live Frontend
 
-PAPER performance metrikleri, aggregate equity chart ve beş kırılımda karşılaştırma tamamlandı.
+Autonomous read-only Risk Engine görünümü, hard-safety ayrımı, exposure ve recent rejects tamamlandı.
 
 ## Last Test Result
 
@@ -63,10 +64,10 @@ PAPER performance metrikleri, aggregate equity chart ve beş kırılımda karş�
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- PROMPT 35 frontend typecheck/lint: PASS — `npm.cmd run lint`
-- PROMPT 35 frontend production build: PASS — `npm.cmd run build`
-- PROMPT 35 backend performance/score/memory/manual/Grid regression: PASS — 4 files, 12 tests
-- PROMPT 35 Go performance/scoring: PASS — 2 packages
+- PROMPT 36 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 36 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 36 backend Risk/manual/Grid regression: PASS — 4 files, 13 tests
+- PROMPT 36 Go risk/execution: PASS — 2 packages
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -75,11 +76,11 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Mevcut Recharts bağımlılığıyla chronological aggregate PAPER equity curve eklendi.
-- PnL, ROI, Sharpe, Sortino, Calmar, drawdown, PF, expectancy, fees, funding, slippage, trade count ve win rate gösteriliyor.
-- Strategy family, bot, generation, regime ve symbol kırılımlarında karşılaştırma tablosu eklendi.
-- Metrikler backend Trade Memory'nin son 200 kapanmış kaydı üzerinden deterministik hesaplanıyor ve örneklem kapsamı UI'da açıkça belirtiliyor.
-- Yeni chart veya başka ağır bağımlılık eklenmedi; PAPER/live ayrımı korunuyor.
+- Risk Engine status, hard limitler, emergency stop ve son risk reject kayıtları gerçek account risk API'lerine bağlandı.
+- Max risk/trade, daily/weekly loss, drawdown, leverage, position/exposure, symbol exposure, cooldown, stop, R:R, margin ve consecutive-loss limitleri ayrı immutable panelde gösteriliyor.
+- AI/Teacher/Researcher/Evolution'ın hard safety alanlarını değiştiremeyeceği açıkça belirtiliyor.
+- TESTNET/DEMO position endpointinden read-only exposure hesaplanıyor; bağlantı/veri yoksa `UNKNOWN` gösteriliyor.
+- Autonomous risk görünümü salt okunur; mevcut merkezi risk limit ve kill-switch aksiyonlarına admin confirmation eklendi.
 
 ## Safety State
 
@@ -124,6 +125,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 36: migration yok.
+
+- Frontend risk/read-only exposure ve confirmation guard; schema, production veri veya execution kuralı değişmedi.
 
 PROMPT 35: migration yok.
 
@@ -264,7 +269,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 36 — autonomous Risk Engine hard-safety görünümü ve recent rejects.
+- PROMPT 37 — Shadow/Live kesin ayrımı, shadow action/PnL ve read-only live health/positions.
 
 ## Known Risks for Next Prompts
 
@@ -343,6 +348,13 @@ Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz s
 - Test: PASS — frontend lint/build; backend 4 dosya/12 test; Go performance/scoring 2 package.
 - Migration: Yok.
 - TODO: PROMPT 36 Risk ekranı.
+
+### PROMPT 36
+
+- Değişiklikler: Read-only autonomous Risk screen, immutable limits, exposure/rejects ve critical confirmation guard.
+- Test: PASS — frontend lint/build; backend Risk/manual/Grid 4 dosya/13 test; Go risk/execution 2 package.
+- Migration: Yok.
+- TODO: PROMPT 37 Shadow & Live ekranı.
 
 ## Source Note
 

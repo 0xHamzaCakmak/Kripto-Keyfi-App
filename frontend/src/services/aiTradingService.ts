@@ -132,6 +132,16 @@ export type TradeMemory = {
   marketRegimeSnapshot: { id: string; regime: MarketRegime; confidence: string | number; timeframe: string; features: unknown; observedAt: string } | null;
 };
 export type TradeMemoryQuery = { botId?: string; strategyVersionId?: string; symbol?: string; regime?: MarketRegime; side?: 'BUY' | 'SELL'; outcome?: 'ALL' | 'BEST' | 'FAILURE'; limit?: number };
+export type TradingRiskProfile = {
+  id: string; exchangeAccountId: string; enabled: boolean; accountKillSwitch: boolean; killSwitchReason: string | null;
+  globalKillSwitch: boolean; globalKillSwitchReason: string | null; globalKillSwitchActivatedAt: string | null;
+  maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string; maxOpenPositions: number; maxSymbolPositions: number; maxLeverage: number;
+  minAvailableBalance: string; maxOrdersPerMinute: number; maxDailyOrders: number; maxDailyLoss: string | null;
+  maxRiskPerTradePct: string; maxDailyLossPct: string; maxWeeklyLossPct: string; maxDrawdownPct: string; maxSymbolOpenNotional: string;
+  minRiskRewardRatio: string; stopLossRequired: true; marginModePolicy: 'ISOLATED_ONLY' | 'ALLOW_CROSS'; cooldownSeconds: number; maxConsecutiveLosses: number;
+  allowedSymbols: string[] | null; blockedSymbols: string[] | null; updatedAt: string;
+};
+export type TradingRiskEvent = { id: string; tradingOrderId: string | null; source: string; decision: string; code: string; message: string; metrics: unknown; occurredAt: string };
 
 export type TeacherEvaluation = {
   id: string;
@@ -242,6 +252,8 @@ export const aiTradingApi = {
   health: () => getData<AutonomousHealth>('/admin/trading/system-health'),
   marketContext: (symbol = 'BTCUSDT', timeframe = '15m') =>
     getData<MarketContext>('/admin/trading/market-intelligence/context', { symbol, timeframe }),
+  riskProfile: (exchangeAccountId: string) => getData<TradingRiskProfile>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`),
+  riskEvents: (exchangeAccountId: string) => getData<TradingRiskEvent[]>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-events`),
 };
 
 export function recordNumber(value: unknown, keys: string[]): number | null {
