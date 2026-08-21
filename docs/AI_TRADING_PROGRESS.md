@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 28
-Current prompt: PROMPT 29
+Last completed prompt: PROMPT 29
+Current prompt: PROMPT 30
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -38,12 +38,13 @@ Updated at: 2026-08-22
 - PROMPT 26 — COMPLETED
 - PROMPT 27 — COMPLETED
 - PROMPT 28 — COMPLETED
+- PROMPT 29 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 29 — AI Trading Overview Frontend
+PROMPT 30 — Arena & Bot Leaderboard Frontend
 
-Frontend mimari audit'i tamamlandı. Mevcut admin layout, design tokenları, route yapısı, chart bağımlılığı ve backend autonomous API contract'ları incelendi; uygulama planı `docs/AI_TRADING_FRONTEND_PLAN.md` içine kaydedildi.
+AI Trading nested admin alanı, typed API istemcisi, güvenli mode bileşenleri ve API-backed Overview tamamlandı.
 
 ## Last Test Result
 
@@ -56,8 +57,9 @@ Frontend mimari audit'i tamamlandı. Mevcut admin layout, design tokenları, rou
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- PROMPT 28 frontend typecheck/lint: PASS — `npm.cmd run lint`
-- PROMPT 28 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 29 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 29 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 29 manual/Grid/risk regression: PASS — 4 files, 11 tests
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -66,12 +68,11 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Mevcut Trade Operations admin ekranı, route/layout yapısı ve tasarım sistemi audit edildi.
-- Autonomous backend read/write contract'ları frontend ihtiyaçlarıyla eşlendi.
-- `/admin/trading/ai/*` nested route yapısı, ortak service/UI katmanı ve PAPER/SHADOW/LIVE görsel ayrımı planlandı.
-- API boşluklarında mock/tahmin yerine güvenli empty state kullanımı belirlendi.
-- Manual/Grid/Exchange ekranlarının route ve servislerinin değiştirilmeden korunacağı kaydedildi.
-- Plan `docs/AI_TRADING_FRONTEND_PLAN.md` dosyasına yazıldı; PROMPT 28 gereği frontend uygulama kodu değiştirilmedi.
+- `/admin/trading/ai` nested admin alanı ve ikinci seviye navigasyon eklendi; mevcut trading rotaları korunuyor.
+- Version ve `liveTradingEnabled: false` invariant'ını doğrulayan typed autonomous API service eklendi.
+- Overview; system/arena status, lifecycle counts, market context, aggregate PAPER sonuçları, risk, top bots, Teacher/Researcher ve audit activity verilerine bağlandı.
+- Kısmi endpoint hataları diğer bölümleri gizlemiyor; eksik API verileri mock yerine `—`/empty state gösteriyor.
+- PAPER, SHADOW ve kapalı LIVE durumu görsel ve metinsel olarak ayrıldı.
 
 ## Safety State
 
@@ -116,6 +117,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 29: migration yok.
+
+- Yalnız frontend service, component ve route ekleri yapıldı; backend schema/veri ve execution davranışı değişmedi.
 
 PROMPT 28: migration yok.
 
@@ -228,7 +233,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 29 — ortak autonomous frontend service/UI katmanı, nested layout ve AI Trading Overview ekranı.
+- PROMPT 30 — Arena leaderboard, filtre/sıralama ve bot detay drawer.
 
 ## Known Risks for Next Prompts
 
@@ -258,6 +263,13 @@ Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz s
 - Test: PASS — frontend typecheck/lint ve production build.
 - Migration: Yok.
 - TODO: PROMPT 29 Overview uygulaması.
+
+### PROMPT 29
+
+- Değişiklikler: Typed autonomous API client, ortak AI Trading UI, nested layout ve API-backed Overview.
+- Test: PASS — frontend lint/build; manual/Grid/risk 4 dosya ve 11 test.
+- Migration: Yok.
+- TODO: PROMPT 30 Arena ve bot detayları.
 
 ## Source Note
 

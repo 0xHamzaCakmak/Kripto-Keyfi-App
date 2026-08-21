@@ -23,6 +23,7 @@ import {
   Route,
   FileText,
   MessageSquare,
+  Sparkles,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { cn } from '../lib/utils';
@@ -80,6 +81,7 @@ export function AdminModuleLayout({ eyebrow, title, description, tabs }: AdminMo
 
 const tradingTabs: AdminModuleTab[] = [
   { label: 'Genel Bakış', to: '/admin/trading', icon: LayoutDashboard, end: true },
+  { label: 'AI Trading', to: '/admin/trading/ai', icon: Sparkles },
   { label: 'Botlarım', to: '/admin/trading/bots', icon: ListChecks, end: true },
   { label: 'Bot Rehberi', to: '/admin/trading/guide', icon: BookOpen, end: true },
   { label: 'Manuel İşlem', to: '/admin/trading/manual', icon: SlidersHorizontal },
