@@ -173,6 +173,9 @@ export async function transitionFactoryBot(
   ipAddress?: string,
 ) {
   const bot = await ownedFactoryBot(userId, id);
+  if (target === 'LIVE_ELIGIBLE') {
+    throw new ApiError(403, 'LIVE_ELIGIBLE requires the evidence gate.', 'LIVE_ELIGIBILITY_GATE_REQUIRED');
+  }
   assertBotLifecycleTransition(bot.lifecycleStatus, target, false);
   return prisma.$transaction(async (tx) => {
     const changed = await tx.tradingBot.updateMany({

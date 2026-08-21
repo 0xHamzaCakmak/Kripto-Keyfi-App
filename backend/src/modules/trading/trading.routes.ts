@@ -43,6 +43,8 @@ import { allocate as allocatePortfolio, allocations as portfolioAllocations } fr
 import { portfolioAllocationQuerySchema, portfolioAllocatorBodySchema } from '../ai-trading/portfolio-allocator.schema.js';
 import { shadowPerformance, shadowTrades } from '../ai-trading/shadow-trading.controller.js';
 import { shadowSummaryQuerySchema, shadowTradesQuerySchema } from '../ai-trading/shadow-trading.schema.js';
+import { evaluateLiveEligible } from '../ai-trading/live-eligibility.controller.js';
+import { runLiveEligibilityBodySchema } from '../ai-trading/live-eligibility.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -81,6 +83,7 @@ tradingRouter.get('/portfolio-allocations', validateRequest({ query: portfolioAl
 tradingRouter.post('/portfolio-allocations', validateRequest({ body: portfolioAllocatorBodySchema }), asyncHandler(allocatePortfolio));
 tradingRouter.get('/shadow-trades', validateRequest({ query: shadowTradesQuerySchema }), asyncHandler(shadowTrades));
 tradingRouter.get('/shadow-trades/performance', validateRequest({ query: shadowSummaryQuerySchema }), asyncHandler(shadowPerformance));
+tradingRouter.post('/live-eligibility/evaluate', validateRequest({ body: runLiveEligibilityBodySchema }), asyncHandler(evaluateLiveEligible));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));

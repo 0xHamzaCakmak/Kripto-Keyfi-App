@@ -2,9 +2,9 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 20
-Current prompt: PROMPT 21
-Status: READY
+Last completed prompt: PROMPT 21
+Current prompt: PROMPT 22
+Status: AWAITING_USER_APPROVAL
 Updated at: 2026-08-21
 
 ## Completed
@@ -30,20 +30,21 @@ Updated at: 2026-08-21
 - PROMPT 18 — COMPLETED
 - PROMPT 19 — COMPLETED
 - PROMPT 20 — COMPLETED
+- PROMPT 21 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 21 — Live Eligibility Gate
+PROMPT 22 — Live Execution Hardening
 
-Henüz başlanmadı.
+Henüz başlanmadı. Mevcut canlı exchange execution davranışını değiştirebileceği için kullanıcı onayı bekleniyor.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 52 files, 222 tests
+- Backend unit/integration tests: PASS — 53 files, 226 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
-- PROMPT 20 scoped backend ESLint: PASS
+- PROMPT 21 scoped backend ESLint: PASS
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
@@ -53,15 +54,16 @@ Henüz başlanmadı.
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
 
-Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 222 testin tamamı geçmiştir.
+Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 226 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- SHADOW sinyalleri `WOULD_OPEN`, `WOULD_CLOSE` ve `WOULD_MOVE_STOP` olarak ayrı `shadow_trades` ledger'ına kaydediliyor.
-- Shadow fill fiyatı PAPER ile aynı deterministic fee/slippage simülasyonunu kullanıyor; paper ledger'a yazılmıyor.
-- Shadow runtime read-only `PriceReader` üzerinden public live market fiyatını kullanıyor; PAPER mevcut demo endpointinde kalıyor.
-- Immutable Risk Engine SHADOW exposure, loss, cooldown ve consecutive-loss snapshot'larını shadow ledger'dan okuyor.
-- Admin API shadow trade listesini ve Champion eligibility için duration, profit factor, drawdown, score gibi performans özetini sunuyor.
+- Configurable Live Eligibility Gate paper trades/duration, drawdown, profit factor, risk-adjusted score ve regime coverage kanıtlarını doğruluyor.
+- Shadow duration, close count, profit factor ve drawdown kriterleri PAPER kanıtından ayrı değerlendiriliyor.
+- Son configurable lookback içindeki critical risk block kayıtları promotion'ı engelliyor.
+- Gate başarısız botun statüsünü değiştirmiyor; başarılı Champion yalnız `LIVE_ELIGIBLE` oluyor ve promotion audit log'a yazılıyor.
+- Genel Bot Factory lifecycle endpointinden `LIVE_ELIGIBLE` geçişi kapatıldı; gate bypass edilemiyor.
+- Gate `LIVE` aktivasyonu, outbox veya order submission yolu içermiyor.
 
 ## Safety State
 
@@ -88,11 +90,17 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Portfolio allocation execution: NONE; outputs are persisted plans and audit records only
 - Shadow market data: public live read-only endpoints; exchange writer capability is absent from strategy runner
 - Shadow execution: NONE; simulated fills are isolated from PAPER and exchange order ledgers
+- Live Eligibility: evidence-gated and auditable; direct lifecycle bypass disabled
+- LIVE activation after eligibility: NOT PRESENT; explicit admin approval remains required
 - Risk policy ownership: admin risk API only; Teacher/Researcher/Mutation/Evolution have no risk mutation or order submission path
 - Existing manual/grid/live execution behavior: unchanged; autonomous controls are scoped by `instance.Type == "AUTONOMOUS"`
 - Production exchange environment: NOT PRESENT
 
 ## Migration
+
+PROMPT 21: migration yok.
+
+- Mevcut paper, metric, regime, shadow ve risk/audit kanıtları kullanılır; production schema veya verisi değiştirilmedi.
 
 PROMPT 20: `20260821090000_add_shadow_trades`
 
@@ -172,8 +180,8 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 21 kapsamında configurable paper/shadow/risk kanıtlarını kullanan Live Eligibility Gate geliştirmek.
-- Gate'in yalnız `LIVE_ELIGIBLE` statüsü vermesini ve gerçek LIVE aktivasyon yolu içermemesini sağlamak.
+- PROMPT 22 kapsamında mevcut canlı execution yolunun idempotency, reconciliation, retry/timeout, stale data, stop verification ve emergency-stop eksiklerini incelemek.
+- PROMPT 22 canlı exchange execution davranışını değiştirebileceği için uygulamadan önce kullanıcı onayı almak.
 
 ## Known Risks for Next Prompts
 
@@ -185,7 +193,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Blockers
 
-None.
+PROMPT 22 kullanıcı onayı bekliyor: mevcut canlı exchange execution davranışında hardening değişikliği isteniyor.
 
 ## Source Note
 
