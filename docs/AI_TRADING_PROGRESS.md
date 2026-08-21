@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 23
-Current prompt: PROMPT 24
+Last completed prompt: PROMPT 24
+Current prompt: PROMPT 25
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -33,21 +33,22 @@ Updated at: 2026-08-22
 - PROMPT 21 — COMPLETED
 - PROMPT 22 — COMPLETED
 - PROMPT 23 — COMPLETED
+- PROMPT 24 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 24 — Teacher + Researcher AI Adapter
+PROMPT 25 — Backend Observability
 
-Opsiyonel LLM adapterları validated schema ve deterministic fallback ile uygulanacak; recommendation-only sınırı korunacak.
+Autonomous trading health, throughput, lag, risk, execution ve provider metrikleri ile structured log/audit görünürlüğü eklenecek.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 54 files, 232 tests
+- Backend unit/integration tests: PASS — 55 files, 236 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
-- PROMPT 23 scoped backend tests: PASS — 1 file, 6 tests
-- PROMPT 23 scoped backend ESLint: PASS
+- PROMPT 24 scoped backend tests: PASS — 3 files, 14 tests
+- PROMPT 24 scoped backend ESLint: PASS
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
@@ -61,12 +62,12 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Versioned/strict `AIDecision` schema LONG, SHORT, WAIT, HOLD, CLOSE, PARTIAL_CLOSE, MOVE_STOP ve NO_TRADE kararlarını doğruluyor.
-- Provider çıktısındaki price değerleri string decimal'e normalize ediliyor; directional kararlar entry zone, invalidation ve target olmadan geçemiyor.
-- `reasonSummary` kısa/bounded açıklanabilir maddelerle sınırlı; strict schema hidden chain-of-thought veya bilinmeyen alanları reddediyor.
-- Provider-independent flow raw AI output'u validation sonrasında immutable Risk Gate'e, yalnız approval kimliği varsa branded execution portuna iletiyor.
-- Geçersiz, symbol-mismatch veya risk tarafından reddedilen kararlar execution'a ulaşmıyor; WAIT/HOLD/NO_TRADE hiçbir execution üretmiyor.
-- Static/mock provider eklendi; gerçek provider, API key, exchange adapter veya live activation bağlantısı eklenmedi.
+- Teacher ve Researcher için ortak, vendor-neutral `StructuredAIProvider` portu eklendi; gerçek provider/API key yapılandırması zorunlu değil.
+- LLM Teacher/Researcher çıktıları strict Zod schema, bounded alanlar ve allow-listed candidate/recommendation action türleriyle doğrulanıyor.
+- Provider error, timeout, invalid schema veya Researcher strategy-family mismatch durumunda mevcut deterministic rule provider devreye giriyor.
+- Teacher target kimliği yalnız trusted evidence'dan bağlanıyor; provider otomatik uygulama, kod değişikliği veya live risk değişikliği üretemiyor.
+- Researcher önerileri yalnız `createCandidateOnly: true` kabul ediyor; DRAFT hypothesis ledger'ı mevcut Evolution candidate pipeline tarafından tüketiliyor.
+- Provider ve fallback kullanımı evidence metadata'sına ekleniyor; mevcut Teacher/Researcher audit kayıtları her öneriyi `applied/liveChanged=false` ile saklıyor.
 
 ## Safety State
 
@@ -102,8 +103,14 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Reconciliation retry: read-only and bounded; mutating exchange requests never auto-retried
 - AI Decision interface: provider-independent, strict schema; Risk Gate approval is mandatory before the isolated execution port
 - AI Decision exchange access: NONE
+- Teacher/Researcher LLM adapters: optional, vendor-neutral, timeout-bounded, deterministic fallback enabled
+- LLM code/live-risk mutation permission: NONE
 
 ## Migration
+
+PROMPT 24: migration yok.
+
+- Mevcut Teacher evaluation ve Research hypothesis/audit tabloları kullanılır; production schema/veri değişmedi.
 
 PROMPT 23: migration yok.
 
@@ -196,7 +203,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 24 Teacher ve Researcher için opsiyonel LLM adapterları, schema validation, timeout/error fallback ve audit metadata sınırlarını eklemek.
+- PROMPT 25 autonomous trading observability metrikleri, structured loglar, audit erişimi ve health görünürlüğünü eklemek.
 
 ## Known Risks for Next Prompts
 
