@@ -41,6 +41,8 @@ import { routeStrategy } from '../ai-trading/strategy-router.controller.js';
 import { routeStrategyBodySchema } from '../ai-trading/strategy-router.schema.js';
 import { allocate as allocatePortfolio, allocations as portfolioAllocations } from '../ai-trading/portfolio-allocator.controller.js';
 import { portfolioAllocationQuerySchema, portfolioAllocatorBodySchema } from '../ai-trading/portfolio-allocator.schema.js';
+import { shadowPerformance, shadowTrades } from '../ai-trading/shadow-trading.controller.js';
+import { shadowSummaryQuerySchema, shadowTradesQuerySchema } from '../ai-trading/shadow-trading.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -77,6 +79,8 @@ tradingRouter.get('/market-intelligence/context', validateRequest({ query: marke
 tradingRouter.post('/strategy-router/route', validateRequest({ body: routeStrategyBodySchema }), asyncHandler(routeStrategy));
 tradingRouter.get('/portfolio-allocations', validateRequest({ query: portfolioAllocationQuerySchema }), asyncHandler(portfolioAllocations));
 tradingRouter.post('/portfolio-allocations', validateRequest({ body: portfolioAllocatorBodySchema }), asyncHandler(allocatePortfolio));
+tradingRouter.get('/shadow-trades', validateRequest({ query: shadowTradesQuerySchema }), asyncHandler(shadowTrades));
+tradingRouter.get('/shadow-trades/performance', validateRequest({ query: shadowSummaryQuerySchema }), asyncHandler(shadowPerformance));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));

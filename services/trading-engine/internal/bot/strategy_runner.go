@@ -25,12 +25,19 @@ type StrategyStore interface {
 }
 
 type StrategyRunner struct {
-	store   StrategyStore
-	factory PriceReaderFactory
+	store                       StrategyStore
+	paperFactory, shadowFactory PriceReaderFactory
 }
 
-func NewStrategyRunner(store StrategyStore, client *http.Client, endpoints exchange.Endpoints) *StrategyRunner {
-	return NewStrategyRunnerWithFactory(store, func(account MarketAccount) (PriceReader, error) {
+func NewStrategyRunner(store StrategyStore, client *http.Client, paperEndpoints, shadowEndpoints exchange.Endpoints) *StrategyRunner {
+	return &StrategyRunner{store: store,
+		paperFactory:  endpointPriceReaderFactory(client, paperEndpoints),
+		shadowFactory: endpointPriceReaderFactory(client, shadowEndpoints),
+	}
+}
+
+func endpointPriceReaderFactory(client *http.Client, endpoints exchange.Endpoints) PriceReaderFactory {
+	return func(account MarketAccount) (PriceReader, error) {
 		switch account.Provider {
 		case domain.ProviderBinance:
 			return binance.New(binance.Options{Client: client, FuturesURL: endpoints.BinanceFutures, SpotURL: endpoints.BinanceSpot}), nil
@@ -39,11 +46,11 @@ func NewStrategyRunner(store StrategyStore, client *http.Client, endpoints excha
 		default:
 			return nil, fmt.Errorf("unsupported strategy provider %q", account.Provider)
 		}
-	})
+	}
 }
 
 func NewStrategyRunnerWithFactory(store StrategyStore, factory PriceReaderFactory) *StrategyRunner {
-	return &StrategyRunner{store: store, factory: factory}
+	return &StrategyRunner{store: store, paperFactory: factory, shadowFactory: factory}
 }
 
 func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision, error) {
@@ -51,7 +58,11 @@ func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision,
 	if err != nil {
 		return Decision{}, err
 	}
-	reader, err := r.factory(account)
+	factory := r.paperFactory
+	if instance.Mode == "SHADOW" {
+		factory = r.shadowFactory
+	}
+	reader, err := factory(account)
 	if err != nil {
 		return Decision{}, err
 	}

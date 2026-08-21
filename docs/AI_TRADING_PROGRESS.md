@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 19
-Current prompt: PROMPT 20
+Last completed prompt: PROMPT 20
+Current prompt: PROMPT 21
 Status: READY
 Updated at: 2026-08-21
 
@@ -29,20 +29,21 @@ Updated at: 2026-08-21
 - PROMPT 17 — COMPLETED
 - PROMPT 18 — COMPLETED
 - PROMPT 19 — COMPLETED
+- PROMPT 20 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 20 — Shadow Trading
+PROMPT 21 — Live Eligibility Gate
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 51 files, 218 tests
+- Backend unit/integration tests: PASS — 52 files, 222 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
-- PROMPT 19 scoped backend ESLint: PASS
+- PROMPT 20 scoped backend ESLint: PASS
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
@@ -52,15 +53,15 @@ Henüz başlanmadı.
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
 
-Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 218 testin tamamı geçmiştir.
+Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 222 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- Deterministic Portfolio Allocator yalnız PAPER/SHADOW modundaki Champion botları değerlendiriyor.
-- Bot score, güncel regime fit, recent drawdown, kapalı paper trade volatility/correlation ve mevcut exposure dağıtım skoruna katılıyor.
-- Toplam, sembol ve bot allocation limitleri immutable risk profile kapasitesi ile birlikte uygulanıyor; kullanılmayan kapasite reserve'e dönüyor.
-- Allocation sonucu bot yüzdesi, sembol yüzdesi ve reserve yüzdesi olarak kaydediliyor ve audit log'a yazılıyor.
-- Allocator yalnız TESTNET/DEMO hesaplarını kabul ediyor; order submission, outbox veya live activation yolu içermiyor.
+- SHADOW sinyalleri `WOULD_OPEN`, `WOULD_CLOSE` ve `WOULD_MOVE_STOP` olarak ayrı `shadow_trades` ledger'ına kaydediliyor.
+- Shadow fill fiyatı PAPER ile aynı deterministic fee/slippage simülasyonunu kullanıyor; paper ledger'a yazılmıyor.
+- Shadow runtime read-only `PriceReader` üzerinden public live market fiyatını kullanıyor; PAPER mevcut demo endpointinde kalıyor.
+- Immutable Risk Engine SHADOW exposure, loss, cooldown ve consecutive-loss snapshot'larını shadow ledger'dan okuyor.
+- Admin API shadow trade listesini ve Champion eligibility için duration, profit factor, drawdown, score gibi performans özetini sunuyor.
 
 ## Safety State
 
@@ -85,11 +86,19 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Autonomous PAPER enforcement: risk approval is evaluated in the same DB transaction before paper fill; rejected/blocked signals cannot create fills
 - Portfolio Allocator: deterministic, Champion-only, PAPER/SHADOW-only; risk-capped allocation with minimum cash reserve
 - Portfolio allocation execution: NONE; outputs are persisted plans and audit records only
+- Shadow market data: public live read-only endpoints; exchange writer capability is absent from strategy runner
+- Shadow execution: NONE; simulated fills are isolated from PAPER and exchange order ledgers
 - Risk policy ownership: admin risk API only; Teacher/Researcher/Mutation/Evolution have no risk mutation or order submission path
 - Existing manual/grid/live execution behavior: unchanged; autonomous controls are scoped by `instance.Type == "AUTONOMOUS"`
 - Production exchange environment: NOT PRESENT
 
 ## Migration
+
+PROMPT 20: `20260821090000_add_shadow_trades`
+
+- Additive migration; yalnız SHADOW action/simulation ledger'ı için `shadow_trades` tablosunu ekler.
+- PAPER trade/fill tablolarını değiştirmez; mevcut tablo/kolon silmez ve production verisini dönüştürmez.
+- Production verisine uygulanmadı.
 
 PROMPT 19: `20260821080000_add_portfolio_allocations`
 
@@ -163,8 +172,8 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 20 kapsamında gerçek market data üzerinde emir göndermeyen, PAPER'dan ayrı raporlanan Shadow Trading geliştirmek.
-- Shadow performansını ilerideki Live Eligibility Gate tarafından tüketilebilecek şekilde saklamak.
+- PROMPT 21 kapsamında configurable paper/shadow/risk kanıtlarını kullanan Live Eligibility Gate geliştirmek.
+- Gate'in yalnız `LIVE_ELIGIBLE` statüsü vermesini ve gerçek LIVE aktivasyon yolu içermemesini sağlamak.
 
 ## Known Risks for Next Prompts
 

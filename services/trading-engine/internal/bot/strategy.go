@@ -87,7 +87,7 @@ func evaluateGrid(instance Instance, markPrice, referencePrice string) (Decision
 
 func decision(instance Instance, kind, summary, markPrice, referencePrice string, metrics map[string]any) Decision {
 	result := Decision{Kind: kind, Summary: summary, MarkPrice: markPrice, ReferencePrice: referencePrice, Metrics: metrics}
-	if instance.Mode != "PAPER" || (kind != "BUY" && kind != "SELL" && kind != "GRID_BUY" && kind != "GRID_SELL") {
+	if (instance.Mode != "PAPER" && instance.Mode != "SHADOW") || (kind != "BUY" && kind != "SELL" && kind != "GRID_BUY" && kind != "GRID_SELL") {
 		return result
 	}
 	quantityKey := "quantity"

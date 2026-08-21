@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"time"
 
@@ -247,11 +248,18 @@ VALUES (?, ?, ?, ?, 'AI_MODEL', ?, 'OBSERVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TI
 			return err
 		}
 	}
+	var shadowExecution map[string]any
+	if instance.Mode == "SHADOW" && riskApproved {
+		shadowExecution, err = persistShadowCycle(ctx, tx, instance, decision, decisionID, now)
+		if err != nil {
+			return err
+		}
+	}
 	payload, err := json.Marshal(map[string]any{
 		"botId": instance.ID, "mode": instance.Mode, "state": instance.State,
 		"decision": decision.Kind, "summary": decision.Summary, "markPrice": decision.MarkPrice,
 		"referencePrice": decision.ReferencePrice, "metrics": decision.Metrics, "hypotheticalOrder": decision.HypotheticalOrder,
-		"paperExecution": paperExecution, "autonomousRiskDecision": autonomousRiskDecision,
+		"paperExecution": paperExecution, "shadowExecution": shadowExecution, "autonomousRiskDecision": autonomousRiskDecision,
 		"signalSource": "RULE_ENGINE", "signalAction": signalAction(decision.Kind),
 	})
 	if err != nil {
@@ -273,6 +281,79 @@ FROM trading_bots b JOIN exchange_accounts a ON a.id = b.exchangeAccountId WHERE
 		return fmt.Errorf("commit bot cycle: %w", err)
 	}
 	return nil
+}
+
+func persistShadowCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, decision bot.Decision, decisionID int64, now time.Time) (map[string]any, error) {
+	if decision.HypotheticalOrder == nil {
+		return nil, nil
+	}
+	position, shadowUnrealized, err := loadLatestShadowPosition(ctx, tx, instance.ID)
+	if err != nil {
+		return nil, err
+	}
+	if stopPrice, ok := decision.HypotheticalOrder["moveStopTo"].(string); ok && stopPrice != "" {
+		_, err := tx.ExecContext(ctx, `INSERT INTO shadow_trades
+(tradingBotId, decisionId, action, markPrice, stopPrice, netQuantity, avgEntryPrice, cumulativePnl, totalFees, unrealizedPnl, occurredAt, createdAt)
+VALUES (?, ?, 'WOULD_MOVE_STOP', ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`, instance.ID, decisionID, decision.MarkPrice,
+			stopPrice, position.NetQuantity, position.AvgEntryPrice, position.RealizedPnL, position.TotalFees, shadowUnrealized, now)
+		if err != nil {
+			return nil, fmt.Errorf("insert shadow stop decision: %w", err)
+		}
+		return map[string]any{"action": "WOULD_MOVE_STOP", "stopPrice": stopPrice, "submittedToExchange": false}, nil
+	}
+	side, sideOK := decision.HypotheticalOrder["side"].(string)
+	quantity, quantityOK := decision.HypotheticalOrder["quantity"].(string)
+	feeBps, feeOK := paperNumber(decision.HypotheticalOrder["feeBps"])
+	slippageBps, slippageOK := paperNumber(decision.HypotheticalOrder["slippageBps"])
+	if !sideOK || !quantityOK || !feeOK || !slippageOK {
+		return nil, errors.New("shadow hypothetical order is incomplete")
+	}
+	action := "WOULD_OPEN"
+	if (side == "SELL" && decimalSign(position.NetQuantity) > 0) || (side == "BUY" && decimalSign(position.NetQuantity) < 0) {
+		action = "WOULD_CLOSE"
+	}
+	execution, err := bot.ApplyPaperExecution(position, side, quantity, decision.MarkPrice, feeBps, slippageBps)
+	if err != nil {
+		return nil, fmt.Errorf("apply shadow simulation: %w", err)
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO shadow_trades
+(tradingBotId, decisionId, action, side, quantity, markPrice, simulatedFillPrice, notional, fee, realizedPnl,
+ netQuantity, avgEntryPrice, cumulativePnl, totalFees, unrealizedPnl, slippageBps, feeBps, occurredAt, createdAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
+		instance.ID, decisionID, action, execution.Side, execution.Quantity, execution.MarkPrice, execution.FillPrice,
+		execution.Notional, execution.Fee, execution.RealizedPnL, execution.NetQuantity, execution.AvgEntryPrice,
+		execution.CumulativePnL, execution.TotalFees, execution.UnrealizedPnL, execution.SlippageBps, execution.FeeBps, now)
+	if err != nil {
+		return nil, fmt.Errorf("insert shadow trade: %w", err)
+	}
+	return map[string]any{
+		"action": action, "side": execution.Side, "quantity": execution.Quantity, "markPrice": execution.MarkPrice,
+		"simulatedFillPrice": execution.FillPrice, "realizedPnl": execution.RealizedPnL,
+		"netQuantity": execution.NetQuantity, "submittedToExchange": false,
+	}, nil
+}
+
+func loadLatestShadowPosition(ctx context.Context, tx *sql.Tx, botID string) (bot.PaperPosition, string, error) {
+	var position bot.PaperPosition
+	var unrealized string
+	err := tx.QueryRowContext(ctx, `SELECT netQuantity, avgEntryPrice, cumulativePnl, totalFees, unrealizedPnl
+FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, botID).Scan(
+		&position.NetQuantity, &position.AvgEntryPrice, &position.RealizedPnL, &position.TotalFees, &unrealized)
+	if errors.Is(err, sql.ErrNoRows) {
+		return bot.PaperPosition{}, "0", nil
+	}
+	if err != nil {
+		return bot.PaperPosition{}, "", fmt.Errorf("load shadow position: %w", err)
+	}
+	return position, unrealized, nil
+}
+
+func decimalSign(value string) int {
+	parsed, ok := new(big.Rat).SetString(value)
+	if !ok {
+		return 0
+	}
+	return parsed.Sign()
 }
 
 func signalAction(kind string) string {

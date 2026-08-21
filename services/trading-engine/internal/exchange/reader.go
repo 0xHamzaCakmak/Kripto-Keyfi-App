@@ -56,3 +56,14 @@ func DemoEndpoints() Endpoints {
 		Bybit:            "https://api-demo.bybit.com",
 	}
 }
+
+// PublicMarketEndpoints exposes only public exchange market-data hosts. It is
+// consumed through PriceReader, whose interface has no mutating method.
+func PublicMarketEndpoints() Endpoints {
+	return Endpoints{
+		BinanceFutures:   "https://fapi.binance.com",
+		BinanceFuturesWS: "wss://fstream.binance.com",
+		BinanceSpot:      "https://api.binance.com",
+		Bybit:            "https://api.bybit.com",
+	}
+}

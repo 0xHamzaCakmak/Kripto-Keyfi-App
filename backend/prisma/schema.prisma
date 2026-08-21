@@ -1349,6 +1349,7 @@ model TradingBot {
   decisions           TradingBotDecision[]
   paperPosition       TradingBotPaperPosition?
   paperFills          TradingBotPaperFill[]
+  shadowTrades        ShadowTrade[]
   signals             TradingBotSignal[]
   strategyVersion     StrategyVersion?         @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
   generation          Generation?              @relation(fields: [generationId], references: [id], onDelete: SetNull)
@@ -1467,6 +1468,7 @@ model TradingBotDecision {
   user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   exchangeAccount ExchangeAccount      @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
   paperFill       TradingBotPaperFill?
+  shadowTrade     ShadowTrade?
   signals         TradingBotSignal[]
 
   @@index([tradingBotId, id])
@@ -1519,6 +1521,37 @@ model TradingBotPaperFill {
   @@index([tradingBotId, id])
   @@index([occurredAt])
   @@map("trading_bot_paper_fills")
+}
+
+model ShadowTrade {
+  id                 BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tradingBotId       String
+  decisionId         BigInt   @unique @db.UnsignedBigInt
+  action             String   @db.VarChar(30)
+  side               TradingBotPaperSide?
+  quantity           Decimal? @db.Decimal(36, 18)
+  markPrice          Decimal  @db.Decimal(36, 18)
+  simulatedFillPrice Decimal? @db.Decimal(36, 18)
+  notional           Decimal? @db.Decimal(36, 18)
+  fee                Decimal  @default(0) @db.Decimal(36, 18)
+  realizedPnl        Decimal  @default(0) @db.Decimal(36, 18)
+  netQuantity        Decimal  @default(0) @db.Decimal(36, 18)
+  avgEntryPrice      Decimal  @default(0) @db.Decimal(36, 18)
+  cumulativePnl      Decimal  @default(0) @db.Decimal(36, 18)
+  totalFees          Decimal  @default(0) @db.Decimal(36, 18)
+  unrealizedPnl      Decimal  @default(0) @db.Decimal(36, 18)
+  slippageBps        Decimal? @db.Decimal(12, 4)
+  feeBps             Decimal? @db.Decimal(12, 4)
+  stopPrice          Decimal? @db.Decimal(36, 18)
+  occurredAt         DateTime
+  createdAt          DateTime @default(now())
+
+  tradingBot TradingBot         @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
+  decision   TradingBotDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@index([tradingBotId, occurredAt])
+  @@index([action, occurredAt])
+  @@map("shadow_trades")
 }
 
 model TradingBotSignal {

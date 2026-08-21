@@ -105,7 +105,9 @@ func main() {
 		server.SetReady(true)
 		if cfg.BotScheduler && store != nil {
 			owner := fmt.Sprintf("%s:%d", hostname(), os.Getpid())
-			runner := bot.NewStrategyRunner(store, &http.Client{Timeout: 8 * time.Second}, exchange.DemoEndpoints())
+			// Strategy evaluation reads real public market prices through a read-only interface.
+			// Account/order/reconciliation paths remain pinned to demo endpoints above.
+			runner := bot.NewStrategyRunner(store, &http.Client{Timeout: 8 * time.Second}, exchange.DemoEndpoints(), exchange.PublicMarketEndpoints())
 			var observer bot.SignalObserver
 			if cfg.AIObserver {
 				createdObserver, observerErr := bot.NewHTTPObserver(bot.HTTPObserverOptions{

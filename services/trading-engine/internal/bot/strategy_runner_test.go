@@ -43,3 +43,27 @@ func TestStrategyRunnerUsesPublicMarketAccount(t *testing.T) {
 		t.Fatalf("public strategy tick failed: %#v, err=%v", decision, err)
 	}
 }
+
+func TestStrategyRunnerSeparatesPaperAndShadowMarketReaders(t *testing.T) {
+	store := &strategyRunnerStore{account: MarketAccount{Provider: domain.ProviderBinance}, reference: "50000"}
+	paperCalls, shadowCalls := 0, 0
+	runner := &StrategyRunner{store: store,
+		paperFactory: func(MarketAccount) (PriceReader, error) {
+			paperCalls++
+			return fixedPriceReader{price: "50150"}, nil
+		},
+		shadowFactory: func(MarketAccount) (PriceReader, error) {
+			shadowCalls++
+			return fixedPriceReader{price: "50150"}, nil
+		},
+	}
+	if _, err := runner.Tick(t.Context(), scalpingInstance("PAPER")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Tick(t.Context(), scalpingInstance("SHADOW")); err != nil {
+		t.Fatal(err)
+	}
+	if paperCalls != 1 || shadowCalls != 1 {
+		t.Fatalf("market readers crossed mode boundary: paper=%d shadow=%d", paperCalls, shadowCalls)
+	}
+}

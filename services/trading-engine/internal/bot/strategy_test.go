@@ -21,6 +21,17 @@ func TestScalpingPaperCreatesSafeHypotheticalOrder(t *testing.T) {
 	}
 }
 
+func TestScalpingShadowCreatesSimulationOnlyOrder(t *testing.T) {
+	instance := scalpingInstance("SHADOW")
+	decision, err := EvaluateStrategy(instance, "50150", "50000")
+	if err != nil || decision.Kind != "BUY" {
+		t.Fatalf("expected shadow buy signal: %#v %v", decision, err)
+	}
+	if decision.HypotheticalOrder["mode"] != "SHADOW" || decision.HypotheticalOrder["submittedToExchange"] != false {
+		t.Fatalf("shadow order escaped simulation boundary: %#v", decision.HypotheticalOrder)
+	}
+}
+
 func TestScalpingHonorsConfiguredSide(t *testing.T) {
 	instance := scalpingInstance("PAPER")
 	instance.Configuration["side"] = "BUY"

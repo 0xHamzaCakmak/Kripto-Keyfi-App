@@ -45,6 +45,19 @@ WHERE b.id = ? AND b.userId = ? FOR UPDATE`, instance.ID, instance.UserID).Scan(
 	if err != nil {
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous risk profile: %w", err)
 	}
+	if instance.Mode == "SHADOW" {
+		shadowErr := tx.QueryRowContext(ctx, `SELECT CAST(netQuantity AS CHAR), CAST(cumulativePnl AS CHAR),
+CAST(unrealizedPnl AS CHAR), CAST(totalFees AS CHAR), CAST(markPrice AS CHAR), occurredAt
+FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, instance.ID).Scan(
+			&netQuantity, &realized, &unrealized, &fees, &lastMark, &lastFill)
+		if shadowErr != nil && !errors.Is(shadowErr, sql.ErrNoRows) {
+			return autonomousrisk.Decision{}, fmt.Errorf("load autonomous shadow position: %w", shadowErr)
+		}
+		if errors.Is(shadowErr, sql.ErrNoRows) {
+			netQuantity, realized, unrealized, fees, lastMark = "0", "0", "0", "0", "0"
+			lastFill = sql.NullTime{}
+		}
+	}
 
 	quantity, qok := decimalRat(intent.Quantity)
 	entry, eok := decimalRat(intent.EntryPrice)
@@ -58,11 +71,20 @@ WHERE b.id = ? AND b.userId = ? FOR UPDATE`, instance.ID, instance.UserID).Scan(
 
 	var openPositions int
 	var totalExposure, symbolExposure string
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*),
+	exposureQuery := `SELECT COUNT(*),
 COALESCE(CAST(SUM(ABS(pos.netQuantity) * pos.lastMarkPrice) AS CHAR), '0'),
 COALESCE(CAST(SUM(CASE WHEN pos.symbol = ? THEN ABS(pos.netQuantity) * pos.lastMarkPrice ELSE 0 END) AS CHAR), '0')
 FROM trading_bot_paper_positions pos JOIN trading_bots b ON b.id = pos.tradingBotId
-WHERE b.exchangeAccountId = ? AND pos.netQuantity <> 0`, instance.Symbol, instance.ExchangeAccountID).Scan(&openPositions, &totalExposure, &symbolExposure); err != nil {
+WHERE b.exchangeAccountId = ? AND pos.netQuantity <> 0`
+	if instance.Mode == "SHADOW" {
+		exposureQuery = `SELECT COUNT(*),
+COALESCE(CAST(SUM(ABS(latest.netQuantity) * latest.markPrice) AS CHAR), '0'),
+COALESCE(CAST(SUM(CASE WHEN b.symbol = ? THEN ABS(latest.netQuantity) * latest.markPrice ELSE 0 END) AS CHAR), '0')
+FROM shadow_trades latest JOIN trading_bots b ON b.id = latest.tradingBotId
+WHERE b.exchangeAccountId = ? AND b.mode = 'SHADOW' AND latest.netQuantity <> 0
+AND latest.id = (SELECT current.id FROM shadow_trades current WHERE current.tradingBotId = latest.tradingBotId ORDER BY current.id DESC LIMIT 1)`
+	}
+	if err := tx.QueryRowContext(ctx, exposureQuery, instance.Symbol, instance.ExchangeAccountID).Scan(&openPositions, &totalExposure, &symbolExposure); err != nil {
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous exposure: %w", err)
 	}
 	projectedTotal, ok := addDecimal(totalExposure, ratText(orderNotional))
@@ -85,10 +107,17 @@ WHERE b.exchangeAccountId = ? AND pos.netQuantity <> 0`, instance.Symbol, instan
 	dayStart := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
 	weekStart := dayStart.AddDate(0, 0, -int(dayStart.Weekday()+6)%7)
 	var dailyLoss, weeklyLoss string
-	if err := tx.QueryRowContext(ctx, `SELECT
+	lossQuery := `SELECT
 COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0'),
 COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0')
-FROM trading_bot_paper_fills f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchangeAccountId = ?`, dayStart, weekStart, instance.ExchangeAccountID).Scan(&dailyLoss, &weeklyLoss); err != nil {
+FROM trading_bot_paper_fills f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchangeAccountId = ?`
+	if instance.Mode == "SHADOW" {
+		lossQuery = `SELECT
+COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0'),
+COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0')
+FROM shadow_trades f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchangeAccountId = ? AND b.mode = 'SHADOW'`
+	}
+	if err := tx.QueryRowContext(ctx, lossQuery, dayStart, weekStart, instance.ExchangeAccountID).Scan(&dailyLoss, &weeklyLoss); err != nil {
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous losses: %w", err)
 	}
 	drawdown := "0"
@@ -97,6 +126,9 @@ FROM trading_bot_paper_fills f JOIN trading_bots b ON b.id = f.tradingBotId WHER
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous drawdown: %w", err)
 	}
 	consecutive, err := consecutivePaperLosses(ctx, tx, instance.ID, policy.MaxConsecutiveLosses)
+	if instance.Mode == "SHADOW" {
+		consecutive, err = consecutiveShadowLosses(ctx, tx, instance.ID, policy.MaxConsecutiveLosses)
+	}
 	if err != nil {
 		return autonomousrisk.Decision{}, err
 	}
@@ -120,6 +152,31 @@ FROM trading_bot_paper_fills f JOIN trading_bots b ON b.id = f.tradingBotId WHER
 	}
 	_ = lastMark
 	return result, nil
+}
+
+func consecutiveShadowLosses(ctx context.Context, tx *sql.Tx, botID string, limit int) (int, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT CAST(realizedPnl - fee AS CHAR) FROM shadow_trades
+WHERE tradingBotId = ? AND action = 'WOULD_CLOSE' AND realizedPnl - fee <> 0 ORDER BY occurredAt DESC, id DESC LIMIT ?`, botID, limit)
+	if err != nil {
+		return 0, fmt.Errorf("load consecutive autonomous shadow losses: %w", err)
+	}
+	defer rows.Close()
+	count := 0
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return 0, err
+		}
+		number, ok := decimalRat(value)
+		if !ok {
+			return 0, errors.New("invalid autonomous shadow loss")
+		}
+		if number.Sign() >= 0 {
+			break
+		}
+		count++
+	}
+	return count, rows.Err()
 }
 
 func consecutivePaperLosses(ctx context.Context, tx *sql.Tx, botID string, limit int) (int, error) {
