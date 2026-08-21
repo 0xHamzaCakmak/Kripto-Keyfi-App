@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 30
-Current prompt: PROMPT 31
+Last completed prompt: PROMPT 31
+Current prompt: PROMPT 32
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -40,12 +40,13 @@ Updated at: 2026-08-22
 - PROMPT 28 — COMPLETED
 - PROMPT 29 — COMPLETED
 - PROMPT 30 — COMPLETED
+- PROMPT 31 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 31 — Champions Frontend
+PROMPT 32 — Evolution Frontend
 
-Arena population, leaderboard, filtre/sıralama ve bot detay drawer tamamlandı.
+Candidate/Challenger/Champion/Live Eligible görünümü, kanıtlar, blockers ve promotion history tamamlandı.
 
 ## Last Test Result
 
@@ -58,9 +59,9 @@ Arena population, leaderboard, filtre/sıralama ve bot detay drawer tamamlandı.
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- PROMPT 30 frontend typecheck/lint: PASS — `npm.cmd run lint`
-- PROMPT 30 frontend production build: PASS — `npm.cmd run build`
-- PROMPT 30 Arena/manual/Grid regression: PASS — 6 files, 18 tests
+- PROMPT 31 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 31 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 31 Champion/live eligibility/manual/Grid regression: PASS — 5 files, 18 tests
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -69,11 +70,11 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Arena factory bot, risk-adjusted leaderboard, trade summary, Champion evidence ve regime leaderboard contract'larına bağlandı.
-- Status/strategy/generation/regime/min score/min PnL filtreleri ve score/PnL/PF/drawdown/trade sıralaması eklendi.
-- PnL, ROI, PF, drawdown, trades, win rate, strategy, generation, regime coverage ve lifecycle gösteriliyor.
-- Bot detay drawer gerçek API kanıtlarını sunuyor; equity serisi yoksa sparkline üretilmiyor.
-- PAPER/SHADOW mode rozetleri ve 100 bot population göstergesi eklendi.
+- Candidate, Challenger, Champion ve Live Eligible lifecycle kolonları net biçimde ayrıldı.
+- Score, paper duration, trade count, regime coverage, PF, drawdown, SHADOW mode ve evidence blockers gösteriliyor.
+- Champion evaluation kayıtlarından promotion history tablosu eklendi.
+- Backend live activation sağlamadığı için “Live'a al” butonu yoktur.
+- Audit-only manual promotion review, live açmadığını belirten confirm ve `APPROVED_PENDING_ACTIVATION` mesajıyla eklendi; reject güvenli PAUSED akışını kullanır.
 
 ## Safety State
 
@@ -118,6 +119,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 31: migration yok.
+
+- Frontend Champion ekranı ve mevcut safe admin API çağrıları; schema, production veri veya live execution değişikliği yok.
 
 PROMPT 30: migration yok.
 
@@ -238,7 +243,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 31 — Candidate/Challenger/Champion/Live Eligible ve promotion history ekranı.
+- PROMPT 32 — generation history, lineage, mutation diff ve PAPER evolution trigger.
 
 ## Known Risks for Next Prompts
 
@@ -282,6 +287,13 @@ Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz s
 - Test: PASS — frontend lint/build; Arena, score, regime, memory, Champion, manual/Grid 6 dosya ve 18 test.
 - Migration: Yok.
 - TODO: PROMPT 31 Champions ekranı.
+
+### PROMPT 31
+
+- Değişiklikler: Lifecycle kolonları, eligibility evidence/blockers, promotion history ve audit-only confirm review.
+- Test: PASS — frontend lint/build; Champion, live eligibility, autonomous admin, manual/Grid 5 dosya ve 18 test.
+- Migration: Yok.
+- TODO: PROMPT 32 Evolution ekranı.
 
 ## Source Note
 

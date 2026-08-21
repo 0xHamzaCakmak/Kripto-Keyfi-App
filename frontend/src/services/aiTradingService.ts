@@ -92,6 +92,18 @@ export type ChampionCandidate = {
 
 export type MarketRegime = 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING' | 'BREAKOUT' | 'HIGH_VOLATILITY' | 'LOW_VOLATILITY' | 'CHAOTIC' | 'UNKNOWN';
 
+export type LiveEligibilityStatus = {
+  id: string;
+  name: string;
+  mode: SafeTradingMode;
+  lifecycleStatus: 'CHAMPION' | 'LIVE_ELIGIBLE';
+  state: string;
+  updatedAt: string;
+  latestCandidate: { id: string; status: string; score: number | null; evidence: unknown; evaluatedAt: string } | null;
+  liveActivated: false;
+  manualApprovalRequired: boolean;
+};
+
 export type TeacherEvaluation = {
   id: string;
   observation: string;
@@ -179,6 +191,13 @@ export const aiTradingApi = {
   leaderboard: (limit = 100) => getData<LeaderboardRow[]>('/admin/trading/leaderboard', { limit }),
   regimeLeaderboard: (regime: MarketRegime, limit = 100) => getData<Array<LeaderboardRow & { regime: MarketRegime }>>(`/admin/trading/regimes/${regime}/leaderboard`, { limit }),
   champions: () => getData<ChampionCandidate[]>('/admin/trading/champions'),
+  liveEligibility: () => getAutonomousData<LiveEligibilityStatus[]>('/admin/trading/autonomous/live-eligibility'),
+  promotionReview: (botId: string, decision: 'APPROVE' | 'REJECT', note: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<unknown>>>(`/admin/trading/autonomous/bots/${encodeURIComponent(botId)}/promotion-review`, { decision, note }).then((response) => {
+      const envelope = response.data.data;
+      if (envelope.apiVersion !== 'v1' || envelope.liveTradingEnabled !== false) throw new Error('Promotion review güvenlik sözleşmesi doğrulanamadı.');
+      return envelope;
+    }),
   tradeSummary: (groupBy: 'BOT' | 'STRATEGY' | 'REGIME' | 'SYMBOL', limit = 100) =>
     getData<TradeSummary[]>('/admin/trading/trade-memory/summary', { groupBy, limit }),
   teacherEvaluations: (limit = 10) => getData<TeacherEvaluation[]>('/admin/trading/teacher/evaluations', { limit }),
