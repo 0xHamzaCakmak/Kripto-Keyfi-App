@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 34
-Current prompt: PROMPT 35
+Last completed prompt: PROMPT 35
+Current prompt: PROMPT 36
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -44,12 +44,13 @@ Updated at: 2026-08-22
 - PROMPT 32 — COMPLETED
 - PROMPT 33 — COMPLETED
 - PROMPT 34 — COMPLETED
+- PROMPT 35 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 35 — Performance Frontend
+PROMPT 36 — Risk Frontend
 
-Trade Memory filtreleri, data-dense tablo ve tam trade detail drawer tamamlandı.
+PAPER performance metrikleri, aggregate equity chart ve beş kırılımda karşılaştırma tamamlandı.
 
 ## Last Test Result
 
@@ -62,9 +63,10 @@ Trade Memory filtreleri, data-dense tablo ve tam trade detail drawer tamamlandı
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- PROMPT 34 frontend typecheck/lint: PASS — `npm.cmd run lint`
-- PROMPT 34 frontend production build: PASS — `npm.cmd run build`
-- PROMPT 34 Trade Memory/manual/Grid regression: PASS — 4 files, 12 tests
+- PROMPT 35 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 35 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 35 backend performance/score/memory/manual/Grid regression: PASS — 4 files, 12 tests
+- PROMPT 35 Go performance/scoring: PASS — 2 packages
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -73,11 +75,11 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Symbol, bot, strategy, regime ve result filtreleri backend query contract'larına bağlandı; tarih filtresi son 200 kayıt üzerinde client-side uygulanıyor.
-- Entry/exit, PnL, MFE/MAE, fees, funding, slippage, regime, close reason ve tarih içeren data-dense tablo eklendi.
-- Trade detail drawer quantity/leverage/holding, decision summary, market context ve regime features gösteriyor.
-- PAPER simulation etiketi sabit; gerçek execution izlenimi oluşturulmuyor.
-- Similar-market backend endpointi olmadığı için hayali bölüm/veri eklenmedi.
+- Mevcut Recharts bağımlılığıyla chronological aggregate PAPER equity curve eklendi.
+- PnL, ROI, Sharpe, Sortino, Calmar, drawdown, PF, expectancy, fees, funding, slippage, trade count ve win rate gösteriliyor.
+- Strategy family, bot, generation, regime ve symbol kırılımlarında karşılaştırma tablosu eklendi.
+- Metrikler backend Trade Memory'nin son 200 kapanmış kaydı üzerinden deterministik hesaplanıyor ve örneklem kapsamı UI'da açıkça belirtiliyor.
+- Yeni chart veya başka ağır bağımlılık eklenmedi; PAPER/live ayrımı korunuyor.
 
 ## Safety State
 
@@ -122,6 +124,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 35: migration yok.
+
+- Read-only performance frontend ve istemci-side metric/chart türetimi; schema veya production veri değişikliği yok.
 
 PROMPT 34: migration yok.
 
@@ -258,7 +264,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 35 — aggregate performance metrics, equity chart ve karşılaştırmalar.
+- PROMPT 36 — autonomous Risk Engine hard-safety görünümü ve recent rejects.
 
 ## Known Risks for Next Prompts
 
@@ -330,6 +336,13 @@ Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz s
 - Test: PASS — frontend lint/build; Trade Memory, decimal, manual/Grid 4 dosya ve 12 test.
 - Migration: Yok.
 - TODO: PROMPT 35 Performance ekranı.
+
+### PROMPT 35
+
+- Değişiklikler: Recharts equity curve, 12 performance metric ve 5 karşılaştırma kırılımı.
+- Test: PASS — frontend lint/build; backend 4 dosya/12 test; Go performance/scoring 2 package.
+- Migration: Yok.
+- TODO: PROMPT 36 Risk ekranı.
 
 ## Source Note
 
