@@ -57,6 +57,7 @@ const TradingRiskManagementPage = lazy(() => import('./components/TradingAdminPh
 const TradingSystemStatusPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingSystemStatusPage })));
 const AITradingLayout = lazy(() => import('./components/ai-trading/AITradingLayout'));
 const AITradingOverview = lazy(() => import('./components/ai-trading/AITradingOverview'));
+const AITradingArena = lazy(() => import('./components/ai-trading/AITradingArena'));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const KOLExplorer = lazy(() => import('./components/KOLIntelligence'));
 const KOLProfile = lazy(() => import('./components/KOLIntelligence').then((module) => ({ default: module.KOLProfile })));
@@ -108,6 +109,7 @@ export default function App() {
                 <Route path="system" element={<TradingSystemStatusPage />} />
                 <Route path="ai" element={<AITradingLayout />}>
                   <Route index element={<AITradingOverview />} />
+                  <Route path="arena" element={<AITradingArena />} />
                 </Route>
                 <Route path="accounts" element={<Navigate to="/admin/trading/exchanges" replace />} />
                 <Route path="bots/guide" element={<Navigate to="/admin/trading/guide" replace />} />

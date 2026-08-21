@@ -86,7 +86,7 @@ export function aggregateOverview(bots: AutonomousBot[], summaries: TradeSummary
 }
 
 function lifecycleCounts(bots: AutonomousBot[]) {
-  return bots.reduce<Record<AutonomousLifecycle, number>>((result, bot) => { result[bot.lifecycleStatus] += 1; return result; }, { DRAFT: 0, CANDIDATE: 0, PAPER: 0, TESTING: 0, CHALLENGER: 0, CHAMPION: 0, LIVE_ELIGIBLE: 0, PAUSED: 0, REJECTED: 0, ARCHIVED: 0 });
+  return bots.reduce<Record<AutonomousLifecycle, number>>((result, bot) => { result[bot.lifecycleStatus] += 1; return result; }, { DRAFT: 0, CANDIDATE: 0, PAPER: 0, TESTING: 0, CHALLENGER: 0, CHAMPION: 0, LIVE_ELIGIBLE: 0, LIVE: 0, PAUSED: 0, REJECTED: 0, ARCHIVED: 0 });
 }
 
 function marketFresh(market: MarketContext | null) { return market !== null && Object.values(market.sources).some((source) => source.status === 'FRESH') && !Object.values(market.sources).some((source) => source.status === 'STALE'); }

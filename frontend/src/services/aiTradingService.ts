@@ -1,7 +1,7 @@
 import { api } from './apiClient';
 
 export type SafeTradingMode = 'PAPER' | 'SHADOW';
-export type AutonomousLifecycle = 'DRAFT' | 'CANDIDATE' | 'PAPER' | 'TESTING' | 'CHALLENGER' | 'CHAMPION' | 'LIVE_ELIGIBLE' | 'PAUSED' | 'REJECTED' | 'ARCHIVED';
+export type AutonomousLifecycle = 'DRAFT' | 'CANDIDATE' | 'PAPER' | 'TESTING' | 'CHALLENGER' | 'CHAMPION' | 'LIVE_ELIGIBLE' | 'LIVE' | 'PAUSED' | 'REJECTED' | 'ARCHIVED';
 
 export type AutonomousEnvelope<T> = {
   apiVersion: 'v1';
@@ -77,6 +77,20 @@ export type TradeSummary = {
   grossLoss: string;
   profitFactor: number | null;
 };
+
+export type ChampionCandidate = {
+  id: string;
+  tradingBotId: string;
+  status: string;
+  score: string | number | null;
+  evidence: unknown;
+  evaluatedAt: string;
+  promotedAt: string | null;
+  createdAt: string;
+  tradingBot: { name: string; lifecycleStatus: AutonomousLifecycle; strategyVersionId: string | null };
+};
+
+export type MarketRegime = 'TRENDING_UP' | 'TRENDING_DOWN' | 'RANGING' | 'BREAKOUT' | 'HIGH_VOLATILITY' | 'LOW_VOLATILITY' | 'CHAOTIC' | 'UNKNOWN';
 
 export type TeacherEvaluation = {
   id: string;
@@ -163,6 +177,8 @@ export const aiTradingApi = {
   arenaStatus: () => getAutonomousData<ArenaStatus>('/admin/trading/autonomous/arena-status'),
   bots: () => getData<AutonomousBot[]>('/admin/trading/bot-factory/bots'),
   leaderboard: (limit = 100) => getData<LeaderboardRow[]>('/admin/trading/leaderboard', { limit }),
+  regimeLeaderboard: (regime: MarketRegime, limit = 100) => getData<Array<LeaderboardRow & { regime: MarketRegime }>>(`/admin/trading/regimes/${regime}/leaderboard`, { limit }),
+  champions: () => getData<ChampionCandidate[]>('/admin/trading/champions'),
   tradeSummary: (groupBy: 'BOT' | 'STRATEGY' | 'REGIME' | 'SYMBOL', limit = 100) =>
     getData<TradeSummary[]>('/admin/trading/trade-memory/summary', { groupBy, limit }),
   teacherEvaluations: (limit = 10) => getData<TeacherEvaluation[]>('/admin/trading/teacher/evaluations', { limit }),

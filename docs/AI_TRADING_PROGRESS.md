@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 29
-Current prompt: PROMPT 30
+Last completed prompt: PROMPT 30
+Current prompt: PROMPT 31
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -39,12 +39,13 @@ Updated at: 2026-08-22
 - PROMPT 27 — COMPLETED
 - PROMPT 28 — COMPLETED
 - PROMPT 29 — COMPLETED
+- PROMPT 30 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 30 — Arena & Bot Leaderboard Frontend
+PROMPT 31 — Champions Frontend
 
-AI Trading nested admin alanı, typed API istemcisi, güvenli mode bileşenleri ve API-backed Overview tamamlandı.
+Arena population, leaderboard, filtre/sıralama ve bot detay drawer tamamlandı.
 
 ## Last Test Result
 
@@ -57,9 +58,9 @@ AI Trading nested admin alanı, typed API istemcisi, güvenli mode bileşenleri 
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- PROMPT 29 frontend typecheck/lint: PASS — `npm.cmd run lint`
-- PROMPT 29 frontend production build: PASS — `npm.cmd run build`
-- PROMPT 29 manual/Grid/risk regression: PASS — 4 files, 11 tests
+- PROMPT 30 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 30 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 30 Arena/manual/Grid regression: PASS — 6 files, 18 tests
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -68,11 +69,11 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- `/admin/trading/ai` nested admin alanı ve ikinci seviye navigasyon eklendi; mevcut trading rotaları korunuyor.
-- Version ve `liveTradingEnabled: false` invariant'ını doğrulayan typed autonomous API service eklendi.
-- Overview; system/arena status, lifecycle counts, market context, aggregate PAPER sonuçları, risk, top bots, Teacher/Researcher ve audit activity verilerine bağlandı.
-- Kısmi endpoint hataları diğer bölümleri gizlemiyor; eksik API verileri mock yerine `—`/empty state gösteriyor.
-- PAPER, SHADOW ve kapalı LIVE durumu görsel ve metinsel olarak ayrıldı.
+- Arena factory bot, risk-adjusted leaderboard, trade summary, Champion evidence ve regime leaderboard contract'larına bağlandı.
+- Status/strategy/generation/regime/min score/min PnL filtreleri ve score/PnL/PF/drawdown/trade sıralaması eklendi.
+- PnL, ROI, PF, drawdown, trades, win rate, strategy, generation, regime coverage ve lifecycle gösteriliyor.
+- Bot detay drawer gerçek API kanıtlarını sunuyor; equity serisi yoksa sparkline üretilmiyor.
+- PAPER/SHADOW mode rozetleri ve 100 bot population göstergesi eklendi.
 
 ## Safety State
 
@@ -117,6 +118,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 30: migration yok.
+
+- Frontend Arena ve typed read contract ekleri; production schema/veri veya execution değişikliği yok.
 
 PROMPT 29: migration yok.
 
@@ -233,7 +238,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 30 — Arena leaderboard, filtre/sıralama ve bot detay drawer.
+- PROMPT 31 — Candidate/Challenger/Champion/Live Eligible ve promotion history ekranı.
 
 ## Known Risks for Next Prompts
 
@@ -270,6 +275,13 @@ Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz s
 - Test: PASS — frontend lint/build; manual/Grid/risk 4 dosya ve 11 test.
 - Migration: Yok.
 - TODO: PROMPT 30 Arena ve bot detayları.
+
+### PROMPT 30
+
+- Değişiklikler: 100-bot Arena görünümü, metric tablosu, filtre/sıralama, regime contract ve detay drawer.
+- Test: PASS — frontend lint/build; Arena, score, regime, memory, Champion, manual/Grid 6 dosya ve 18 test.
+- Migration: Yok.
+- TODO: PROMPT 31 Champions ekranı.
 
 ## Source Note
 
