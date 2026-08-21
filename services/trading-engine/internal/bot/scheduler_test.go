@@ -61,6 +61,9 @@ func TestSchedulerReconcilesBeforePaperCycle(t *testing.T) {
 	if store.decision.Kind != "BUY" || store.decision.HypotheticalOrder["submittedToExchange"] != false {
 		t.Fatalf("unsafe paper decision: %#v", store.decision)
 	}
+	if _, ok := store.decision.Metrics["strategyExecutionLatencyMs"].(float64); !ok {
+		t.Fatalf("strategy execution latency was not recorded: %#v", store.decision.Metrics)
+	}
 }
 
 func TestSchedulerBlocksRunnerWhenRiskGateIsClosed(t *testing.T) {

@@ -1,6 +1,7 @@
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
@@ -29,9 +30,16 @@ export function createApp() {
   app.set('trust proxy', 1);
   app.use(pinoHttp({
     level: env.NODE_ENV === 'test' ? 'silent' : 'info',
+    genReqId: (req, res) => {
+      const supplied = req.headers['x-request-id'];
+      const requestId = typeof supplied === 'string' && /^[A-Za-z0-9_-]{8,80}$/.test(supplied) ? supplied : randomUUID();
+      res.setHeader('X-Request-ID', requestId);
+      return requestId;
+    },
     redact: [
       'req.headers.authorization', 'req.headers.cookie', 'req.headers.x-print-agent-token', 'req.body.password', 'req.body.new_password', 'req.body.confirmPassword', 'req.body.credential',
       'req.body.apiKey', 'req.body.apiSecret', 'req.body.passphrase', 'res.headers.set-cookie',
+      'req.body.*.apiKey', 'req.body.*.apiSecret', 'req.body.*.passphrase',
     ],
   }));
   app.use(helmet());

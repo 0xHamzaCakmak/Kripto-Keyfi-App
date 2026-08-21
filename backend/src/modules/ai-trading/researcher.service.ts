@@ -101,13 +101,23 @@ export async function runResearcher(
       rows.push(row);
       await tx.tradingAuditLog.create({ data: {
         userId, action: 'AI_RESEARCH_HYPOTHESIS_CREATED', entityType: 'RESEARCH_HYPOTHESIS', entityId: row.id,
-        metadata: { targetStrategyFamily: proposal.targetStrategyFamily, candidateCreated: false, liveChanged: false },
+        metadata: { targetStrategyFamily: proposal.targetStrategyFamily, analysisAdapter: adapterMetadata(proposal.evidence), candidateCreated: false, liveChanged: false },
         ...(ipAddress ? { ipAddress } : {}),
       } });
     }
+    await tx.tradingAuditLog.create({ data: {
+      userId, action: 'AI_RESEARCH_RUN_COMPLETED', entityType: 'RESEARCH_RUN',
+      metadata: { provider: provider.name, datasetsAnalyzed: datasets.length, hypothesesCreated: rows.length, candidateCreated: false, liveChanged: false },
+      ...(ipAddress ? { ipAddress } : {}),
+    } });
     return rows;
   });
   return { provider: provider.name, datasetsAnalyzed: datasets.length, hypothesesCreated: created.length, candidateCreated: false, liveChanged: false };
+}
+
+function adapterMetadata(evidence: Record<string, unknown>) {
+  const value = evidence.analysisAdapter;
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
 
 export async function listResearchHypotheses(userId: string, query: ResearchHypothesesQuery) {

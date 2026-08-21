@@ -24,6 +24,7 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, req, res, _nex
     error: {
       code: normalized.code,
       message: normalized.message,
+      correlationId: req.id,
       ...(normalized.details === undefined ? {} : { details: normalized.details }),
       ...(env.NODE_ENV !== 'production' && error instanceof Error ? { stack: error.stack } : {}),
     },

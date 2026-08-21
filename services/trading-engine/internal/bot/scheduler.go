@@ -138,11 +138,16 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	if instance.State != StateRunning && !s.transition(ctx, instance, StateRunning, "Shadow/paper runner aktif.", now) {
 		return
 	}
+	strategyStartedAt := time.Now()
 	decision, err := s.runner.Tick(ctx, *instance)
 	if err != nil {
 		s.transition(ctx, instance, StateError, "Runner çevrimi başarısız.", now)
 		return
 	}
+	if decision.Metrics == nil {
+		decision.Metrics = make(map[string]any)
+	}
+	decision.Metrics["strategyExecutionLatencyMs"] = float64(time.Since(strategyStartedAt).Microseconds()) / 1000
 	if s.observer != nil {
 		observation, observeErr := s.observer.Observe(ctx, *instance, decision)
 		if observeErr != nil {

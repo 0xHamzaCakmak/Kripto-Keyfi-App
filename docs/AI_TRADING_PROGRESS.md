@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 24
-Current prompt: PROMPT 25
+Last completed prompt: PROMPT 25
+Current prompt: PROMPT 26
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -34,21 +34,22 @@ Updated at: 2026-08-22
 - PROMPT 22 — COMPLETED
 - PROMPT 23 — COMPLETED
 - PROMPT 24 — COMPLETED
+- PROMPT 25 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 25 — Backend Observability
+PROMPT 26 — Autonomous Trading Admin API
 
-Autonomous trading health, throughput, lag, risk, execution ve provider metrikleri ile structured log/audit görünürlüğü eklenecek.
+Frontend için mevcut autonomous read/write endpoint envanteri tamamlanacak, tutarlı ve versioned admin contracts belgelenecek.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 55 files, 236 tests
+- Backend unit/integration tests: PASS — 56 files, 239 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
-- PROMPT 24 scoped backend tests: PASS — 3 files, 14 tests
-- PROMPT 24 scoped backend ESLint: PASS
+- PROMPT 25 scoped backend tests: PASS — 3 files, 13 tests
+- PROMPT 25 scoped backend ESLint: PASS
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
@@ -62,12 +63,13 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Teacher ve Researcher için ortak, vendor-neutral `StructuredAIProvider` portu eklendi; gerçek provider/API key yapılandırması zorunlu değil.
-- LLM Teacher/Researcher çıktıları strict Zod schema, bounded alanlar ve allow-listed candidate/recommendation action türleriyle doğrulanıyor.
-- Provider error, timeout, invalid schema veya Researcher strategy-family mismatch durumunda mevcut deterministic rule provider devreye giriyor.
-- Teacher target kimliği yalnız trusted evidence'dan bağlanıyor; provider otomatik uygulama, kod değişikliği veya live risk değişikliği üretemiyor.
-- Researcher önerileri yalnız `createCandidateOnly: true` kabul ediyor; DRAFT hypothesis ledger'ı mevcut Evolution candidate pipeline tarafından tüketiliyor.
-- Provider ve fallback kullanımı evidence metadata'sına ekleniyor; mevcut Teacher/Researcher audit kayıtları her öneriyi `applied/liveChanged=false` ile saklıyor.
+- Admin `system-health` endpointi active bots, arena throughput, market lag, strategy latency, paper order, risk reject, exchange/AI/PnL error, generation, Teacher/Researcher ve memory-growth metriklerini sunuyor.
+- Health state HEALTHY/DEGRADED/EMERGENCY_STOPPED olarak deterministic hesaplanıyor; global kill switch fail-closed görünür.
+- Go scheduler gerçek strategy execution latency değerini her kararın mevcut metrics JSON'una ekliyor.
+- Teacher ve Researcher çalıştırmaları mevcut audit ledger'a ayrı run olaylarıyla yazılıyor; provider fallback metadata'sı öneri auditlerine taşınıyor.
+- Admin-only autonomous audit endpointi bounded son AI audit olaylarını sunuyor.
+- Geçerli `X-Request-ID` korunuyor, yoksa UUID üretiliyor; response header, structured log, health payload ve hata response'unda correlation id bulunuyor.
+- API key/secret/passphrase redaction nested request alanlarını kapsayacak şekilde genişletildi.
 
 ## Safety State
 
@@ -105,8 +107,14 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - AI Decision exchange access: NONE
 - Teacher/Researcher LLM adapters: optional, vendor-neutral, timeout-bounded, deterministic fallback enabled
 - LLM code/live-risk mutation permission: NONE
+- Autonomous observability: persistent-ledger metrics plus admin-only health/audit endpoints
+- Error correlation: `X-Request-ID` / response `correlationId`
 
 ## Migration
+
+PROMPT 25: migration yok.
+
+- Mevcut decision metrics JSON ve trading audit ledger kullanılır; yeni tablo/kolon veya production veri işlemi yoktur.
 
 PROMPT 24: migration yok.
 
@@ -203,7 +211,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 25 autonomous trading observability metrikleri, structured loglar, audit erişimi ve health görünürlüğünü eklemek.
+- PROMPT 26 Autonomous Trading Admin API read/write endpoint ve contract envanterini tamamlamak; live activation eklememek.
 
 ## Known Risks for Next Prompts
 

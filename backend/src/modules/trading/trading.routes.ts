@@ -45,10 +45,14 @@ import { shadowPerformance, shadowTrades } from '../ai-trading/shadow-trading.co
 import { shadowSummaryQuerySchema, shadowTradesQuerySchema } from '../ai-trading/shadow-trading.schema.js';
 import { evaluateLiveEligible } from '../ai-trading/live-eligibility.controller.js';
 import { runLiveEligibilityBodySchema } from '../ai-trading/live-eligibility.schema.js';
+import { autonomousAudit, systemHealth } from '../ai-trading/autonomous-observability.controller.js';
+import { autonomousAuditQuerySchema } from '../ai-trading/autonomous-observability.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
 tradingRouter.get('/overview', asyncHandler(overview));
+tradingRouter.get('/system-health', asyncHandler(systemHealth));
+tradingRouter.get('/system-health/audit', validateRequest({ query: autonomousAuditQuerySchema }), asyncHandler(autonomousAudit));
 tradingRouter.get('/strategies', asyncHandler(strategies));
 tradingRouter.post('/strategies', validateRequest({ body: createStrategyBodySchema }), asyncHandler(createStrategy));
 tradingRouter.get('/strategies/:id', validateRequest({ params: strategyIdParamsSchema }), asyncHandler(strategy));

@@ -112,13 +112,23 @@ export async function runTeacherEvaluation(
       await tx.tradingAuditLog.create({ data: {
         userId, action: 'AI_TEACHER_EVALUATED', entityType: item.targetType,
         entityId: item.tradingBotId ?? item.strategyId!,
-        metadata: { teacherEvaluationId: row.id.toString(), analyzer: provider.name, recommendationApplied: false },
+        metadata: { teacherEvaluationId: row.id.toString(), analyzer: provider.name, analysisAdapter: adapterMetadata(item.metricEvidence), recommendationApplied: false },
         ...(ipAddress ? { ipAddress } : {}),
       } });
     }
+    await tx.tradingAuditLog.create({ data: {
+      userId, action: 'AI_TEACHER_RUN_COMPLETED', entityType: 'TEACHER_RUN',
+      metadata: { analyzer: provider.name, targetsAnalyzed: evidence.length, evaluationsCreated: rows.length, recommendationApplied: false },
+      ...(ipAddress ? { ipAddress } : {}),
+    } });
     return rows;
   });
   return { analyzer: provider.name, targetsAnalyzed: evidence.length, evaluationsCreated: created.length, recommendationApplied: false };
+}
+
+function adapterMetadata(evidence: Record<string, unknown>) {
+  const value = evidence.analysisAdapter;
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
 }
 
 export async function listTeacherEvaluations(userId: string, query: TeacherEvaluationsQuery) {
