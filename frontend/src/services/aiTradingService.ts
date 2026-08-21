@@ -122,6 +122,16 @@ export type BotCrossover = {
   id: string; parentABotId: string; parentBBotId: string; childBotId: string; generationId: string; inheritedFields: unknown; generatedFields: unknown; createdAt: string;
   parentA: { name: string }; parentB: { name: string }; child: { name: string; lifecycleStatus: AutonomousLifecycle; mode: SafeTradingMode }; generation: { number: number; status: string };
 };
+export type TradeMemory = {
+  id: string; tradingBotId: string; strategyVersionId: string | null; symbol: string; side: 'BUY' | 'SELL'; status: 'CLOSED' | 'LIQUIDATED';
+  entryPrice: string; exitPrice: string | null; quantity: string; leverage: number; fees: string; funding: string; slippageCost: string; realizedPnl: string;
+  stopLoss: string | null; takeProfit: string | null; maxFavorableExcursion: string; maxAdverseExcursion: string; holdingSeconds: number | null;
+  marketContext: unknown; closeReason: string | null; aiConfidence: string | null; decisionSummary: string | null; openedAt: string; closedAt: string | null;
+  tradingBot: { id: string; name: string };
+  strategyVersion: { id: string; version: number; strategy: { id: string; name: string; family: string } } | null;
+  marketRegimeSnapshot: { id: string; regime: MarketRegime; confidence: string | number; timeframe: string; features: unknown; observedAt: string } | null;
+};
+export type TradeMemoryQuery = { botId?: string; strategyVersionId?: string; symbol?: string; regime?: MarketRegime; side?: 'BUY' | 'SELL'; outcome?: 'ALL' | 'BEST' | 'FAILURE'; limit?: number };
 
 export type TeacherEvaluation = {
   id: string;
@@ -225,6 +235,7 @@ export const aiTradingApi = {
     api.post<ResponseEnvelope<AutonomousEnvelope<Generation>>>('/admin/trading/autonomous/generations', { populationTarget, note }).then((response) => response.data.data),
   tradeSummary: (groupBy: 'BOT' | 'STRATEGY' | 'REGIME' | 'SYMBOL', limit = 100) =>
     getData<TradeSummary[]>('/admin/trading/trade-memory/summary', { groupBy, limit }),
+  tradeMemory: (params: TradeMemoryQuery = {}) => getData<TradeMemory[]>('/admin/trading/trade-memory', params),
   teacherEvaluations: (limit = 10) => getData<TeacherEvaluation[]>('/admin/trading/teacher/evaluations', { limit }),
   researchHypotheses: (limit = 10) => getData<ResearchHypothesis[]>('/admin/trading/research/hypotheses', { limit }),
   audit: (limit = 20) => getData<AuditActivity[]>('/admin/trading/system-health/audit', { limit }),

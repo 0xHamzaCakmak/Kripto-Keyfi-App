@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 33
-Current prompt: PROMPT 34
+Last completed prompt: PROMPT 34
+Current prompt: PROMPT 35
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -43,12 +43,13 @@ Updated at: 2026-08-22
 - PROMPT 31 — COMPLETED
 - PROMPT 32 — COMPLETED
 - PROMPT 33 — COMPLETED
+- PROMPT 34 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 34 — Memory Frontend
+PROMPT 35 — Performance Frontend
 
-Teacher evaluation ve Researcher hypothesis ekranları, kanıtları ve suggestion/applied ayrımı tamamlandı.
+Trade Memory filtreleri, data-dense tablo ve tam trade detail drawer tamamlandı.
 
 ## Last Test Result
 
@@ -61,9 +62,9 @@ Teacher evaluation ve Researcher hypothesis ekranları, kanıtları ve suggestio
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- PROMPT 33 frontend typecheck/lint: PASS — `npm.cmd run lint`
-- PROMPT 33 frontend production build: PASS — `npm.cmd run build`
-- PROMPT 33 Teacher/Researcher/manual/Grid regression: PASS — 5 files, 20 tests
+- PROMPT 34 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 34 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 34 Trade Memory/manual/Grid regression: PASS — 4 files, 12 tests
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -72,11 +73,11 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Teacher ekranında bot/strategy hedefi, observation, severity, confidence, metric evidence, recommendation ve tarih gösteriliyor.
-- Researcher ekranında hypothesis, evidence, target strategy, suggested change, confidence ve candidate status gösteriliyor.
-- Severity/status filtreleri ve özet metrikleri eklendi.
-- Teacher kayıtları `SUGGESTION · NOT APPLIED`, Researcher kayıtları `HYPOTHESIS · NOT APPLIED` olarak açıkça işaretleniyor.
-- Accepted hypothesis'ın bile applied/live deployment olmadığı açıklanıyor; hiçbir write/execute kontrolü eklenmedi.
+- Symbol, bot, strategy, regime ve result filtreleri backend query contract'larına bağlandı; tarih filtresi son 200 kayıt üzerinde client-side uygulanıyor.
+- Entry/exit, PnL, MFE/MAE, fees, funding, slippage, regime, close reason ve tarih içeren data-dense tablo eklendi.
+- Trade detail drawer quantity/leverage/holding, decision summary, market context ve regime features gösteriyor.
+- PAPER simulation etiketi sabit; gerçek execution izlenimi oluşturulmuyor.
+- Similar-market backend endpointi olmadığı için hayali bölüm/veri eklenmedi.
 
 ## Safety State
 
@@ -121,6 +122,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 34: migration yok.
+
+- Read-only Trade Memory frontend ve typed query/DTO; schema veya production veri değişikliği yok.
 
 PROMPT 33: migration yok.
 
@@ -253,7 +258,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 34 — Trade Memory filtreleri, tablo ve trade detail görünümü.
+- PROMPT 35 — aggregate performance metrics, equity chart ve karşılaştırmalar.
 
 ## Known Risks for Next Prompts
 
@@ -318,6 +323,13 @@ Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz s
 - Test: PASS — frontend lint/build; Teacher, Researcher, AI adapters, manual/Grid 5 dosya ve 20 test.
 - Migration: Yok.
 - TODO: PROMPT 34 Memory ekranı.
+
+### PROMPT 34
+
+- Değişiklikler: Server-side memory filtreleri, client-side date range, trade tablosu ve context detail drawer.
+- Test: PASS — frontend lint/build; Trade Memory, decimal, manual/Grid 4 dosya ve 12 test.
+- Migration: Yok.
+- TODO: PROMPT 35 Performance ekranı.
 
 ## Source Note
 
