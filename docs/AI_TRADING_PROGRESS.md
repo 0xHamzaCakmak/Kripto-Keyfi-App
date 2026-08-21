@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 32
-Current prompt: PROMPT 33
+Last completed prompt: PROMPT 33
+Current prompt: PROMPT 34
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -42,12 +42,13 @@ Updated at: 2026-08-22
 - PROMPT 30 — COMPLETED
 - PROMPT 31 — COMPLETED
 - PROMPT 32 — COMPLETED
+- PROMPT 33 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 33 — Teacher / Researcher Frontend
+PROMPT 34 — Memory Frontend
 
-Generation metrics/history, parent-child lineage, mutation diff ve güvenli PAPER generation trigger tamamlandı.
+Teacher evaluation ve Researcher hypothesis ekranları, kanıtları ve suggestion/applied ayrımı tamamlandı.
 
 ## Last Test Result
 
@@ -60,9 +61,9 @@ Generation metrics/history, parent-child lineage, mutation diff ve güvenli PAPE
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- PROMPT 32 frontend typecheck/lint: PASS — `npm.cmd run lint`
-- PROMPT 32 frontend production build: PASS — `npm.cmd run build`
-- PROMPT 32 Evolution/mutation/crossover/manual/Grid regression: PASS — 6 files, 25 tests
+- PROMPT 33 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 33 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 33 Teacher/Researcher/manual/Grid regression: PASS — 5 files, 20 tests
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -71,11 +72,11 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Current generation, population, survivors, mutation/crossover/rejected ve top score özetleri eklendi.
-- Generation ve Evolution run geçmişleri gerçek backend contract'larına bağlandı.
-- Mutation/crossover parent → child lineage hafif CSS listesiyle gösteriliyor.
-- Mutation parameter diff eski değer → yeni değer olarak gösteriliyor.
-- Trigger yalnız güvenli autonomous PAPER generation endpointini kullanıyor ve confirm metni live/exchange execution olmadığını belirtiyor.
+- Teacher ekranında bot/strategy hedefi, observation, severity, confidence, metric evidence, recommendation ve tarih gösteriliyor.
+- Researcher ekranında hypothesis, evidence, target strategy, suggested change, confidence ve candidate status gösteriliyor.
+- Severity/status filtreleri ve özet metrikleri eklendi.
+- Teacher kayıtları `SUGGESTION · NOT APPLIED`, Researcher kayıtları `HYPOTHESIS · NOT APPLIED` olarak açıkça işaretleniyor.
+- Accepted hypothesis'ın bile applied/live deployment olmadığı açıklanıyor; hiçbir write/execute kontrolü eklenmedi.
 
 ## Safety State
 
@@ -120,6 +121,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 33: migration yok.
+
+- Read-only frontend Teacher/Researcher ekranları; schema/veri veya AI application davranışı değişmedi.
 
 PROMPT 32: migration yok.
 
@@ -248,7 +253,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 33 — Teacher ve Researcher öneri/hipotez ekranları.
+- PROMPT 34 — Trade Memory filtreleri, tablo ve trade detail görünümü.
 
 ## Known Risks for Next Prompts
 
@@ -306,6 +311,13 @@ Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz s
 - Test: PASS — frontend lint/build; Evolution, mutation, crossover, autonomous admin, manual/Grid 6 dosya ve 25 test.
 - Migration: Yok.
 - TODO: PROMPT 33 Teacher/Researcher ekranları.
+
+### PROMPT 33
+
+- Değişiklikler: Teacher ve Researcher read-only sayfaları, evidence görünümü ve zorunlu suggestion/applied ayrımı.
+- Test: PASS — frontend lint/build; Teacher, Researcher, AI adapters, manual/Grid 5 dosya ve 20 test.
+- Migration: Yok.
+- TODO: PROMPT 34 Memory ekranı.
 
 ## Source Note
 

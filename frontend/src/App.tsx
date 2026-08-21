@@ -60,6 +60,8 @@ const AITradingOverview = lazy(() => import('./components/ai-trading/AITradingOv
 const AITradingArena = lazy(() => import('./components/ai-trading/AITradingArena'));
 const AITradingChampions = lazy(() => import('./components/ai-trading/AITradingChampions'));
 const AITradingEvolution = lazy(() => import('./components/ai-trading/AITradingEvolution'));
+const AITradingTeacher = lazy(() => import('./components/ai-trading/AITradingLearning').then((module) => ({ default: module.AITradingTeacher })));
+const AITradingResearcher = lazy(() => import('./components/ai-trading/AITradingLearning').then((module) => ({ default: module.AITradingResearcher })));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const KOLExplorer = lazy(() => import('./components/KOLIntelligence'));
 const KOLProfile = lazy(() => import('./components/KOLIntelligence').then((module) => ({ default: module.KOLProfile })));
@@ -114,6 +116,8 @@ export default function App() {
                   <Route path="arena" element={<AITradingArena />} />
                   <Route path="champions" element={<AITradingChampions />} />
                   <Route path="evolution" element={<AITradingEvolution />} />
+                  <Route path="teacher" element={<AITradingTeacher />} />
+                  <Route path="researcher" element={<AITradingResearcher />} />
                 </Route>
                 <Route path="accounts" element={<Navigate to="/admin/trading/exchanges" replace />} />
                 <Route path="bots/guide" element={<Navigate to="/admin/trading/guide" replace />} />
