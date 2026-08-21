@@ -2,9 +2,9 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 36
-Current prompt: PROMPT 37
-Status: IN_PROGRESS
+Last completed prompt: PROMPT 37
+Current prompt: PROMPT 38
+Status: PAUSED_BEFORE_FINAL_AUDIT
 Updated at: 2026-08-22
 
 ## Completed
@@ -46,12 +46,13 @@ Updated at: 2026-08-22
 - PROMPT 34 — COMPLETED
 - PROMPT 35 — COMPLETED
 - PROMPT 36 — COMPLETED
+- PROMPT 37 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 37 — Shadow & Live Frontend
+PROMPT 38 — Final Audit
 
-Autonomous read-only Risk Engine görünümü, hard-safety ayrımı, exposure ve recent rejects tamamlandı.
+PROMPT 37 tamamlandı. Kullanıcı talebi gereği final audit olan PROMPT 38'e başlanmadan duruldu.
 
 ## Last Test Result
 
@@ -64,23 +65,26 @@ Autonomous read-only Risk Engine görünümü, hard-safety ayrımı, exposure ve
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- PROMPT 36 frontend typecheck/lint: PASS — `npm.cmd run lint`
-- PROMPT 36 frontend production build: PASS — `npm.cmd run build`
-- PROMPT 36 backend Risk/manual/Grid regression: PASS — 4 files, 13 tests
-- PROMPT 36 Go risk/execution: PASS — 2 packages
+- PROMPT 37 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 37 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 37 backend Shadow/portfolio/live-eligibility/manual/Grid regression: PASS — 6 files, 23 tests
+- Frontend phase full backend regression: PASS — 58 files, 252 tests
+- Frontend phase backend build: PASS
+- Frontend phase Go unit/integration tests: PASS — `go test ./...`
+- Frontend phase Go static analysis: PASS — `go vet ./...`
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
 
-Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 226 testin tamamı geçmiştir.
+Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 252 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- Risk Engine status, hard limitler, emergency stop ve son risk reject kayıtları gerçek account risk API'lerine bağlandı.
-- Max risk/trade, daily/weekly loss, drawdown, leverage, position/exposure, symbol exposure, cooldown, stop, R:R, margin ve consecutive-loss limitleri ayrı immutable panelde gösteriliyor.
-- AI/Teacher/Researcher/Evolution'ın hard safety alanlarını değiştiremeyeceği açıkça belirtiliyor.
-- TESTNET/DEMO position endpointinden read-only exposure hesaplanıyor; bağlantı/veri yoksa `UNKNOWN` gösteriliyor.
-- Autonomous risk görünümü salt okunur; mevcut merkezi risk limit ve kill-switch aksiyonlarına admin confirmation eklendi.
+- Shadow actions, sanal PnL ve canlı piyasa takibi gerçek autonomous API verileriyle ayrı Shadow panelinde gösteriliyor.
+- Live panel yalnızca gerçekten `LIVE` lifecycle durumundaki autonomous botları, aktive edilmiş live allocation'ı ve bunlara bağlı pozisyonları dikkate alıyor.
+- PAPER/SHADOW allocation'ları Live sermayeden görsel ve semantik olarak ayrıldı; live emir aksiyonu veya aktivasyon CTA'sı eklenmedi.
+- Live gerçekleşmiş PnL endpointte bulunmadığı için uydurulmadı; arayüzde unavailable olarak işaretlendi.
+- Exchange/position verisi yoksa fail-closed `UNKNOWN`/degraded durumları gösteriliyor.
 
 ## Safety State
 
@@ -269,7 +273,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 37 — Shadow/Live kesin ayrımı, shadow action/PnL ve read-only live health/positions.
+- PROMPT 38 — final audit, full-system validation ve kapanış raporu. Kullanıcı devam onayı bekleniyor.
 
 ## Known Risks for Next Prompts
 
@@ -281,7 +285,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Blockers
 
-Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz sınırı PROMPT 38 öncesidir.
+Teknik blocker yok. Frontend fazı PROMPT 37 ile tamamlandı; kullanıcı talebi gereği PROMPT 38 final audit öncesinde duruldu.
 
 ## Phase Checkpoints
 
@@ -355,6 +359,13 @@ Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz s
 - Test: PASS — frontend lint/build; backend Risk/manual/Grid 4 dosya/13 test; Go risk/execution 2 package.
 - Migration: Yok.
 - TODO: PROMPT 37 Shadow & Live ekranı.
+
+### PROMPT 37
+
+- Değişiklikler: Kesin PAPER/SHADOW/LIVE ayrımı; API-backed shadow action ve sanal PnL; autonomous LIVE bot/allocation/position, risk ve exchange health için read-only görünüm.
+- Test: PASS — frontend lint/build; backend 6 dosya/23 test; tam backend regression 58 dosya/252 test; backend build; tam Go test/vet.
+- Migration: Yok.
+- TODO: PROMPT 38 final audit. Kullanıcı talebi gereği başlanmadı.
 
 ## Source Note
 

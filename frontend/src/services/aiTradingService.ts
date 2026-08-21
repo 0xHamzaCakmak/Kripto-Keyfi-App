@@ -142,6 +142,19 @@ export type TradingRiskProfile = {
   allowedSymbols: string[] | null; blockedSymbols: string[] | null; updatedAt: string;
 };
 export type TradingRiskEvent = { id: string; tradingOrderId: string | null; source: string; decision: string; code: string; message: string; metrics: unknown; occurredAt: string };
+export type ShadowTrade = {
+  id: string; decisionId: string; tradingBotId: string; action: 'WOULD_OPEN' | 'WOULD_CLOSE' | 'WOULD_MOVE_STOP'; side: 'BUY' | 'SELL' | null;
+  quantity: string | null; markPrice: string; simulatedFillPrice: string | null; notional: string | null; fee: string; realizedPnl: string;
+  netQuantity: string; avgEntryPrice: string; cumulativePnl: string; totalFees: string; unrealizedPnl: string; slippageBps: string | null; feeBps: string | null; stopPrice: string | null;
+  occurredAt: string; paperIncluded: false; submittedToExchange: false; tradingBot: { name: string; symbol: string; lifecycleStatus: AutonomousLifecycle };
+};
+export type ShadowPerformance = {
+  botId: string; botName: string; symbol: string; lifecycleStatus: AutonomousLifecycle; riskAdjustedScore: number | null;
+  totalActions: number; wouldOpen: number; wouldClose: number; wouldMoveStop: number; wins: number; losses: number; winRate: number | null;
+  realizedPnl: number; totalFees: number; netPnl: number; profitFactor: number | null; maxDrawdown: number; startedAt: string | null; lastActionAt: string | null; shadowDurationDays: number;
+  paperIncluded: false; orderSubmitted: false; liveActivated: false;
+};
+export type PortfolioAllocation = { id: string; exchangeAccountId: string; mode: SafeTradingMode; capital: string; allocatedCapital: string; reservePct: string; botAllocations: unknown; symbolAllocations: unknown; riskSnapshot: unknown; config: unknown; deterministic: boolean; orderSubmitted: false; liveActivated: false; createdAt: string };
 
 export type TeacherEvaluation = {
   id: string;
@@ -254,6 +267,9 @@ export const aiTradingApi = {
     getData<MarketContext>('/admin/trading/market-intelligence/context', { symbol, timeframe }),
   riskProfile: (exchangeAccountId: string) => getData<TradingRiskProfile>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`),
   riskEvents: (exchangeAccountId: string) => getData<TradingRiskEvent[]>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-events`),
+  shadowTrades: (limit = 100) => getData<ShadowTrade[]>('/admin/trading/shadow-trades', { limit }),
+  shadowPerformance: () => getData<ShadowPerformance[]>('/admin/trading/shadow-trades/performance'),
+  portfolioAllocations: (limit = 50) => getData<PortfolioAllocation[]>('/admin/trading/portfolio-allocations', { limit }),
 };
 
 export function recordNumber(value: unknown, keys: string[]): number | null {

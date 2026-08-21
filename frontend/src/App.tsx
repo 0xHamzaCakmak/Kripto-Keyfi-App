@@ -65,6 +65,7 @@ const AITradingResearcher = lazy(() => import('./components/ai-trading/AITrading
 const AITradingMemory = lazy(() => import('./components/ai-trading/AITradingMemory'));
 const AITradingPerformance = lazy(() => import('./components/ai-trading/AITradingPerformance'));
 const AITradingRisk = lazy(() => import('./components/ai-trading/AITradingRisk'));
+const AITradingShadowLive = lazy(() => import('./components/ai-trading/AITradingShadowLive'));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const KOLExplorer = lazy(() => import('./components/KOLIntelligence'));
 const KOLProfile = lazy(() => import('./components/KOLIntelligence').then((module) => ({ default: module.KOLProfile })));
@@ -124,6 +125,7 @@ export default function App() {
                   <Route path="memory" element={<AITradingMemory />} />
                   <Route path="performance" element={<AITradingPerformance />} />
                   <Route path="risk" element={<AITradingRisk />} />
+                  <Route path="shadow-live" element={<AITradingShadowLive />} />
                 </Route>
                 <Route path="accounts" element={<Navigate to="/admin/trading/exchanges" replace />} />
                 <Route path="bots/guide" element={<Navigate to="/admin/trading/guide" replace />} />
