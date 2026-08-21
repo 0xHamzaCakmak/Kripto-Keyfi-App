@@ -2,9 +2,9 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 26
-Current prompt: PROMPT 27
-Status: IN_PROGRESS
+Last completed prompt: PROMPT 27
+Current prompt: PROMPT 28
+Status: PAUSED_BEFORE_FRONTEND_PHASE
 Updated at: 2026-08-22
 
 ## Completed
@@ -36,21 +36,22 @@ Updated at: 2026-08-22
 - PROMPT 24 — COMPLETED
 - PROMPT 25 — COMPLETED
 - PROMPT 26 — COMPLETED
+- PROMPT 27 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 27 — Backend Test / Simulation Suite
+PROMPT 28 — Frontend Architecture Audit
 
-On altı güvenlik/performance senaryosunu kapsayan deterministic simulation suite eklenecek; production exchange kullanılmayacak.
+Henüz başlanmadı. Kullanıcıyla kararlaştırılan backend fazı durma noktası gereği PROMPT 28 öncesinde bırakıldı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 57 files, 243 tests
+- Backend unit/integration tests: PASS — 58 files, 252 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
-- PROMPT 26 scoped backend tests: PASS — 3 files, 14 tests
-- PROMPT 26 scoped backend ESLint: PASS
+- PROMPT 27 simulation suite: PASS — 1 file, 9 tests covering 16 named scenarios
+- PROMPT 27 scoped backend ESLint: PASS
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
@@ -64,13 +65,12 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- `/autonomous/*` admin API altında versioned `v1` DTO; overview, arena status, generation ve live-eligibility read contractları eklendi.
-- Mevcut bots, leaderboard, champions, strategies, evolution, Teacher, Researcher, memory, performance, regime, risk, shadow ve health endpointleri tek frontend envanterinde belgelendi.
-- Autonomous bot create endpointi yalnız PAPER kabul ediyor; pause/resume yalnız PAPER/SHADOW ve resume account + Risk Engine readiness gate arkasında.
-- PAPER generation trigger tek aktif generation ile sınırlı, `liveEnabled=false` ve `orderExecutionAllowed=false` metadata'sıyla audit ediliyor.
-- Candidate archive yalnız promote edilmemiş lifecycle durumlarında; non-critical settings yalnız bounded scheduler interval ve LIVE_ELIGIBLE freeze ile sınırlı.
-- Manual promotion reject botu güvenli PAUSED duruma alıyor; approve yalnız `APPROVED_PENDING_ACTIVATION` audit'i oluşturuyor ve `LIVE` aktivasyonu yapmıyor.
-- API sözleşme envanteri `docs/AI_TRADING_ADMIN_API.md` içinde kaydedildi.
+- Deterministic PAPER/SHADOW-only simulation harness ve `npm run test:ai-trading-simulation` komutu eklendi.
+- 100 concurrent paper bot, trend, range, volatility spike, disconnect, stale data, funding, fee overtrading, drawdown/stability, daily loss, emergency stop, mutation, promotion, shadow ve risk rejection senaryoları doğrulandı.
+- Simulation mutation testi mevcut bounded parameter mutation fonksiyonunu; promotion testi mevcut Champion selector'ı; Shadow testi mevcut summary fonksiyonunu kullanıyor.
+- Risk reject edilen adımlar paper order oluşturmuyor; SHADOW actions PAPER equity/order ledger'ını değiştirmiyor.
+- Daha yüksek net kâr + kabul edilemez drawdown profili, düşük kâr + istikrarlı profilden daha düşük risk-adjusted skor ve leaderboard sırası aldı.
+- Sonuç matrisi `docs/AI_TRADING_SIMULATION_RESULTS.md` içinde kaydedildi; network/credential/production exchange kullanılmadı.
 
 ## Safety State
 
@@ -112,8 +112,13 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Error correlation: `X-Request-ID` / response `correlationId`
 - Autonomous Admin API: v1 DTOs, ADMIN authorization, PAPER/SHADOW-only writes
 - Manual promotion approval: audit-only pending activation; live remains unavailable
+- Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 27: migration yok.
+
+- Yalnız test harness, testler, npm test komutu ve sonuç dokümanı eklendi; production schema/veri değişmedi.
 
 PROMPT 26: migration yok.
 
@@ -218,7 +223,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 27 on altı simulation senaryosunu ve kâr-dışı risk-adjusted seçim doğrulamasını kapsayan test suite eklemek.
+- PROMPT 28 frontend architecture audit; kullanıcı devam talimatı verdiğinde mevcut frontend component/design system analiz edilerek başlanacak.
 
 ## Known Risks for Next Prompts
 
@@ -230,7 +235,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Blockers
 
-Yok.
+Teknik blocker yok. Kullanıcıyla kararlaştırılan durma noktası: PROMPT 28'e otomatik geçme.
 
 ## Source Note
 
