@@ -2,9 +2,9 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 27
-Current prompt: PROMPT 28
-Status: PAUSED_BEFORE_FRONTEND_PHASE
+Last completed prompt: PROMPT 28
+Current prompt: PROMPT 29
+Status: IN_PROGRESS
 Updated at: 2026-08-22
 
 ## Completed
@@ -37,12 +37,13 @@ Updated at: 2026-08-22
 - PROMPT 25 — COMPLETED
 - PROMPT 26 — COMPLETED
 - PROMPT 27 — COMPLETED
+- PROMPT 28 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 28 — Frontend Architecture Audit
+PROMPT 29 — AI Trading Overview Frontend
 
-Henüz başlanmadı. Kullanıcıyla kararlaştırılan backend fazı durma noktası gereği PROMPT 28 öncesinde bırakıldı.
+Frontend mimari audit'i tamamlandı. Mevcut admin layout, design tokenları, route yapısı, chart bağımlılığı ve backend autonomous API contract'ları incelendi; uygulama planı `docs/AI_TRADING_FRONTEND_PLAN.md` içine kaydedildi.
 
 ## Last Test Result
 
@@ -55,8 +56,8 @@ Henüz başlanmadı. Kullanıcıyla kararlaştırılan backend fazı durma nokta
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- Frontend typecheck/lint: PASS
-- Frontend production build: PASS
+- PROMPT 28 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 28 frontend production build: PASS — `npm.cmd run build`
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -65,12 +66,12 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Deterministic PAPER/SHADOW-only simulation harness ve `npm run test:ai-trading-simulation` komutu eklendi.
-- 100 concurrent paper bot, trend, range, volatility spike, disconnect, stale data, funding, fee overtrading, drawdown/stability, daily loss, emergency stop, mutation, promotion, shadow ve risk rejection senaryoları doğrulandı.
-- Simulation mutation testi mevcut bounded parameter mutation fonksiyonunu; promotion testi mevcut Champion selector'ı; Shadow testi mevcut summary fonksiyonunu kullanıyor.
-- Risk reject edilen adımlar paper order oluşturmuyor; SHADOW actions PAPER equity/order ledger'ını değiştirmiyor.
-- Daha yüksek net kâr + kabul edilemez drawdown profili, düşük kâr + istikrarlı profilden daha düşük risk-adjusted skor ve leaderboard sırası aldı.
-- Sonuç matrisi `docs/AI_TRADING_SIMULATION_RESULTS.md` içinde kaydedildi; network/credential/production exchange kullanılmadı.
+- Mevcut Trade Operations admin ekranı, route/layout yapısı ve tasarım sistemi audit edildi.
+- Autonomous backend read/write contract'ları frontend ihtiyaçlarıyla eşlendi.
+- `/admin/trading/ai/*` nested route yapısı, ortak service/UI katmanı ve PAPER/SHADOW/LIVE görsel ayrımı planlandı.
+- API boşluklarında mock/tahmin yerine güvenli empty state kullanımı belirlendi.
+- Manual/Grid/Exchange ekranlarının route ve servislerinin değiştirilmeden korunacağı kaydedildi.
+- Plan `docs/AI_TRADING_FRONTEND_PLAN.md` dosyasına yazıldı; PROMPT 28 gereği frontend uygulama kodu değiştirilmedi.
 
 ## Safety State
 
@@ -115,6 +116,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 28: migration yok.
+
+- Yalnız frontend architecture audit dokümanı eklendi; schema, production verisi ve runtime davranışı değişmedi.
 
 PROMPT 27: migration yok.
 
@@ -223,7 +228,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 28 frontend architecture audit; kullanıcı devam talimatı verdiğinde mevcut frontend component/design system analiz edilerek başlanacak.
+- PROMPT 29 — ortak autonomous frontend service/UI katmanı, nested layout ve AI Trading Overview ekranı.
 
 ## Known Risks for Next Prompts
 
@@ -235,7 +240,24 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Blockers
 
-Teknik blocker yok. Kullanıcıyla kararlaştırılan durma noktası: PROMPT 28'e otomatik geçme.
+Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz sınırı PROMPT 38 öncesidir.
+
+## Phase Checkpoints
+
+### PHASE_CHECKPOINT 2 — Backend → Frontend
+
+- Backend fazı PROMPT 27 ile tamamlandı; 58 test dosyası ve 252 test, backend typecheck/build, Go test/vet ve frontend regression build başarılıydı.
+- Live trading kapalı, autonomous live activation bulunmuyor, PAPER/SHADOW güvenli modları ve fail-closed Risk Engine korunuyor.
+- PROMPT 28 frontend audit'i kod değişikliği olmadan tamamlandı ve frontend planı oluşturuldu.
+
+## Prompt Checkpoints
+
+### PROMPT 28
+
+- Değişiklikler: Trade Operations frontend mimarisi, design system ve autonomous API contract audit'i; `AI_TRADING_FRONTEND_PLAN.md`.
+- Test: PASS — frontend typecheck/lint ve production build.
+- Migration: Yok.
+- TODO: PROMPT 29 Overview uygulaması.
 
 ## Source Note
 
