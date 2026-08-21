@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 18
-Current prompt: PROMPT 19
+Last completed prompt: PROMPT 19
+Current prompt: PROMPT 20
 Status: READY
 Updated at: 2026-08-21
 
@@ -28,20 +28,21 @@ Updated at: 2026-08-21
 - PROMPT 16 — COMPLETED
 - PROMPT 17 — COMPLETED
 - PROMPT 18 — COMPLETED
+- PROMPT 19 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 19 — Portfolio Allocator
+PROMPT 20 — Shadow Trading
 
 Henüz başlanmadı.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 50 files, 213 tests
+- Backend unit/integration tests: PASS — 51 files, 218 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
-- PROMPT 16 scoped backend ESLint: PASS
+- PROMPT 19 scoped backend ESLint: PASS
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
@@ -51,17 +52,15 @@ Henüz başlanmadı.
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
 
-Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 199 testin tamamı geçmiştir.
+Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 218 testin tamamı geçmiştir.
 
 ## Last Changes
 
-- Crossover yalnız aynı strategy family ve canonical olarak aynı versioned parameter schema'ya sahip iki farklı parent arasında çalışıyor.
-- Parent B'den miras alınan alanlar ve generated override'lar son birleşimden sonra Strategy Registry validator ile tekrar doğrulanıyor.
-- Inheritance kaydı her alanı `A`, `B` veya `GENERATED` olarak işaretliyor; generated values ayrı saklanıyor.
-- Parent A/B, child ve generation lineage `BotCrossover` kaydında atomik olarak tutuluyor.
-- Bot Factory `CROSSOVER` creation method destekliyor; child her zaman PAPER/CANDIDATE ve testnet/demo + risk profile kontrolleri altında doğuyor.
-- Evolution config `crossoverCount` destekliyor ve yalnız compatible survivor pair'lerinden child üretiyor.
-- Parent botlar yerinde güncellenmiyor; live execution veya outbox çağrısı eklenmedi.
+- Deterministic Portfolio Allocator yalnız PAPER/SHADOW modundaki Champion botları değerlendiriyor.
+- Bot score, güncel regime fit, recent drawdown, kapalı paper trade volatility/correlation ve mevcut exposure dağıtım skoruna katılıyor.
+- Toplam, sembol ve bot allocation limitleri immutable risk profile kapasitesi ile birlikte uygulanıyor; kullanılmayan kapasite reserve'e dönüyor.
+- Allocation sonucu bot yüzdesi, sembol yüzdesi ve reserve yüzdesi olarak kaydediliyor ve audit log'a yazılıyor.
+- Allocator yalnız TESTNET/DEMO hesaplarını kabul ediyor; order submission, outbox veya live activation yolu içermiyor.
 
 ## Safety State
 
@@ -84,11 +83,19 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Strategy Router fail-closed states: unknown/stale regime, kill switch, disabled risk/account, disconnected account, stale health/metrics
 - Immutable autonomous Risk Engine: max trade risk, daily/weekly loss, drawdown, leverage, total/symbol exposure, concurrent positions, min R:R, required stop, margin policy, position size, cooldown, consecutive-loss lock and emergency stops
 - Autonomous PAPER enforcement: risk approval is evaluated in the same DB transaction before paper fill; rejected/blocked signals cannot create fills
+- Portfolio Allocator: deterministic, Champion-only, PAPER/SHADOW-only; risk-capped allocation with minimum cash reserve
+- Portfolio allocation execution: NONE; outputs are persisted plans and audit records only
 - Risk policy ownership: admin risk API only; Teacher/Researcher/Mutation/Evolution have no risk mutation or order submission path
 - Existing manual/grid/live execution behavior: unchanged; autonomous controls are scoped by `instance.Type == "AUTONOMOUS"`
 - Production exchange environment: NOT PRESENT
 
 ## Migration
+
+PROMPT 19: `20260821080000_add_portfolio_allocations`
+
+- Additive migration; yalnız immutable allocation plan çıktıları için `portfolio_allocations` tablosunu ekler.
+- Mevcut tablo/kolon silmez, production verisini dönüştürmez veya silmez.
+- Production verisine uygulanmadı.
 
 PROMPT 18: `20260821070000_add_autonomous_risk_limits`
 
@@ -156,8 +163,8 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 19 kapsamında Champion botlar için deterministic, PAPER/SHADOW-only Portfolio Allocator geliştirmek.
-- Allocation çıktılarının immutable Risk Engine limitlerini aşmamasını ve live execution'a otomatik bağlanmamasını sağlamak.
+- PROMPT 20 kapsamında gerçek market data üzerinde emir göndermeyen, PAPER'dan ayrı raporlanan Shadow Trading geliştirmek.
+- Shadow performansını ilerideki Live Eligibility Gate tarafından tüketilebilecek şekilde saklamak.
 
 ## Known Risks for Next Prompts
 

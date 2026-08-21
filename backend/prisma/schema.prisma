@@ -451,9 +451,10 @@ model User {
   tradingBots               TradingBot[]
   tradingBotDecisions       TradingBotDecision[]
   tradingBotSignals         TradingBotSignal[]
-  strategies                Strategy[]             @relation("strategy_created_by")
-  strategyVersions          StrategyVersion[]      @relation("strategy_version_created_by")
-  generations               Generation[]           @relation("generation_created_by")
+  portfolioAllocations      PortfolioAllocation[]
+  strategies                Strategy[]            @relation("strategy_created_by")
+  strategyVersions          StrategyVersion[]     @relation("strategy_version_created_by")
+  generations               Generation[]          @relation("generation_created_by")
   identities                UserIdentity[]
   profileRoles              UserProfileRole[]
   capabilities              UserCapability[]
@@ -1291,16 +1292,17 @@ model ExchangeAccount {
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
 
-  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  manualOrderPreviews ManualOrderPreview[]
-  tradingOrders       TradingOrder[]
-  tradingAuditLogs    TradingAuditLog[]
-  tradingOutboxEvents TradingOutboxEvent[]
-  riskProfile         TradingRiskProfile?
-  tradingRiskEvents   TradingRiskEvent[]
-  tradingBots         TradingBot[]
-  tradingBotDecisions TradingBotDecision[]
-  tradingBotSignals   TradingBotSignal[]
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  manualOrderPreviews  ManualOrderPreview[]
+  tradingOrders        TradingOrder[]
+  tradingAuditLogs     TradingAuditLog[]
+  tradingOutboxEvents  TradingOutboxEvent[]
+  riskProfile          TradingRiskProfile?
+  tradingRiskEvents    TradingRiskEvent[]
+  tradingBots          TradingBot[]
+  tradingBotDecisions  TradingBotDecision[]
+  tradingBotSignals    TradingBotSignal[]
+  portfolioAllocations PortfolioAllocation[]
 
   @@unique([userId, name])
   @@index([userId, provider])
@@ -1309,56 +1311,56 @@ model ExchangeAccount {
 }
 
 model TradingBot {
-  id                String                 @id @default(cuid())
-  userId            String
-  exchangeAccountId String
-  name              String                 @db.VarChar(100)
-  type              TradingBotType
-  mode              TradingBotMode
-  state             TradingBotState        @default(DRAFT)
-  desiredState      TradingBotDesiredState @default(STOPPED)
-  symbol            String                 @db.VarChar(40)
-  intervalSeconds   Int                    @default(60)
-  configuration     Json
-  stateReason       String?                @db.VarChar(500)
-  lastErrorCode     String?                @db.VarChar(80)
-  lastErrorMessage  String?                @db.VarChar(500)
-  schedulerOwner    String?                @db.VarChar(120)
-  leaseExpiresAt    DateTime?
-  heartbeatAt       DateTime?
-  lastDecisionAt    DateTime?
-  startedAt         DateTime?
-  stoppedAt         DateTime?
-  version           Int                    @default(0)
-  strategyVersionId String?
-  generationId      String?
-  parentBotId       String?
-  riskProfileId     String?
+  id                    String                  @id @default(cuid())
+  userId                String
+  exchangeAccountId     String
+  name                  String                  @db.VarChar(100)
+  type                  TradingBotType
+  mode                  TradingBotMode
+  state                 TradingBotState         @default(DRAFT)
+  desiredState          TradingBotDesiredState  @default(STOPPED)
+  symbol                String                  @db.VarChar(40)
+  intervalSeconds       Int                     @default(60)
+  configuration         Json
+  stateReason           String?                 @db.VarChar(500)
+  lastErrorCode         String?                 @db.VarChar(80)
+  lastErrorMessage      String?                 @db.VarChar(500)
+  schedulerOwner        String?                 @db.VarChar(120)
+  leaseExpiresAt        DateTime?
+  heartbeatAt           DateTime?
+  lastDecisionAt        DateTime?
+  startedAt             DateTime?
+  stoppedAt             DateTime?
+  version               Int                     @default(0)
+  strategyVersionId     String?
+  generationId          String?
+  parentBotId           String?
+  riskProfileId         String?
   lifecycleStatus   AutonomousTradingStatus @default(DRAFT)
   startingPaperBalance Decimal              @default(100) @db.Decimal(36, 18)
   factoryCreationMethod BotCreationMethod?
-  symbols           Json?
-  timeframe         String?                 @db.VarChar(20)
-  createdAt         DateTime               @default(now())
-  updatedAt         DateTime               @updatedAt
+  symbols               Json?
+  timeframe             String?                 @db.VarChar(20)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
 
-  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  exchangeAccount ExchangeAccount          @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
-  decisions       TradingBotDecision[]
-  paperPosition   TradingBotPaperPosition?
-  paperFills      TradingBotPaperFill[]
-  signals         TradingBotSignal[]
-  strategyVersion StrategyVersion?         @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
-  generation      Generation?              @relation(fields: [generationId], references: [id], onDelete: SetNull)
-  parentBot       TradingBot?              @relation("trading_bot_lineage", fields: [parentBotId], references: [id], onDelete: SetNull)
-  childBots       TradingBot[]              @relation("trading_bot_lineage")
-  riskProfile     TradingRiskProfile?       @relation(fields: [riskProfileId], references: [id], onDelete: SetNull)
-  paperTrades     PaperTrade[]
-  metrics         BotMetric[]
-  championCandidates ChampionCandidate[]
-  teacherEvaluations TeacherEvaluation[]
-  parentMutations    BotMutation[]            @relation("mutation_parent")
-  childMutation      BotMutation?             @relation("mutation_child")
+  user                User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeAccount     ExchangeAccount          @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+  decisions           TradingBotDecision[]
+  paperPosition       TradingBotPaperPosition?
+  paperFills          TradingBotPaperFill[]
+  signals             TradingBotSignal[]
+  strategyVersion     StrategyVersion?         @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
+  generation          Generation?              @relation(fields: [generationId], references: [id], onDelete: SetNull)
+  parentBot           TradingBot?              @relation("trading_bot_lineage", fields: [parentBotId], references: [id], onDelete: SetNull)
+  childBots           TradingBot[]             @relation("trading_bot_lineage")
+  riskProfile         TradingRiskProfile?      @relation(fields: [riskProfileId], references: [id], onDelete: SetNull)
+  paperTrades         PaperTrade[]
+  metrics             BotMetric[]
+  championCandidates  ChampionCandidate[]
+  teacherEvaluations  TeacherEvaluation[]
+  parentMutations     BotMutation[]            @relation("mutation_parent")
+  childMutation       BotMutation?             @relation("mutation_child")
   crossoversAsParentA BotCrossover[]           @relation("crossover_parent_a")
   crossoversAsParentB BotCrossover[]           @relation("crossover_parent_b")
   crossoverChild      BotCrossover?            @relation("crossover_child")
@@ -1386,8 +1388,8 @@ model Strategy {
   createdAt   DateTime                @default(now())
   updatedAt   DateTime                @updatedAt
 
-  createdBy User              @relation("strategy_created_by", fields: [createdById], references: [id], onDelete: Restrict)
-  versions  StrategyVersion[]
+  createdBy          User                @relation("strategy_created_by", fields: [createdById], references: [id], onDelete: Restrict)
+  versions           StrategyVersion[]
   teacherEvaluations TeacherEvaluation[]
 
   @@unique([createdById, name])
@@ -1408,8 +1410,8 @@ model StrategyVersion {
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
 
-  strategy    Strategy    @relation(fields: [strategyId], references: [id], onDelete: Cascade)
-  createdBy   User        @relation("strategy_version_created_by", fields: [createdById], references: [id], onDelete: Restrict)
+  strategy    Strategy     @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  createdBy   User         @relation("strategy_version_created_by", fields: [createdById], references: [id], onDelete: Restrict)
   tradingBots TradingBot[]
   paperTrades PaperTrade[]
   metrics     BotMetric[]
@@ -1432,12 +1434,12 @@ model Generation {
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
-  createdBy User         @relation("generation_created_by", fields: [createdById], references: [id], onDelete: Restrict)
-  bots      TradingBot[]
-  mutations BotMutation[]
+  createdBy           User           @relation("generation_created_by", fields: [createdById], references: [id], onDelete: Restrict)
+  bots                TradingBot[]
+  mutations           BotMutation[]
   sourceEvolutionRuns EvolutionRun[] @relation("evolution_source_generation")
   targetEvolutionRuns EvolutionRun[] @relation("evolution_target_generation")
-  crossovers BotCrossover[]
+  crossovers          BotCrossover[]
 
   @@unique([createdById, number])
   @@index([status, createdAt])
@@ -1643,7 +1645,7 @@ model TradingRiskProfile {
   maxDailyLossPct        Decimal  @default(0.05) @db.Decimal(8, 6)
   maxWeeklyLossPct       Decimal  @default(0.10) @db.Decimal(8, 6)
   maxDrawdownPct         Decimal  @default(0.20) @db.Decimal(8, 6)
-  maxSymbolOpenNotional Decimal  @default(200) @db.Decimal(36, 18)
+  maxSymbolOpenNotional  Decimal  @default(200) @db.Decimal(36, 18)
   minRiskRewardRatio     Decimal  @default(1.5) @db.Decimal(12, 6)
   stopLossRequired       Boolean  @default(true)
   marginModePolicy       String   @default("ISOLATED_ONLY") @db.VarChar(30)
@@ -1656,7 +1658,7 @@ model TradingRiskProfile {
 
   user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   exchangeAccount ExchangeAccount @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
-  autonomousBots TradingBot[]
+  autonomousBots  TradingBot[]
 
   @@index([userId])
   @@index([enabled, accountKillSwitch])
@@ -1682,36 +1684,36 @@ model MarketRegimeSnapshot {
 }
 
 model PaperTrade {
-  id                     String           @id @default(cuid())
+  id                     String              @id @default(cuid())
   tradingBotId           String
   strategyVersionId      String?
-  marketRegimeSnapshotId BigInt?          @db.UnsignedBigInt
-  symbol                 String           @db.VarChar(40)
+  marketRegimeSnapshotId BigInt?             @db.UnsignedBigInt
+  symbol                 String              @db.VarChar(40)
   side                   TradingBotPaperSide
-  status                 PaperTradeStatus @default(OPEN)
-  entryPrice             Decimal          @db.Decimal(36, 18)
-  exitPrice              Decimal?         @db.Decimal(36, 18)
-  quantity               Decimal          @db.Decimal(36, 18)
-  leverage               Int              @default(1)
-  fees                   Decimal          @default(0) @db.Decimal(36, 18)
-  funding                Decimal          @default(0) @db.Decimal(36, 18)
-  slippageCost           Decimal          @default(0) @db.Decimal(36, 18)
-  realizedPnl            Decimal          @default(0) @db.Decimal(36, 18)
-  stopLoss               Decimal?         @db.Decimal(36, 18)
-  takeProfit             Decimal?         @db.Decimal(36, 18)
-  maxFavorableExcursion  Decimal          @default(0) @db.Decimal(36, 18)
-  maxAdverseExcursion    Decimal          @default(0) @db.Decimal(36, 18)
+  status                 PaperTradeStatus    @default(OPEN)
+  entryPrice             Decimal             @db.Decimal(36, 18)
+  exitPrice              Decimal?            @db.Decimal(36, 18)
+  quantity               Decimal             @db.Decimal(36, 18)
+  leverage               Int                 @default(1)
+  fees                   Decimal             @default(0) @db.Decimal(36, 18)
+  funding                Decimal             @default(0) @db.Decimal(36, 18)
+  slippageCost           Decimal             @default(0) @db.Decimal(36, 18)
+  realizedPnl            Decimal             @default(0) @db.Decimal(36, 18)
+  stopLoss               Decimal?            @db.Decimal(36, 18)
+  takeProfit             Decimal?            @db.Decimal(36, 18)
+  maxFavorableExcursion  Decimal             @default(0) @db.Decimal(36, 18)
+  maxAdverseExcursion    Decimal             @default(0) @db.Decimal(36, 18)
   holdingSeconds         Int?
   marketContext          Json?
-  closeReason            String?          @db.VarChar(80)
-  aiConfidence           Decimal?         @db.Decimal(5, 4)
-  decisionSummary        String?          @db.VarChar(1000)
+  closeReason            String?             @db.VarChar(80)
+  aiConfidence           Decimal?            @db.Decimal(5, 4)
+  decisionSummary        String?             @db.VarChar(1000)
   openedAt               DateTime
   closedAt               DateTime?
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 
-  tradingBot           TradingBot           @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
+  tradingBot           TradingBot            @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
   strategyVersion      StrategyVersion?      @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
   marketRegimeSnapshot MarketRegimeSnapshot? @relation(fields: [marketRegimeSnapshotId], references: [id], onDelete: SetNull)
 
@@ -1745,7 +1747,7 @@ model BotMetric {
   snapshotAt             DateTime
   createdAt              DateTime @default(now())
 
-  tradingBot           TradingBot           @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
+  tradingBot           TradingBot            @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
   strategyVersion      StrategyVersion?      @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
   marketRegimeSnapshot MarketRegimeSnapshot? @relation(fields: [marketRegimeSnapshotId], references: [id], onDelete: SetNull)
 
@@ -1814,19 +1816,19 @@ model BotMutation {
 }
 
 model EvolutionRun {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   createdById        String
   sourceGenerationId String
-  targetGenerationId String?  @unique
-  status             String   @default("RUNNING") @db.VarChar(30)
+  targetGenerationId String?   @unique
+  status             String    @default("RUNNING") @db.VarChar(30)
   config             Json
   evidence           Json?
   selection          Json?
-  errorMessage       String?  @db.VarChar(1000)
-  startedAt          DateTime @default(now())
+  errorMessage       String?   @db.VarChar(1000)
+  startedAt          DateTime  @default(now())
   completedAt        DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   sourceGeneration Generation  @relation("evolution_source_generation", fields: [sourceGenerationId], references: [id], onDelete: Restrict)
   targetGeneration Generation? @relation("evolution_target_generation", fields: [targetGenerationId], references: [id], onDelete: SetNull)
@@ -1873,6 +1875,31 @@ model ChampionCandidate {
   @@index([tradingBotId, createdAt])
   @@index([status, score])
   @@map("champion_candidates")
+}
+
+model PortfolioAllocation {
+  id                String         @id @default(cuid())
+  userId            String
+  exchangeAccountId String
+  mode              TradingBotMode @default(PAPER)
+  capital           Decimal        @db.Decimal(36, 18)
+  allocatedCapital  Decimal        @default(0) @db.Decimal(36, 18)
+  reservePct        Decimal        @db.Decimal(8, 6)
+  botAllocations    Json
+  symbolAllocations Json
+  riskSnapshot      Json
+  config            Json
+  deterministic     Boolean        @default(true)
+  orderSubmitted    Boolean        @default(false)
+  liveActivated     Boolean        @default(false)
+  createdAt         DateTime       @default(now())
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeAccount ExchangeAccount @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([exchangeAccountId, mode, createdAt])
+  @@map("portfolio_allocations")
 }
 
 model TradingRiskControl {

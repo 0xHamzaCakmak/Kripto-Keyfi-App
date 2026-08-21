@@ -39,6 +39,8 @@ import { marketContext } from '../ai-trading/market-intelligence.controller.js';
 import { marketContextQuerySchema } from '../ai-trading/market-intelligence.schema.js';
 import { routeStrategy } from '../ai-trading/strategy-router.controller.js';
 import { routeStrategyBodySchema } from '../ai-trading/strategy-router.schema.js';
+import { allocate as allocatePortfolio, allocations as portfolioAllocations } from '../ai-trading/portfolio-allocator.controller.js';
+import { portfolioAllocationQuerySchema, portfolioAllocatorBodySchema } from '../ai-trading/portfolio-allocator.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -73,6 +75,8 @@ tradingRouter.get('/crossovers', validateRequest({ query: crossoversQuerySchema 
 tradingRouter.post('/crossovers', validateRequest({ body: createCrossoverBodySchema }), asyncHandler(cross));
 tradingRouter.get('/market-intelligence/context', validateRequest({ query: marketContextQuerySchema }), asyncHandler(marketContext));
 tradingRouter.post('/strategy-router/route', validateRequest({ body: routeStrategyBodySchema }), asyncHandler(routeStrategy));
+tradingRouter.get('/portfolio-allocations', validateRequest({ query: portfolioAllocationQuerySchema }), asyncHandler(portfolioAllocations));
+tradingRouter.post('/portfolio-allocations', validateRequest({ body: portfolioAllocatorBodySchema }), asyncHandler(allocatePortfolio));
 tradingRouter.get('/bots', asyncHandler(bots));
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));
