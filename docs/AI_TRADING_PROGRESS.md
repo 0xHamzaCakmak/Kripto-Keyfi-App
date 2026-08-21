@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 22
-Current prompt: PROMPT 23
+Last completed prompt: PROMPT 23
+Current prompt: PROMPT 24
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -32,20 +32,22 @@ Updated at: 2026-08-22
 - PROMPT 20 — COMPLETED
 - PROMPT 21 — COMPLETED
 - PROMPT 22 — COMPLETED
+- PROMPT 23 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 23 — AI Decision Interface
+PROMPT 24 — Teacher + Researcher AI Adapter
 
-Provider-independent ve structured AI Decision contract/validation katmanı uygulanacak; doğrudan exchange bağlantısı eklenmeyecek.
+Opsiyonel LLM adapterları validated schema ve deterministic fallback ile uygulanacak; recommendation-only sınırı korunacak.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 53 files, 226 tests
+- Backend unit/integration tests: PASS — 54 files, 232 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
-- PROMPT 22 scoped Go tests: PASS — execution, Binance/Bybit adapter, reconciliation ve MySQL store
+- PROMPT 23 scoped backend tests: PASS — 1 file, 6 tests
+- PROMPT 23 scoped backend ESLint: PASS
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
@@ -59,12 +61,12 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Execution komutları için 30 saniyelik freshness ve 5 saniyelik clock-skew sınırı eklendi; stale komut DB claim veya exchange write öncesi reddediliyor.
-- Writer katmanında CONNECTED durum ve yalnız TESTNET/DEMO environment defense-in-depth kontrolü eklendi; production live açılmadı.
-- Place/cancel exchange cevapları stable identity/status ile, stop emirleri ayrıca stop price ile doğrulanıyor.
-- Exchange write başarılı olduktan sonraki local commit/cevap belirsizliği `RECONCILIATION_REQUIRED` olarak fail-closed işaretleniyor.
-- Retry yalnız retryable reconciliation read'leri için bounded (3 deneme); submit/cancel otomatik retry edilmiyor.
-- Startup/periyodik reconciliation Bybit demo hesaplarını ve stable `orderLinkId` sorgusunu da kapsıyor; outbox provider artık hesaptan alınıyor.
+- Versioned/strict `AIDecision` schema LONG, SHORT, WAIT, HOLD, CLOSE, PARTIAL_CLOSE, MOVE_STOP ve NO_TRADE kararlarını doğruluyor.
+- Provider çıktısındaki price değerleri string decimal'e normalize ediliyor; directional kararlar entry zone, invalidation ve target olmadan geçemiyor.
+- `reasonSummary` kısa/bounded açıklanabilir maddelerle sınırlı; strict schema hidden chain-of-thought veya bilinmeyen alanları reddediyor.
+- Provider-independent flow raw AI output'u validation sonrasında immutable Risk Gate'e, yalnız approval kimliği varsa branded execution portuna iletiyor.
+- Geçersiz, symbol-mismatch veya risk tarafından reddedilen kararlar execution'a ulaşmıyor; WAIT/HOLD/NO_TRADE hiçbir execution üretmiyor.
+- Static/mock provider eklendi; gerçek provider, API key, exchange adapter veya live activation bağlantısı eklenmedi.
 
 ## Safety State
 
@@ -98,8 +100,14 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Production exchange environment: NOT PRESENT
 - Live execution hardening: stale/disconnected/production account fail-closed; post-write partial failures reconciliation-required
 - Reconciliation retry: read-only and bounded; mutating exchange requests never auto-retried
+- AI Decision interface: provider-independent, strict schema; Risk Gate approval is mandatory before the isolated execution port
+- AI Decision exchange access: NONE
 
 ## Migration
+
+PROMPT 23: migration yok.
+
+- Yalnız backend contract, orchestration portları ve testler eklendi; production schema/veri değişmedi.
 
 PROMPT 22: migration yok.
 
@@ -188,7 +196,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 23 provider-independent AI Decision interface'ini eklemek; structured validation sonrası Risk Engine ve execution ayrımını korumak.
+- PROMPT 24 Teacher ve Researcher için opsiyonel LLM adapterları, schema validation, timeout/error fallback ve audit metadata sınırlarını eklemek.
 
 ## Known Risks for Next Prompts
 
