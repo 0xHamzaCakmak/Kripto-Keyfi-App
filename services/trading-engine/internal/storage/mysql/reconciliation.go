@@ -18,7 +18,7 @@ func (s *AccountStore) ListReconciliationAccounts(ctx context.Context) ([]accoun
 	const query = `SELECT id, userId, provider, environment, accountType,
 apiKeyEncrypted, apiSecretEncrypted, COALESCE(passphraseEncrypted, ''), executionEngine, connectionStatus
 FROM exchange_accounts
-WHERE isActive = TRUE AND connectionStatus IN ('CONNECTED', 'DEGRADED') AND provider = 'BINANCE'
+WHERE isActive = TRUE AND connectionStatus IN ('CONNECTED', 'DEGRADED') AND provider IN ('BINANCE', 'BYBIT')
 ORDER BY id`
 	rows, err := s.database.QueryContext(ctx, query)
 	if err != nil {
@@ -125,10 +125,11 @@ failureCode = NULL, failureMessage = NULL, updatedAt = ? WHERE id = ? AND execut
 	}
 	_, err = transaction.ExecContext(ctx, `INSERT INTO trading_outbox_events
 (userId, exchangeAccountId, provider, topic, eventType, aggregateType, aggregateId, deduplicationKey, payload, occurredAt, createdAt)
-VALUES (?, ?, 'BINANCE', 'trading.order', 'ORDER_RECONCILED', 'ORDER', ?, ?, ?, ?, UTC_TIMESTAMP(3))
+SELECT ?, ?, a.provider, 'trading.order', 'ORDER_RECONCILED', 'ORDER', ?, ?, ?, ?, UTC_TIMESTAMP(3)
+FROM exchange_accounts a WHERE a.id = ?
 ON DUPLICATE KEY UPDATE deduplicationKey = VALUES(deduplicationKey)`,
 		local.UserID, local.ExchangeAccountID, local.ID,
-		fmt.Sprintf("%s:reconciled:%s:%s", local.ID, remote.Status, remote.ExecutedQuantity), payload, reconciledAt.UTC())
+		fmt.Sprintf("%s:reconciled:%s:%s", local.ID, remote.Status, remote.ExecutedQuantity), payload, reconciledAt.UTC(), local.ExchangeAccountID)
 	if err != nil {
 		return false, err
 	}

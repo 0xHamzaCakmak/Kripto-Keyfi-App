@@ -12,6 +12,7 @@ import (
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange"
 	binanceexchange "github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange/binance"
+	bybitexchange "github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange/bybit"
 )
 
 type PendingOrder struct {
@@ -38,20 +39,24 @@ type Reader interface {
 type ReaderFactory func(account.Resolved) (Reader, error)
 
 type Worker struct {
-	store    Store
-	factory  ReaderFactory
-	logger   *slog.Logger
-	now      func() time.Time
-	interval time.Duration
+	store         Store
+	factory       ReaderFactory
+	logger        *slog.Logger
+	now           func() time.Time
+	interval      time.Duration
+	retryAttempts int
+	retryDelay    time.Duration
 }
 
 type Options struct {
-	Store     Store
-	Client    *http.Client
-	Endpoints exchange.Endpoints
-	Logger    *slog.Logger
-	Interval  time.Duration
-	Factory   ReaderFactory
+	Store         Store
+	Client        *http.Client
+	Endpoints     exchange.Endpoints
+	Logger        *slog.Logger
+	Interval      time.Duration
+	Factory       ReaderFactory
+	RetryAttempts int
+	RetryDelay    time.Duration
 }
 
 func New(options Options) *Worker {
@@ -70,16 +75,28 @@ func New(options Options) *Worker {
 	factory := options.Factory
 	if factory == nil {
 		factory = func(resolved account.Resolved) (Reader, error) {
-			if resolved.Reference.Provider != domain.ProviderBinance {
+			switch resolved.Reference.Provider {
+			case domain.ProviderBinance:
+				return binanceexchange.New(binanceexchange.Options{
+					Credentials: resolved.Credentials, Client: client,
+					FuturesURL: options.Endpoints.BinanceFutures, SpotURL: options.Endpoints.BinanceSpot,
+				}), nil
+			case domain.ProviderBybit:
+				return bybitexchange.New(bybitexchange.Options{Credentials: resolved.Credentials, Client: client, BaseURL: options.Endpoints.Bybit}), nil
+			default:
 				return nil, fmt.Errorf("reconciliation provider %s is not supported", resolved.Reference.Provider)
 			}
-			return binanceexchange.New(binanceexchange.Options{
-				Credentials: resolved.Credentials, Client: client,
-				FuturesURL: options.Endpoints.BinanceFutures, SpotURL: options.Endpoints.BinanceSpot,
-			}), nil
 		}
 	}
-	return &Worker{store: options.Store, factory: factory, logger: logger, now: time.Now, interval: interval}
+	retryAttempts := options.RetryAttempts
+	if retryAttempts <= 0 {
+		retryAttempts = 3
+	}
+	retryDelay := options.RetryDelay
+	if retryDelay <= 0 {
+		retryDelay = 100 * time.Millisecond
+	}
+	return &Worker{store: options.Store, factory: factory, logger: logger, now: time.Now, interval: interval, retryAttempts: retryAttempts, retryDelay: retryDelay}
 }
 
 // Initialize performs the startup safety pass. Discovery failures keep the
@@ -131,11 +148,11 @@ func (w *Worker) reconcile(ctx context.Context, resolved account.Resolved, reaso
 	if err != nil {
 		return err
 	}
-	openOrders, err := reader.GetOpenOrders(ctx)
+	openOrders, err := retryRead(ctx, w, reader.GetOpenOrders)
 	if err != nil {
 		return fmt.Errorf("open-order snapshot: %w", err)
 	}
-	positions, err := reader.GetPositions(ctx)
+	positions, err := retryRead(ctx, w, reader.GetPositions)
 	if err != nil {
 		return fmt.Errorf("position snapshot: %w", err)
 	}
@@ -164,7 +181,9 @@ func (w *Worker) reconcile(ctx context.Context, resolved account.Resolved, reaso
 		}
 		exchangeOrder, found := openByClientID[local.ClientOrderID]
 		if !found {
-			exchangeOrder, err = reader.GetOrderByClientID(ctx, local.Symbol, local.ClientOrderID)
+			exchangeOrder, err = retryRead(ctx, w, func(callContext context.Context) (domain.Order, error) {
+				return reader.GetOrderByClientID(callContext, local.Symbol, local.ClientOrderID)
+			})
 			if err != nil {
 				return fmt.Errorf("query order %s by client id: %w", local.ID, err)
 			}
@@ -193,4 +212,26 @@ func (w *Worker) reconcile(ctx context.Context, resolved account.Resolved, reaso
 		return err
 	}
 	return w.store.MarkAccountHealthy(ctx, resolved, now)
+}
+
+func retryRead[T any](ctx context.Context, worker *Worker, operation func(context.Context) (T, error)) (T, error) {
+	var zero T
+	for attempt := 1; attempt <= worker.retryAttempts; attempt++ {
+		value, err := operation(ctx)
+		if err == nil {
+			return value, nil
+		}
+		var normalized *exchange.Error
+		if !errors.As(err, &normalized) || !normalized.Normalized.Retryable || attempt == worker.retryAttempts {
+			return zero, err
+		}
+		timer := time.NewTimer(worker.retryDelay * time.Duration(attempt))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return zero, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return zero, errors.New("read retry exhausted")
 }

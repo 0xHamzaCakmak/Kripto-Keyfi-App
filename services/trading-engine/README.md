@@ -106,6 +106,8 @@ Cutover modundaki her yeni emir, exchange write çağrısından önce Go risk mo
 
 Risk kararları MySQL `trading_risk_events` tablosu ile kalıcı outbox'a birlikte yazılır. Global veya hesap kill switch, eksik/kapalı risk profili ve `DEGRADED` hesap yeni emirleri engeller. Günlük zarar limiti, realized PnL ve ücret defteri tamamlanana kadar etkinleştirilmez.
 
+Execution komutları 30 saniye sonra stale kabul edilir ve exchange write öncesinde reddedilir. Writer yalnız `CONNECTED` TESTNET/DEMO hesapları kabul eder. Submit/cancel istekleri otomatik retry edilmez; timeout, doğrulanamayan exchange cevabı veya exchange write sonrası local commit hatası duplicate write yerine reconciliation gerektirir. Startup ve periyodik reconciliation Binance ile Bybit read endpointlerinde bounded retry uygular.
+
 ## Shadow / paper bot scheduler
 
 Bot scheduler yalnızca MySQL'deki `SHADOW` ve `PAPER` botlarını lease ile sahiplenir. Her restart veya yeniden sahiplenmede bot önce `RECONCILING` durumuna geçer; hesap bağlantısı, risk profili ve global/hesap kill switch kapıları hazır olmadan `RUNNING` olmaz.

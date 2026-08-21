@@ -8,6 +8,7 @@ import (
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/account"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange"
 )
 
 type fakeStore struct {
@@ -47,10 +48,22 @@ type fakeReader struct {
 	positions  []domain.Position
 	queried    domain.Order
 	err        error
+	openErrors []error
+	openCalls  int
 	queryCalls int
 }
 
-func (r *fakeReader) GetOpenOrders(context.Context) ([]domain.Order, error) { return r.open, r.err }
+func (r *fakeReader) GetOpenOrders(context.Context) ([]domain.Order, error) {
+	r.openCalls++
+	if len(r.openErrors) > 0 {
+		err := r.openErrors[0]
+		r.openErrors = r.openErrors[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	return r.open, r.err
+}
 func (r *fakeReader) GetPositions(context.Context) ([]domain.Position, error) {
 	return r.positions, nil
 }
@@ -127,6 +140,18 @@ func TestDiscoveryFailureKeepsStartupUnready(t *testing.T) {
 	worker := New(Options{Store: &fakeStore{discoveryErr: errors.New("database unavailable")}})
 	if err := worker.Initialize(t.Context()); err == nil {
 		t.Fatal("expected startup discovery failure")
+	}
+}
+
+func TestReconciliationRetriesOnlyRetryableReads(t *testing.T) {
+	store := &fakeStore{accounts: []account.Resolved{testAccount("GO")}}
+	reader := &fakeReader{openErrors: []error{exchange.NewError(domain.ErrorUnavailable, "EXCHANGE_UNAVAILABLE", "", true, false), nil}}
+	worker := New(Options{Store: store, Factory: func(account.Resolved) (Reader, error) { return reader, nil }, RetryDelay: time.Nanosecond})
+	if err := worker.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if reader.openCalls != 2 || store.healthy != 1 || store.degraded != 0 {
+		t.Fatalf("retryable read was not recovered: reader=%#v store=%#v", reader, store)
 	}
 }
 

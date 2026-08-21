@@ -2,10 +2,10 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 21
-Current prompt: PROMPT 22
-Status: AWAITING_USER_APPROVAL
-Updated at: 2026-08-21
+Last completed prompt: PROMPT 22
+Current prompt: PROMPT 23
+Status: IN_PROGRESS
+Updated at: 2026-08-22
 
 ## Completed
 
@@ -31,12 +31,13 @@ Updated at: 2026-08-21
 - PROMPT 19 — COMPLETED
 - PROMPT 20 — COMPLETED
 - PROMPT 21 — COMPLETED
+- PROMPT 22 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 22 — Live Execution Hardening
+PROMPT 23 — AI Decision Interface
 
-Henüz başlanmadı. Mevcut canlı exchange execution davranışını değiştirebileceği için kullanıcı onayı bekleniyor.
+Provider-independent ve structured AI Decision contract/validation katmanı uygulanacak; doğrudan exchange bağlantısı eklenmeyecek.
 
 ## Last Test Result
 
@@ -44,7 +45,7 @@ Henüz başlanmadı. Mevcut canlı exchange execution davranışını değiştir
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
-- PROMPT 21 scoped backend ESLint: PASS
+- PROMPT 22 scoped Go tests: PASS — execution, Binance/Bybit adapter, reconciliation ve MySQL store
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
@@ -58,12 +59,12 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Configurable Live Eligibility Gate paper trades/duration, drawdown, profit factor, risk-adjusted score ve regime coverage kanıtlarını doğruluyor.
-- Shadow duration, close count, profit factor ve drawdown kriterleri PAPER kanıtından ayrı değerlendiriliyor.
-- Son configurable lookback içindeki critical risk block kayıtları promotion'ı engelliyor.
-- Gate başarısız botun statüsünü değiştirmiyor; başarılı Champion yalnız `LIVE_ELIGIBLE` oluyor ve promotion audit log'a yazılıyor.
-- Genel Bot Factory lifecycle endpointinden `LIVE_ELIGIBLE` geçişi kapatıldı; gate bypass edilemiyor.
-- Gate `LIVE` aktivasyonu, outbox veya order submission yolu içermiyor.
+- Execution komutları için 30 saniyelik freshness ve 5 saniyelik clock-skew sınırı eklendi; stale komut DB claim veya exchange write öncesi reddediliyor.
+- Writer katmanında CONNECTED durum ve yalnız TESTNET/DEMO environment defense-in-depth kontrolü eklendi; production live açılmadı.
+- Place/cancel exchange cevapları stable identity/status ile, stop emirleri ayrıca stop price ile doğrulanıyor.
+- Exchange write başarılı olduktan sonraki local commit/cevap belirsizliği `RECONCILIATION_REQUIRED` olarak fail-closed işaretleniyor.
+- Retry yalnız retryable reconciliation read'leri için bounded (3 deneme); submit/cancel otomatik retry edilmiyor.
+- Startup/periyodik reconciliation Bybit demo hesaplarını ve stable `orderLinkId` sorgusunu da kapsıyor; outbox provider artık hesaptan alınıyor.
 
 ## Safety State
 
@@ -95,8 +96,15 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Risk policy ownership: admin risk API only; Teacher/Researcher/Mutation/Evolution have no risk mutation or order submission path
 - Existing manual/grid/live execution behavior: unchanged; autonomous controls are scoped by `instance.Type == "AUTONOMOUS"`
 - Production exchange environment: NOT PRESENT
+- Live execution hardening: stale/disconnected/production account fail-closed; post-write partial failures reconciliation-required
+- Reconciliation retry: read-only and bounded; mutating exchange requests never auto-retried
 
 ## Migration
+
+PROMPT 22: migration yok.
+
+- Mevcut schema korunur; Bybit reconciliation mevcut hesap/provider alanlarını kullanır.
+- Production verisine veya exchange'e işlem uygulanmadı.
 
 PROMPT 21: migration yok.
 
@@ -180,8 +188,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 22 kapsamında mevcut canlı execution yolunun idempotency, reconciliation, retry/timeout, stale data, stop verification ve emergency-stop eksiklerini incelemek.
-- PROMPT 22 canlı exchange execution davranışını değiştirebileceği için uygulamadan önce kullanıcı onayı almak.
+- PROMPT 23 provider-independent AI Decision interface'ini eklemek; structured validation sonrası Risk Engine ve execution ayrımını korumak.
 
 ## Known Risks for Next Prompts
 
@@ -193,7 +200,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Blockers
 
-PROMPT 22 kullanıcı onayı bekliyor: mevcut canlı exchange execution davranışında hardening değişikliği isteniyor.
+Yok.
 
 ## Source Note
 

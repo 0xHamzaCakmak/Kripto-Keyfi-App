@@ -76,6 +76,22 @@ func TestReaderNormalizesBybitRetCode(t *testing.T) {
 	}
 }
 
+func TestReaderGetsOrderByStableClientID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		assertBybitSignature(t, request)
+		if request.URL.Query().Get("orderLinkId") != "kk_reconcile" || request.URL.Query().Get("symbol") != "BTCUSDT" {
+			t.Fatalf("missing reconciliation identity: %s", request.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"retCode":0,"result":{"list":[{"orderId":"order-7","orderLinkId":"kk_reconcile","symbol":"BTCUSDT","side":"Buy","orderType":"Market","orderStatus":"Filled","qty":"0.01","cumExecQty":"0.01"}]}}`))
+	}))
+	defer server.Close()
+	reader := New(Options{Credentials: exchange.Credentials{APIKey: "test-key", APISecret: testSecret}, Client: server.Client(), BaseURL: server.URL})
+	order, err := reader.GetOrderByClientID(t.Context(), "BTCUSDT", "kk_reconcile")
+	if err != nil || order.ExchangeOrderID != "order-7" || order.Status != domain.OrderFilled {
+		t.Fatalf("unexpected reconciled order: %#v err=%v", order, err)
+	}
+}
+
 func TestWriterSignsConfigurePlaceAndCancelRequests(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

@@ -20,6 +20,11 @@ import (
 
 type WriterFactory func(account.Resolved) (exchange.Writer, error)
 
+const (
+	maximumCommandAge = 30 * time.Second
+	maximumClockSkew  = 5 * time.Second
+)
+
 type Service struct {
 	accounts account.Store
 	orders   OrderStore
@@ -102,6 +107,9 @@ func (s *Service) Place(ctx context.Context, command tradingv1.PlaceOrderCommand
 	if err := command.Meta.Validate(); err != nil || strings.TrimSpace(command.TradingOrderID) == "" {
 		return domain.Order{}, false, validationError("INVALID_COMMAND")
 	}
+	if !commandIsFresh(command.Meta.RequestedAt, s.now()) {
+		return domain.Order{}, false, validationError("STALE_EXECUTION_COMMAND")
+	}
 	if command.Account.UserID != command.Meta.ActorUserID {
 		return domain.Order{}, false, validationError("ACCOUNT_ACTOR_MISMATCH")
 	}
@@ -157,8 +165,18 @@ func (s *Service) Place(ctx context.Context, command tradingv1.PlaceOrderCommand
 		}
 		return domain.Order{}, false, err
 	}
+	if failure := verifyPlacedOrder(stored, result); failure != nil {
+		if persistErr := s.orders.Fail(ctx, stored, *failure, s.now()); persistErr != nil {
+			return domain.Order{}, false, errors.Join(&exchange.Error{Normalized: *failure}, persistErr)
+		}
+		return domain.Order{}, false, &exchange.Error{Normalized: *failure}
+	}
 	if err := s.orders.Complete(ctx, stored, result, s.now()); err != nil {
-		return domain.Order{}, false, err
+		failure := domain.ExchangeError{Category: domain.ErrorInternal, Code: "LOCAL_COMMIT_AFTER_EXCHANGE_WRITE_FAILED", Message: "Exchange write requires reconciliation.", Reconciliation: true}
+		if persistErr := s.orders.Fail(ctx, stored, failure, s.now()); persistErr != nil {
+			return domain.Order{}, false, errors.Join(err, persistErr)
+		}
+		return domain.Order{}, false, errors.Join(err, &exchange.Error{Normalized: failure})
 	}
 	return result, false, nil
 }
@@ -166,6 +184,9 @@ func (s *Service) Place(ctx context.Context, command tradingv1.PlaceOrderCommand
 func (s *Service) Cancel(ctx context.Context, command tradingv1.CancelOrderCommand) (domain.Order, bool, error) {
 	if err := command.Meta.Validate(); err != nil || command.Account.UserID != command.Meta.ActorUserID || command.ExchangeOrderID == "" || command.Symbol == "" {
 		return domain.Order{}, false, validationError("INVALID_CANCEL_COMMAND")
+	}
+	if !commandIsFresh(command.Meta.RequestedAt, s.now()) {
+		return domain.Order{}, false, validationError("STALE_EXECUTION_COMMAND")
 	}
 	_, writer, err := s.resolveWriter(ctx, command.Account)
 	if err != nil {
@@ -194,8 +215,19 @@ func (s *Service) Cancel(ctx context.Context, command tradingv1.CancelOrderComma
 		}
 		return domain.Order{}, false, err
 	}
+	if result.ExchangeOrderID == "" || result.ExchangeOrderID != stored.ExchangeOrderID || result.Status != domain.OrderCanceled {
+		failure := domain.ExchangeError{Category: domain.ErrorInternal, Code: "INVALID_EXCHANGE_RESPONSE", Message: "Cancel response could not be verified.", Reconciliation: true}
+		if persistErr := s.orders.FailCancel(ctx, stored, failure, s.now()); persistErr != nil {
+			return domain.Order{}, false, errors.Join(&exchange.Error{Normalized: failure}, persistErr)
+		}
+		return domain.Order{}, false, &exchange.Error{Normalized: failure}
+	}
 	if err := s.orders.CompleteCancel(ctx, stored, s.now()); err != nil {
-		return domain.Order{}, false, err
+		failure := domain.ExchangeError{Category: domain.ErrorInternal, Code: "LOCAL_COMMIT_AFTER_EXCHANGE_WRITE_FAILED", Message: "Exchange write requires reconciliation.", Reconciliation: true}
+		if persistErr := s.orders.FailCancel(ctx, stored, failure, s.now()); persistErr != nil {
+			return domain.Order{}, false, errors.Join(err, persistErr)
+		}
+		return domain.Order{}, false, errors.Join(err, &exchange.Error{Normalized: failure})
 	}
 	return result, false, nil
 }
@@ -208,8 +240,30 @@ func (s *Service) resolveWriter(ctx context.Context, reference domain.ExchangeAc
 	if resolved.Engine != "GO" {
 		return account.Resolved{}, nil, errors.New("exchange account is not owned by Go executor")
 	}
+	if resolved.ConnectionStatus != "CONNECTED" {
+		return account.Resolved{}, nil, errors.New("exchange account is not write-ready")
+	}
+	if resolved.Reference.Environment != domain.EnvironmentDemo && resolved.Reference.Environment != domain.EnvironmentTestnet {
+		return account.Resolved{}, nil, errors.New("production live exchange accounts are not allowed")
+	}
 	writer, err := s.factory(resolved)
 	return resolved, writer, err
+}
+
+func commandIsFresh(requestedAt, now time.Time) bool {
+	age := now.UTC().Sub(requestedAt.UTC())
+	return age >= -maximumClockSkew && age <= maximumCommandAge
+}
+
+func verifyPlacedOrder(stored StoredOrder, result domain.Order) *domain.ExchangeError {
+	valid := result.ExchangeOrderID != "" && result.ClientOrderID == stored.ClientOrderID && result.Symbol == stored.Symbol
+	if stored.Type == domain.OrderStopMarket || stored.Type == domain.OrderStopLimit {
+		valid = valid && decimalEqual(result.StopPrice, stored.StopPrice)
+	}
+	if valid {
+		return nil
+	}
+	return &domain.ExchangeError{Category: domain.ErrorInternal, Code: "INVALID_EXCHANGE_RESPONSE", Message: "Order response could not be verified.", Reconciliation: true}
 }
 
 func commandMatchesStored(command tradingv1.PlaceOrderCommand, stored StoredOrder) bool {

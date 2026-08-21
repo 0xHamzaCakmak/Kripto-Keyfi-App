@@ -189,6 +189,25 @@ func (r *Reader) GetOpenOrders(ctx context.Context) ([]domain.Order, error) {
 	return result, nil
 }
 
+// GetOrderByClientID is a read-only lookup used after an uncertain write. The
+// stable orderLinkId prevents reconciliation from creating a duplicate order.
+func (r *Reader) GetOrderByClientID(ctx context.Context, symbol, clientOrderID string) (domain.Order, error) {
+	query := url.Values{"category": {"linear"}, "symbol": {symbol}, "orderLinkId": {clientOrderID}, "openOnly": {"0"}}
+	var body response[struct {
+		List []order `json:"list"`
+	}]
+	if err := r.signedGet(ctx, "/v5/order/realtime", query.Encode(), &body); err != nil {
+		return domain.Order{}, err
+	}
+	if err := assertResponse(body.RetCode); err != nil {
+		return domain.Order{}, err
+	}
+	if len(body.Result.List) != 1 || body.Result.List[0].OrderID == "" || body.Result.List[0].OrderLinkID != clientOrderID || body.Result.List[0].Symbol != symbol {
+		return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, true)
+	}
+	return mapOrder(body.Result.List[0]), nil
+}
+
 type position struct {
 	Symbol        string `json:"symbol"`
 	Side          string `json:"side"`

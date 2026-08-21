@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ var fixedTime = time.Date(2026, 8, 1, 20, 0, 0, 0, time.UTC)
 
 func TestPlaceClaimsAndExecutesExactlyOnce(t *testing.T) {
 	store := &fakeStore{claim: ClaimAcquired, order: sampleStoredOrder()}
-	writer := &fakeWriter{placed: domain.Order{ExchangeOrderID: "exchange-1", Symbol: "BTCUSDT", Status: domain.OrderOpen}}
+	writer := &fakeWriter{placed: domain.Order{ExchangeOrderID: "exchange-1", ClientOrderID: "kk_123", Symbol: "BTCUSDT", Status: domain.OrderOpen}}
 	service := testService(store, writer)
 	result, replay, err := service.Place(t.Context(), samplePlaceCommand())
 	if err != nil || replay || result.ExchangeOrderID != "exchange-1" {
@@ -58,6 +59,39 @@ func TestPlaceRiskRejectionNeverWritesToExchange(t *testing.T) {
 	_, _, err := service.Place(t.Context(), samplePlaceCommand())
 	if err == nil || writer.configureCalls != 0 || writer.placeCalls != 0 || store.failCalls != 1 {
 		t.Fatalf("risk rejection reached exchange: writer=%#v failures=%d err=%v", writer, store.failCalls, err)
+	}
+}
+
+func TestPlaceRejectsStaleCommandBeforeClaimOrExchange(t *testing.T) {
+	store := &fakeStore{claim: ClaimAcquired, order: sampleStoredOrder()}
+	writer := &fakeWriter{}
+	command := samplePlaceCommand()
+	command.Meta.RequestedAt = fixedTime.Add(-maximumCommandAge - time.Millisecond)
+	_, _, err := testService(store, writer).Place(t.Context(), command)
+	if err == nil || store.claimCalls != 0 || writer.placeCalls != 0 {
+		t.Fatalf("stale command was not rejected before execution: store=%#v writer=%#v err=%v", store, writer, err)
+	}
+}
+
+func TestPlaceRequiresVerifiableStopResponse(t *testing.T) {
+	stored := sampleStoredOrder()
+	stored.Type, stored.StopPrice = domain.OrderStopMarket, "49000"
+	store := &fakeStore{claim: ClaimAcquired, order: stored}
+	writer := &fakeWriter{placed: domain.Order{ExchangeOrderID: "exchange-1", ClientOrderID: "kk_123", Symbol: "BTCUSDT", Type: domain.OrderStopMarket, StopPrice: "48000", Status: domain.OrderOpen}}
+	command := samplePlaceCommand()
+	command.Type, command.StopPrice = domain.OrderStopMarket, "49000"
+	_, _, err := testService(store, writer).Place(t.Context(), command)
+	if err == nil || store.failCalls != 1 || store.lastFailure.Code != "INVALID_EXCHANGE_RESPONSE" || !store.lastFailure.Reconciliation || store.completeCalls != 0 {
+		t.Fatalf("unverified stop response was not isolated: store=%#v err=%v", store, err)
+	}
+}
+
+func TestPlaceCommitFailureRequiresReconciliation(t *testing.T) {
+	store := &fakeStore{claim: ClaimAcquired, order: sampleStoredOrder(), completeErr: errors.New("database unavailable")}
+	writer := &fakeWriter{placed: domain.Order{ExchangeOrderID: "exchange-1", ClientOrderID: "kk_123", Symbol: "BTCUSDT", Status: domain.OrderOpen}}
+	_, _, err := testService(store, writer).Place(t.Context(), samplePlaceCommand())
+	if err == nil || store.failCalls != 1 || !store.lastFailure.Reconciliation {
+		t.Fatalf("partial persistence failure was not marked for reconciliation: store=%#v err=%v", store, err)
 	}
 }
 
@@ -117,23 +151,27 @@ func sampleStoredOrder() StoredOrder {
 }
 
 type fakeStore struct {
-	claim, cancelClaim       ClaimResult
-	order                    StoredOrder
-	completeCalls, failCalls int
+	claim, cancelClaim                   ClaimResult
+	order                                StoredOrder
+	claimCalls, completeCalls, failCalls int
+	completeErr                          error
+	lastFailure                          domain.ExchangeError
 }
 
 func (s *fakeStore) Resolve(context.Context, string, string) (account.Resolved, error) {
-	return account.Resolved{Reference: sampleAccount(), Engine: "GO"}, nil
+	return account.Resolved{Reference: sampleAccount(), Engine: "GO", ConnectionStatus: "CONNECTED"}, nil
 }
 func (s *fakeStore) Claim(context.Context, string, string, string, string, string, time.Time) (StoredOrder, ClaimResult, error) {
+	s.claimCalls++
 	return s.order, s.claim, nil
 }
 func (s *fakeStore) Complete(context.Context, StoredOrder, domain.Order, time.Time) error {
 	s.completeCalls++
-	return nil
+	return s.completeErr
 }
-func (s *fakeStore) Fail(context.Context, StoredOrder, domain.ExchangeError, time.Time) error {
+func (s *fakeStore) Fail(_ context.Context, _ StoredOrder, failure domain.ExchangeError, _ time.Time) error {
 	s.failCalls++
+	s.lastFailure = failure
 	return nil
 }
 func (s *fakeStore) ClaimCancel(context.Context, string, string, string, string, string, time.Time) (StoredOrder, ClaimResult, error) {
