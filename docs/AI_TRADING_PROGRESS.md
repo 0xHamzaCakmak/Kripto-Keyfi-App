@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 25
-Current prompt: PROMPT 26
+Last completed prompt: PROMPT 26
+Current prompt: PROMPT 27
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -35,21 +35,22 @@ Updated at: 2026-08-22
 - PROMPT 23 — COMPLETED
 - PROMPT 24 — COMPLETED
 - PROMPT 25 — COMPLETED
+- PROMPT 26 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 26 — Autonomous Trading Admin API
+PROMPT 27 — Backend Test / Simulation Suite
 
-Frontend için mevcut autonomous read/write endpoint envanteri tamamlanacak, tutarlı ve versioned admin contracts belgelenecek.
+On altı güvenlik/performance senaryosunu kapsayan deterministic simulation suite eklenecek; production exchange kullanılmayacak.
 
 ## Last Test Result
 
-- Backend unit/integration tests: PASS — 56 files, 239 tests
+- Backend unit/integration tests: PASS — 57 files, 243 tests
 - Prisma schema validation: PASS
 - Backend typecheck: PASS
 - Backend build: PASS
-- PROMPT 25 scoped backend tests: PASS — 3 files, 13 tests
-- PROMPT 25 scoped backend ESLint: PASS
+- PROMPT 26 scoped backend tests: PASS — 3 files, 14 tests
+- PROMPT 26 scoped backend ESLint: PASS
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
@@ -63,13 +64,13 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Admin `system-health` endpointi active bots, arena throughput, market lag, strategy latency, paper order, risk reject, exchange/AI/PnL error, generation, Teacher/Researcher ve memory-growth metriklerini sunuyor.
-- Health state HEALTHY/DEGRADED/EMERGENCY_STOPPED olarak deterministic hesaplanıyor; global kill switch fail-closed görünür.
-- Go scheduler gerçek strategy execution latency değerini her kararın mevcut metrics JSON'una ekliyor.
-- Teacher ve Researcher çalıştırmaları mevcut audit ledger'a ayrı run olaylarıyla yazılıyor; provider fallback metadata'sı öneri auditlerine taşınıyor.
-- Admin-only autonomous audit endpointi bounded son AI audit olaylarını sunuyor.
-- Geçerli `X-Request-ID` korunuyor, yoksa UUID üretiliyor; response header, structured log, health payload ve hata response'unda correlation id bulunuyor.
-- API key/secret/passphrase redaction nested request alanlarını kapsayacak şekilde genişletildi.
+- `/autonomous/*` admin API altında versioned `v1` DTO; overview, arena status, generation ve live-eligibility read contractları eklendi.
+- Mevcut bots, leaderboard, champions, strategies, evolution, Teacher, Researcher, memory, performance, regime, risk, shadow ve health endpointleri tek frontend envanterinde belgelendi.
+- Autonomous bot create endpointi yalnız PAPER kabul ediyor; pause/resume yalnız PAPER/SHADOW ve resume account + Risk Engine readiness gate arkasında.
+- PAPER generation trigger tek aktif generation ile sınırlı, `liveEnabled=false` ve `orderExecutionAllowed=false` metadata'sıyla audit ediliyor.
+- Candidate archive yalnız promote edilmemiş lifecycle durumlarında; non-critical settings yalnız bounded scheduler interval ve LIVE_ELIGIBLE freeze ile sınırlı.
+- Manual promotion reject botu güvenli PAUSED duruma alıyor; approve yalnız `APPROVED_PENDING_ACTIVATION` audit'i oluşturuyor ve `LIVE` aktivasyonu yapmıyor.
+- API sözleşme envanteri `docs/AI_TRADING_ADMIN_API.md` içinde kaydedildi.
 
 ## Safety State
 
@@ -109,8 +110,14 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - LLM code/live-risk mutation permission: NONE
 - Autonomous observability: persistent-ledger metrics plus admin-only health/audit endpoints
 - Error correlation: `X-Request-ID` / response `correlationId`
+- Autonomous Admin API: v1 DTOs, ADMIN authorization, PAPER/SHADOW-only writes
+- Manual promotion approval: audit-only pending activation; live remains unavailable
 
 ## Migration
+
+PROMPT 26: migration yok.
+
+- Mevcut bot, generation ve audit tabloları kullanılır; production schema/veri işlemi ve live activation yoktur.
 
 PROMPT 25: migration yok.
 
@@ -211,7 +218,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 26 Autonomous Trading Admin API read/write endpoint ve contract envanterini tamamlamak; live activation eklememek.
+- PROMPT 27 on altı simulation senaryosunu ve kâr-dışı risk-adjusted seçim doğrulamasını kapsayan test suite eklemek.
 
 ## Known Risks for Next Prompts
 

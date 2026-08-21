@@ -47,12 +47,25 @@ import { evaluateLiveEligible } from '../ai-trading/live-eligibility.controller.
 import { runLiveEligibilityBodySchema } from '../ai-trading/live-eligibility.schema.js';
 import { autonomousAudit, systemHealth } from '../ai-trading/autonomous-observability.controller.js';
 import { autonomousAuditQuerySchema } from '../ai-trading/autonomous-observability.schema.js';
+import { archive, arenaStatus, autonomousOverview, createPaperBot, generations, liveEligibilityStatus, pausePaperBot, promotion, resumePaperBot, settings, triggerGeneration } from '../ai-trading/autonomous-admin.controller.js';
+import { autonomousBotParamsSchema, autonomousGenerationQuerySchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema, promotionReviewSchema, triggerPaperGenerationSchema } from '../ai-trading/autonomous-admin.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
 tradingRouter.get('/overview', asyncHandler(overview));
 tradingRouter.get('/system-health', asyncHandler(systemHealth));
 tradingRouter.get('/system-health/audit', validateRequest({ query: autonomousAuditQuerySchema }), asyncHandler(autonomousAudit));
+tradingRouter.get('/autonomous/overview', asyncHandler(autonomousOverview));
+tradingRouter.get('/autonomous/arena-status', asyncHandler(arenaStatus));
+tradingRouter.get('/autonomous/generations', validateRequest({ query: autonomousGenerationQuerySchema }), asyncHandler(generations));
+tradingRouter.post('/autonomous/generations', validateRequest({ body: triggerPaperGenerationSchema }), asyncHandler(triggerGeneration));
+tradingRouter.get('/autonomous/live-eligibility', asyncHandler(liveEligibilityStatus));
+tradingRouter.post('/autonomous/bots', validateRequest({ body: createAutonomousPaperBotSchema }), asyncHandler(createPaperBot));
+tradingRouter.post('/autonomous/bots/:id/pause', validateRequest({ params: autonomousBotParamsSchema }), asyncHandler(pausePaperBot));
+tradingRouter.post('/autonomous/bots/:id/resume', validateRequest({ params: autonomousBotParamsSchema }), asyncHandler(resumePaperBot));
+tradingRouter.post('/autonomous/bots/:id/archive', validateRequest({ params: autonomousBotParamsSchema }), asyncHandler(archive));
+tradingRouter.post('/autonomous/bots/:id/promotion-review', validateRequest({ params: autonomousBotParamsSchema, body: promotionReviewSchema }), asyncHandler(promotion));
+tradingRouter.patch('/autonomous/bots/:id/settings', validateRequest({ params: autonomousBotParamsSchema, body: nonCriticalBotSettingsSchema }), asyncHandler(settings));
 tradingRouter.get('/strategies', asyncHandler(strategies));
 tradingRouter.post('/strategies', validateRequest({ body: createStrategyBodySchema }), asyncHandler(createStrategy));
 tradingRouter.get('/strategies/:id', validateRequest({ params: strategyIdParamsSchema }), asyncHandler(strategy));
