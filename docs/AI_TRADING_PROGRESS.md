@@ -2,8 +2,8 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 31
-Current prompt: PROMPT 32
+Last completed prompt: PROMPT 32
+Current prompt: PROMPT 33
 Status: IN_PROGRESS
 Updated at: 2026-08-22
 
@@ -41,12 +41,13 @@ Updated at: 2026-08-22
 - PROMPT 29 — COMPLETED
 - PROMPT 30 — COMPLETED
 - PROMPT 31 — COMPLETED
+- PROMPT 32 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 32 — Evolution Frontend
+PROMPT 33 — Teacher / Researcher Frontend
 
-Candidate/Challenger/Champion/Live Eligible görünümü, kanıtlar, blockers ve promotion history tamamlandı.
+Generation metrics/history, parent-child lineage, mutation diff ve güvenli PAPER generation trigger tamamlandı.
 
 ## Last Test Result
 
@@ -59,9 +60,9 @@ Candidate/Challenger/Champion/Live Eligible görünümü, kanıtlar, blockers ve
 - Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
-- PROMPT 31 frontend typecheck/lint: PASS — `npm.cmd run lint`
-- PROMPT 31 frontend production build: PASS — `npm.cmd run build`
-- PROMPT 31 Champion/live eligibility/manual/Grid regression: PASS — 5 files, 18 tests
+- PROMPT 32 frontend typecheck/lint: PASS — `npm.cmd run lint`
+- PROMPT 32 frontend production build: PASS — `npm.cmd run build`
+- PROMPT 32 Evolution/mutation/crossover/manual/Grid regression: PASS — 6 files, 25 tests
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -70,11 +71,11 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Candidate, Challenger, Champion ve Live Eligible lifecycle kolonları net biçimde ayrıldı.
-- Score, paper duration, trade count, regime coverage, PF, drawdown, SHADOW mode ve evidence blockers gösteriliyor.
-- Champion evaluation kayıtlarından promotion history tablosu eklendi.
-- Backend live activation sağlamadığı için “Live'a al” butonu yoktur.
-- Audit-only manual promotion review, live açmadığını belirten confirm ve `APPROVED_PENDING_ACTIVATION` mesajıyla eklendi; reject güvenli PAUSED akışını kullanır.
+- Current generation, population, survivors, mutation/crossover/rejected ve top score özetleri eklendi.
+- Generation ve Evolution run geçmişleri gerçek backend contract'larına bağlandı.
+- Mutation/crossover parent → child lineage hafif CSS listesiyle gösteriliyor.
+- Mutation parameter diff eski değer → yeni değer olarak gösteriliyor.
+- Trigger yalnız güvenli autonomous PAPER generation endpointini kullanıyor ve confirm metni live/exchange execution olmadığını belirtiyor.
 
 ## Safety State
 
@@ -119,6 +120,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+PROMPT 32: migration yok.
+
+- Yalnız frontend Evolution ekranı ve mevcut PAPER-only admin endpointi; schema/veri migration veya live change yok.
 
 PROMPT 31: migration yok.
 
@@ -243,7 +248,7 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 32 — generation history, lineage, mutation diff ve PAPER evolution trigger.
+- PROMPT 33 — Teacher ve Researcher öneri/hipotez ekranları.
 
 ## Known Risks for Next Prompts
 
@@ -294,6 +299,13 @@ Teknik blocker yok. Frontend fazı PROMPT 29 ile devam ediyor; bir sonraki faz s
 - Test: PASS — frontend lint/build; Champion, live eligibility, autonomous admin, manual/Grid 5 dosya ve 18 test.
 - Migration: Yok.
 - TODO: PROMPT 32 Evolution ekranı.
+
+### PROMPT 32
+
+- Değişiklikler: Generation/run history, lineage, mutation diff ve confirm'li PAPER generation trigger.
+- Test: PASS — frontend lint/build; Evolution, mutation, crossover, autonomous admin, manual/Grid 6 dosya ve 25 test.
+- Migration: Yok.
+- TODO: PROMPT 33 Teacher/Researcher ekranları.
 
 ## Source Note
 

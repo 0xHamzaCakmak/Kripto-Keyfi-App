@@ -104,6 +104,25 @@ export type LiveEligibilityStatus = {
   manualApprovalRequired: boolean;
 };
 
+export type Generation = {
+  id: string; number: number; status: string; populationTarget: number; metadata: unknown;
+  counts: { bots: number; mutations: number; crossovers: number };
+  startedAt: string | null; completedAt: string | null; createdAt: string; updatedAt: string;
+};
+export type EvolutionRun = {
+  id: string; sourceGenerationId: string; targetGenerationId: string | null; status: 'RUNNING' | 'COMPLETED' | 'FAILED';
+  config: unknown; evidence: unknown; selection: unknown; errorMessage: string | null; startedAt: string; completedAt: string | null; createdAt: string;
+  sourceGeneration: { number: number; status: string }; targetGeneration: { number: number; status: string } | null;
+};
+export type BotMutation = {
+  id: string; parentBotId: string; childBotId: string; generationId: string; reason: string; diff: unknown; createdAt: string;
+  parentBot: { name: string; lifecycleStatus: AutonomousLifecycle }; childBot: { name: string; lifecycleStatus: AutonomousLifecycle; mode: SafeTradingMode }; generation: { number: number; status: string };
+};
+export type BotCrossover = {
+  id: string; parentABotId: string; parentBBotId: string; childBotId: string; generationId: string; inheritedFields: unknown; generatedFields: unknown; createdAt: string;
+  parentA: { name: string }; parentB: { name: string }; child: { name: string; lifecycleStatus: AutonomousLifecycle; mode: SafeTradingMode }; generation: { number: number; status: string };
+};
+
 export type TeacherEvaluation = {
   id: string;
   observation: string;
@@ -198,6 +217,12 @@ export const aiTradingApi = {
       if (envelope.apiVersion !== 'v1' || envelope.liveTradingEnabled !== false) throw new Error('Promotion review güvenlik sözleşmesi doğrulanamadı.');
       return envelope;
     }),
+  generations: (limit = 100) => getAutonomousData<Generation[]>('/admin/trading/autonomous/generations', { limit }),
+  evolutionRuns: (limit = 100) => getData<EvolutionRun[]>('/admin/trading/evolution/runs', { limit }),
+  mutations: (limit = 100) => getData<BotMutation[]>('/admin/trading/mutations', { limit }),
+  crossovers: (limit = 100) => getData<BotCrossover[]>('/admin/trading/crossovers', { limit }),
+  triggerPaperGeneration: (populationTarget: number, note: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<Generation>>>('/admin/trading/autonomous/generations', { populationTarget, note }).then((response) => response.data.data),
   tradeSummary: (groupBy: 'BOT' | 'STRATEGY' | 'REGIME' | 'SYMBOL', limit = 100) =>
     getData<TradeSummary[]>('/admin/trading/trade-memory/summary', { groupBy, limit }),
   teacherEvaluations: (limit = 10) => getData<TeacherEvaluation[]>('/admin/trading/teacher/evaluations', { limit }),
