@@ -61,4 +61,50 @@ WHERE id = ? AND type = 'AUTONOMOUS'`, message, botID)
 	return nil
 }
 
+func (s *AccountStore) RecordArenaMarketRejection(ctx context.Context, botIDs []string, rejection arena.MarketRejection) error {
+	if len(botIDs) == 0 {
+		return nil
+	}
+	metadata, err := json.Marshal(map[string]any{
+		"immutable":           true,
+		"decision":            "REJECTED",
+		"code":                rejection.Code,
+		"message":             rejection.Message,
+		"symbol":              rejection.Event.Symbol,
+		"timeframe":           rejection.Event.Timeframe,
+		"sequence":            rejection.Event.Sequence,
+		"eventOccurredAt":     rejection.Event.OccurredAt.UTC(),
+		"rejectedAt":          rejection.RejectedAt.UTC(),
+		"eventAgeMs":          rejection.EventAge.Milliseconds(),
+		"maximumAgeMs":        rejection.MaximumAge.Milliseconds(),
+		"maximumFutureSkewMs": rejection.MaximumSkew.Milliseconds(),
+		"submittedToExchange": false,
+	})
+	if err != nil {
+		return fmt.Errorf("encode arena market rejection: %w", err)
+	}
+	transaction, err := s.database.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin arena market rejection: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	for _, botID := range botIDs {
+		if _, err = transaction.ExecContext(ctx, `INSERT INTO trading_audit_logs
+(id, userId, exchangeAccountId, action, entityType, entityId, metadata, createdAt)
+SELECT UUID(), userId, exchangeAccountId, 'AUTONOMOUS_RISK_REJECTED', 'TRADING_BOT', id, ?, ?
+FROM trading_bots WHERE id = ? AND type = 'AUTONOMOUS'`, metadata, rejection.RejectedAt.UTC(), botID); err != nil {
+			return fmt.Errorf("record arena market rejection: %w", err)
+		}
+		if _, err = transaction.ExecContext(ctx, `UPDATE trading_bots
+SET lastErrorCode = ?, lastErrorMessage = LEFT(?, 500), updatedAt = UTC_TIMESTAMP(3)
+WHERE id = ? AND type = 'AUTONOMOUS'`, rejection.Code, rejection.Message, botID); err != nil {
+			return fmt.Errorf("mark arena market rejection: %w", err)
+		}
+	}
+	if err = transaction.Commit(); err != nil {
+		return fmt.Errorf("commit arena market rejection: %w", err)
+	}
+	return nil
+}
+
 var _ arena.BotStore = (*AccountStore)(nil)

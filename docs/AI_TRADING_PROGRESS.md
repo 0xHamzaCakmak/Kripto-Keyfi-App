@@ -4,7 +4,7 @@
 
 Last completed prompt: PROMPT 38
 Current prompt: NONE
-Status: COMPLETED — PAPER/SHADOW APPROVED; LIVE NOT APPROVED
+Status: COMPLETED — PAPER/SHADOW + CONTROLLED TESTNET GO EXECUTION APPROVED; PRODUCTION LIVE NOT APPROVED
 Updated at: 2026-08-22
 
 ## Completed
@@ -53,9 +53,17 @@ Updated at: 2026-08-22
 
 No remaining implementation prompt.
 
-PROMPT 38 final integration audit tamamlandı. PAPER/SHADOW onaylandı; production LIVE iki açık güvenlik bulgusu nedeniyle onaylanmadı.
+PROMPT 38 final integration audit tamamlandı. Kullanıcı onaylı post-audit hardening ile F-01/F-02 kapatıldı ve bağlı Binance TESTNET hesabında kontrollü GO executor canary kabulü geçti. Production LIVE ve autonomous LIVE activation hâlâ mevcut/onaylı değildir.
 
 ## Last Test Result
+
+- Post-audit F-01/F-02 backend regression: PASS — 59 files, 254 tests
+- Post-audit backend build: PASS
+- Post-audit Go unit/integration tests: PASS — `go test ./...`
+- Post-audit Go static analysis: PASS — `go vet ./...`
+- Post-audit frontend typecheck/lint and production build: PASS
+- Controlled Binance TESTNET GO executor acceptance: PASS — 0.01 ETHUSDT MARKET open `FILLED`, reduce-only close `FILLED`, remaining ETH position NONE
+- Canary risk evidence: PASS — open `RISK_APPROVED`, close `RISK_REDUCING_EXIT`
 
 - Backend unit/integration tests: PASS — 58 files, 252 tests
 - Prisma schema validation: PASS
@@ -87,6 +95,12 @@ PROMPT 38 final integration audit tamamlandı. PAPER/SHADOW onaylandı; producti
 Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış uyarı logları vardır; 252 testin tamamı geçmiştir.
 
 ## Last Changes
+
+- F-01 resolved: risk-increasing TypeScript exchange writes fail closed with `CENTRAL_RISK_ENGINE_REQUIRED`; GO executor is mandatory. TypeScript reduce-only emergency exits and cancellations remain available.
+- F-02 resolved: Arena ingress rejects events older than 2 minutes or future-skewed by more than 5 seconds before strategy/executor dispatch; immutable per-bot audit records include `STALE_MARKET_DATA` / `FUTURE_MARKET_DATA` evidence.
+- Connected `Binance Test` account was moved from `TYPESCRIPT` to `GO` through the guarded service cutover and remains `TESTNET`, `CONNECTED`, withdrawal-disabled.
+- Local backend runtime was configured for the TESTNET-only Go executor; Go writer continues to reject production environments.
+- No schema migration, production data change, exchange permission change, withdrawal/transfer capability, or production order occurred.
 
 - `AI_TRADING_FINAL_AUDIT.md` içinde PROMPT 38'in 13 kontrol maddesi kod, test ve runtime smoke kanıtlarıyla değerlendirildi.
 - PAPER/SHADOW çalışma kilometre taşı onaylandı; autonomous production LIVE unavailable/not approved olarak bırakıldı.
@@ -121,7 +135,7 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Live Eligibility: evidence-gated and auditable; direct lifecycle bypass disabled
 - LIVE activation after eligibility: NOT PRESENT; explicit admin approval remains required
 - Risk policy ownership: admin risk API only; Teacher/Researcher/Mutation/Evolution have no risk mutation or order submission path
-- Existing manual/grid/live execution behavior: unchanged; autonomous controls are scoped by `instance.Type == "AUTONOMOUS"`
+- Manual execution hardening: risk-increasing TypeScript writes are disabled; guarded account cutover routes writes through the centralized Go Risk Engine. Grid remains plan/preview-only.
 - Production exchange environment: NOT PRESENT
 - Live execution hardening: stale/disconnected/production account fail-closed; post-write partial failures reconciliation-required
 - Reconciliation retry: read-only and bounded; mutating exchange requests never auto-retried
@@ -289,21 +303,22 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- LIVE öncesi F-01: legacy TypeScript manual executor için merkezi, fail-closed Risk Engine zorunluluğu. Execution davranışı değişeceği için kullanıcı onayı gerekli.
-- LIVE öncesi F-02: gerçek Arena dispatch yoluna absolute market-event freshness/skew guard ve audit kararı. Live execution açılmadan tamamlanmalı.
-- Operasyonel: 100-bot soak/load, external exchange acceptance ve desteklenen ortamda Go race-detector kanıtı.
+- F-01: RESOLVED — risk artıran TypeScript write fail-closed; kontrollü GO cutover ve merkezi Risk Engine zorunlu.
+- F-02: RESOLVED — Arena absolute age/future-skew guard, kalıcı audit kararı ve boundary testleri eklendi.
+- Operasyonel: 100-bot uzun süreli soak/load ve desteklenen ortamda Go race-detector kanıtı.
+- Autonomous LIVE: henüz activation/order-dispatch yolu yoktur; production için ayrı tasarım, uygulama ve ikinci açık onay gerekir.
 
 ## Known Risks / Future Work
 
 - Mevcut `TradingBot` Prisma enum/table yapısı Node, Go raw SQL ve frontend tarafından ortak kullanılıyor.
-- TypeScript manual executor merkezi Go risk evaluator yolundan geçmiyor; PROMPT 0'da yalnız audit bulgusu olarak kaydedildi.
+- TypeScript manual executor yalnız reduce-only acil çıkış/iptal için korunur; risk artıran write `CENTRAL_RISK_ENGINE_REQUIRED` ile reddedilir.
 - Legacy bot scheduler aynı symbol için bot başına REST mark-price isteği yapıyor; yeni Go Arena shared stream fan-out kullanıyor.
 - Teacher ve Researcher çıktıları daha sonraki promptlar tarafından tüketilse bile doğrudan mutation veya execution yetkisi kazanmamalı.
 - PROMPT 38 kapanışında çalışma ağacı yalnız audit/progress doküman değişikliklerini içeriyor.
 
 ## Blockers
 
-PROMPT dizisi tamamlandı. PAPER/SHADOW için teknik blocker yok. Production LIVE, `AI_TRADING_FINAL_AUDIT.md` içindeki F-01 ve F-02 çözülüp ayrıca onaylanana kadar bloklu ve varsayılan kapalıdır.
+PROMPT dizisi tamamlandı. PAPER/SHADOW ve kontrollü TESTNET GO execution için teknik blocker yok. F-01/F-02 çözülmüştür. Production LIVE, production writer/account desteği ve autonomous activation bulunmadığı ve ayrıca ikinci açık onay verilmediği için varsayılan kapalı ve blokludur.
 
 ## Phase Checkpoints
 
@@ -319,6 +334,17 @@ PROMPT dizisi tamamlandı. PAPER/SHADOW için teknik blocker yok. Production LIV
 - PAPER/SHADOW approved; autonomous production LIVE unavailable/not approved.
 - Full backend/frontend/Go/Prisma doğrulamaları başarılı; yalnız bilinen KOL ESLint baseline hataları kapsam dışı olarak devam ediyor.
 - Production migration, gerçek exchange emri, API permission veya live execution değişikliği yapılmadı.
+
+### PHASE_CHECKPOINT 4 — F-01/F-02 + Controlled TESTNET Cutover
+
+- Tamamlanan kapsam: kullanıcı onaylı post-PROMPT hardening; F-01 ve F-02 resolved.
+- Değişiklikler: merkezi Go Risk zorunluluğu, TypeScript risk-increasing write kilidi, Arena absolute freshness/future-skew fail-closed guard ve immutable audit persistence.
+- Test: PASS — backend 59/254 + build; Go `test ./...` + `vet ./...`; frontend lint + production build.
+- External acceptance: PASS — bağlı Binance TESTNET hesabı guarded service ile GO executor'a geçirildi; 0.01 ETHUSDT aç/kapat canary emirleri merkezi risk onayıyla `FILLED`, kalan pozisyon yok.
+- Migration: Yok.
+- API key/permission: Değişmedi; withdrawal kapalı kaldı.
+- Safety: Production endpoint/account emirleri Go writer tarafından reddedilmeye devam eder; autonomous LIVE activation yoktur.
+- TODO: Başlangıç strategy/version ve PAPER/SHADOW autonomous bot bootstrap; ardından uzun süreli Arena çalışması. Production LIVE ayrı onay gerektirir.
 
 ## Prompt Checkpoints
 
@@ -397,7 +423,7 @@ PROMPT dizisi tamamlandı. PAPER/SHADOW için teknik blocker yok. Production LIV
 - Değişiklikler: Hedef mimariye karşı 13 maddelik final integration audit, evidence matrix, safety invariants, açık bulgular ve mode bazlı final gate; `AI_TRADING_FINAL_AUDIT.md`.
 - Test: PASS — backend 58 dosya/252 test ve build; AI Trading/trading/tests scoped ESLint; frontend lint/build; Prisma validate/status; Go test/vet; autonomous Overview database smoke.
 - Migration: Yeni migration yok. Yerel veritabanındaki 45 migration güncel; production migration uygulanmadı.
-- TODO: Prompt dizisi tamamlandı. Production LIVE için F-01/F-02 ayrı kullanıcı onayı ve kontrollü implementation/acceptance gerektiriyor.
+- TODO: Prompt dizisi tamamlandı. F-01/F-02 daha sonra kullanıcı onaylı PHASE_CHECKPOINT 4 kapsamında çözüldü; production LIVE ve autonomous activation ayrı uygulama ve ikinci açık onay gerektiriyor.
 
 ## Source Note
 

@@ -82,6 +82,7 @@ type Executor interface {
 type BotStore interface {
 	LoadActivePaperBots(context.Context) ([]Bot, error)
 	RecordArenaBotError(context.Context, string, string, time.Time) error
+	RecordArenaMarketRejection(context.Context, []string, MarketRejection) error
 }
 
 type MarketSource interface {
@@ -95,11 +96,24 @@ type DispatchReport struct {
 	Skipped   int
 }
 
+type MarketRejection struct {
+	Code        string
+	Message     string
+	Event       MarketEvent
+	RejectedAt  time.Time
+	EventAge    time.Duration
+	MaximumAge  time.Duration
+	MaximumSkew time.Duration
+}
+
 type Options struct {
-	Store      BotStore
-	Strategies StrategyRegistry
-	Executor   Executor
-	Workers    int
+	Store                 BotStore
+	Strategies            StrategyRegistry
+	Executor              Executor
+	Workers               int
+	MaximumMarketEventAge time.Duration
+	MaximumFutureSkew     time.Duration
+	Now                   func() time.Time
 }
 
 type managedBot struct {
@@ -110,13 +124,16 @@ type managedBot struct {
 }
 
 type Arena struct {
-	store         BotStore
-	strategies    StrategyRegistry
-	executor      Executor
-	workers       int
-	mutex         sync.RWMutex
-	bots          map[string]*managedBot
-	subscriptions map[string][]string
+	store                 BotStore
+	strategies            StrategyRegistry
+	executor              Executor
+	workers               int
+	maximumMarketEventAge time.Duration
+	maximumFutureSkew     time.Duration
+	now                   func() time.Time
+	mutex                 sync.RWMutex
+	bots                  map[string]*managedBot
+	subscriptions         map[string][]string
 }
 
 func New(options Options) (*Arena, error) {
@@ -130,8 +147,21 @@ func New(options Options) (*Arena, error) {
 	if workers > 32 {
 		workers = 32
 	}
+	maximumMarketEventAge := options.MaximumMarketEventAge
+	if maximumMarketEventAge <= 0 {
+		maximumMarketEventAge = 2 * time.Minute
+	}
+	maximumFutureSkew := options.MaximumFutureSkew
+	if maximumFutureSkew <= 0 {
+		maximumFutureSkew = 5 * time.Second
+	}
+	now := options.Now
+	if now == nil {
+		now = time.Now
+	}
 	return &Arena{
 		store: options.Store, strategies: options.Strategies, executor: options.Executor, workers: workers,
+		maximumMarketEventAge: maximumMarketEventAge, maximumFutureSkew: maximumFutureSkew, now: now,
 		bots: make(map[string]*managedBot), subscriptions: make(map[string][]string),
 	}, nil
 }
@@ -196,6 +226,31 @@ func (arena *Arena) Publish(ctx context.Context, event MarketEvent) (DispatchRep
 		managed = append(managed, arena.bots[id])
 	}
 	arena.mutex.RUnlock()
+
+	now := arena.now().UTC()
+	age := now.Sub(event.OccurredAt.UTC())
+	if age > arena.maximumMarketEventAge {
+		rejection := MarketRejection{
+			Code: "STALE_MARKET_DATA", Message: "market event exceeded the maximum accepted age",
+			Event: event, RejectedAt: now, EventAge: age,
+			MaximumAge: arena.maximumMarketEventAge, MaximumSkew: arena.maximumFutureSkew,
+		}
+		if err := arena.store.RecordArenaMarketRejection(ctx, ids, rejection); err != nil {
+			return DispatchReport{Matched: len(managed)}, fmt.Errorf("persist stale market rejection: %w", err)
+		}
+		return DispatchReport{Matched: len(managed)}, fmt.Errorf("%s: %s", rejection.Code, rejection.Message)
+	}
+	if age < -arena.maximumFutureSkew {
+		rejection := MarketRejection{
+			Code: "FUTURE_MARKET_DATA", Message: "market event exceeded the maximum accepted future clock skew",
+			Event: event, RejectedAt: now, EventAge: age,
+			MaximumAge: arena.maximumMarketEventAge, MaximumSkew: arena.maximumFutureSkew,
+		}
+		if err := arena.store.RecordArenaMarketRejection(ctx, ids, rejection); err != nil {
+			return DispatchReport{Matched: len(managed)}, fmt.Errorf("persist future market rejection: %w", err)
+		}
+		return DispatchReport{Matched: len(managed)}, fmt.Errorf("%s: %s", rejection.Code, rejection.Message)
+	}
 
 	report := DispatchReport{Matched: len(managed)}
 	if len(managed) == 0 {

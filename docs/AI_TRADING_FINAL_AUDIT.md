@@ -6,11 +6,11 @@ Audited checkpoint: PROMPT 0-37 plus locally applied additive migrations
 
 ## Executive Verdict
 
-The autonomous AI Trading system is suitable for continued **PAPER** and **SHADOW** operation. It is **not approved for production LIVE trading**.
+The autonomous AI Trading system is suitable for continued **PAPER** and **SHADOW** operation. Guarded manual execution through the centralized Go Risk Engine is also accepted for the connected **TESTNET** account. It is **not approved for production LIVE trading**.
 
 No autonomous live activation or production-exchange order path exists. Autonomous API responses declare `liveTradingEnabled: false`, supported modes are PAPER/SHADOW, manual promotion remains audit-only, the Go engine defaults to shadow, and the Go exchange writer rejects accounts outside TESTNET/DEMO.
 
-Two live-readiness blockers remain: the legacy TypeScript manual executor does not pass through the centralized Go Risk Engine, and the real Arena publish path lacks an explicit maximum-age rejection for market events. Neither was refactored in PROMPT 38 because changing an existing execution path requires explicit approval and the audit prompt forbids large non-critical refactors.
+After PROMPT 38, the user explicitly approved F-01/F-02 hardening and controlled TESTNET acceptance. Risk-increasing TypeScript writes now fail closed and require the guarded Go executor; the Arena publish path now rejects stale and future-skewed events before dispatch and persists immutable rejection audit evidence. A Binance TESTNET open/close canary passed through the Go Risk Engine. Production and autonomous LIVE remain unavailable.
 
 ## Audit Matrix
 
@@ -24,9 +24,9 @@ Two live-readiness blockers remain: the legacy TypeScript manual executor does n
 | Teacher is recommendation-only | PASS | Outputs contain `applyAutomatically: false`/`recommendationApplied: false`; service has no bot, strategy, risk or execution mutation dependency. |
 | Researcher creates candidates only | PASS | Researcher stores bounded hypotheses with `createCandidateOnly: true`, `candidateCreated: false` and `liveChanged: false`. Evolution may consume them only to create new PAPER candidates. |
 | Evolution touches LIVE | PASS — it does not | Evolution fitness is Bot Score, children are PAPER, and LIVE/LIVE_ELIGIBLE bots are protected from archive/update. Audit metadata records `liveChanged: false`; no order submission path exists. |
-| Risk Engine bypass | PARTIAL — LIVE BLOCKER | Autonomous PAPER fills are transactionally risk-gated and Go exchange writes fail closed on unavailable/rejected risk. The legacy `executionEngine=TYPESCRIPT` manual path can still call the exchange adapter directly instead of the centralized Go Risk Engine. Current account schemas restrict this path to TESTNET/DEMO, but it must not be accepted for production LIVE. |
+| Risk Engine bypass | PASS for implemented write paths | Risk-increasing TypeScript writes fail closed with `CENTRAL_RISK_ENGINE_REQUIRED`; guarded GO execution evaluates the immutable Risk Engine immediately before exchange submission. TypeScript remains only for reduce-only emergency exits/cancellations. |
 | Emergency stop | PASS for protected paths | Global/account kill switches block new autonomous work and Go risk evaluation before market reads. Reduce-only risk-reducing exits remain allowed. Missing risk state defaults closed. |
-| Market-data freshness guard | PARTIAL — LIVE BLOCKER | Market Intelligence marks stale values unusable; Strategy Router rejects stale regime/metric/heartbeat evidence; Go execution rejects stale commands. The real Arena `Publish` path validates completeness and monotonic sequence/time but does not enforce an absolute maximum market-event age. |
+| Market-data freshness guard | PASS | Arena `Publish` rejects events older than 2 minutes and events more than 5 seconds in the future before strategy/executor dispatch, persists `STALE_MARKET_DATA` / `FUTURE_MARKET_DATA` audit evidence, and has boundary tests. Go execution also rejects stale commands. |
 | Audit logs | PASS for PAPER/SHADOW scope | Factory, strategy, lifecycle, Champion, live-eligibility, Teacher, Researcher, Evolution, router, portfolio and risk decisions write structured audit records. Requests have correlation IDs. Live activation audit cannot be assessed because activation does not exist. |
 | Frontend PAPER/SHADOW/LIVE separation | PASS | Overview, Arena, Memory and Performance label simulated results; Shadow and Live use separate panels; Live is read-only and unavailable; approval explicitly does not activate live; no live CTA is present. |
 
@@ -46,7 +46,7 @@ Two live-readiness blockers remain: the legacy TypeScript manual executor does n
 
 ## Open Findings
 
-### F-01 — Central Risk coverage gap in legacy TypeScript execution
+### F-01 — RESOLVED: Central Risk coverage gap in legacy TypeScript execution
 
 Severity: **High for future LIVE readiness**; current scope is TESTNET/DEMO.
 
@@ -58,9 +58,9 @@ Required before LIVE:
 2. Remove or hard-disable direct TypeScript exchange writes after a controlled cutover.
 3. Preserve manual/grid behavior through shadow comparison, staged account cutover and rollback evidence.
 
-This changes existing execution behavior and therefore requires explicit user approval.
+Resolution evidence: explicit user approval was received; risk-increasing TypeScript writes are hard-disabled, guarded GO cutover is mandatory, manual/grid regressions pass, and the TESTNET canary produced `RISK_APPROVED` plus `RISK_REDUCING_EXIT` records.
 
-### F-02 — Absolute freshness gate missing in real Arena dispatch
+### F-02 — RESOLVED: Absolute freshness gate missing in real Arena dispatch
 
 Severity: **High for future LIVE readiness**; PAPER/SHADOW remain safe from real capital execution.
 
@@ -72,12 +72,14 @@ Required before LIVE:
 2. Persist an explicit `STALE_MARKET_DATA` risk/audit decision.
 3. Cover stale, future-skewed and reconnect/backfill events in Go integration tests.
 
+Resolution evidence: Arena ingress now enforces a default 2-minute maximum age and 5-second future skew, rejects before dispatch, writes immutable per-bot audit metadata, and covers stale, future-skew and accepted boundary behavior in Go tests.
+
 ### F-03 — Operational evidence limits
 
 Severity: **Informational**.
 
 - The 100-bot target is verified by deterministic functional tests, not a long-running production soak/load test.
-- External exchange acceptance was intentionally not run; no real order was sent.
+- External production exchange acceptance was not run. Controlled Binance TESTNET acceptance was run: a 0.01 ETHUSDT market open and reduce-only close both filled with no remaining ETH position.
 - Go race-detector evidence is unavailable on the current Windows toolchain with CGO disabled; normal concurrency tests and `go vet` are available.
 - The frontend Performance page intentionally uses the latest 200 Trade Memory rows as a disclosed sample, not an authoritative full-history accounting ledger.
 
@@ -94,8 +96,9 @@ Severity: **Informational**.
 | --- | --- |
 | PAPER | APPROVED |
 | SHADOW | APPROVED |
-| TESTNET/DEMO manual and grid | APPROVED with existing controls and regression coverage |
-| Production LIVE autonomous | NOT AVAILABLE / NOT APPROVED; F-02 and a separate live implementation/acceptance remain required |
-| Production LIVE manual/grid | NOT APPROVED until F-01 is resolved and a separate controlled acceptance is authorized |
+| TESTNET/DEMO manual | APPROVED through guarded GO executor; live canary accepted |
+| TESTNET/DEMO grid | APPROVED for current plan/preview scope; no grid exchange dispatcher exists |
+| Production LIVE autonomous | NOT AVAILABLE / NOT APPROVED; activation and production dispatch are absent |
+| Production LIVE manual/grid | NOT APPROVED; production accounts remain rejected and require separate implementation plus explicit approval |
 
-PROMPT 38 audit conclusion: the architecture is implemented to a safe PAPER/SHADOW milestone, with explicit evidence gates, learning/execution separation and fail-closed protected paths. The system must remain live-disabled until the two live-readiness blockers receive an approved implementation and production acceptance plan.
+Post-audit conclusion: F-01/F-02 are resolved and controlled TESTNET GO execution is accepted. The architecture remains at a safe PAPER/SHADOW plus TESTNET milestone. Production LIVE must remain disabled until production support and autonomous activation are separately designed, implemented, tested and explicitly approved.

@@ -3,6 +3,7 @@ package arena
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,9 +12,17 @@ import (
 )
 
 type arenaStore struct {
-	bots   []Bot
-	mutex  sync.Mutex
-	errors []string
+	bots       []Bot
+	mutex      sync.Mutex
+	errors     []string
+	rejections []MarketRejection
+}
+
+func (store *arenaStore) RecordArenaMarketRejection(_ context.Context, _ []string, rejection MarketRejection) error {
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
+	store.rejections = append(store.rejections, rejection)
+	return nil
 }
 
 func (store *arenaStore) LoadActivePaperBots(context.Context) ([]Bot, error) {
@@ -82,7 +91,10 @@ func loadedArena(t *testing.T, store *arenaStore, strategy Strategy, executor Ex
 	if err := registry.Register("strategy-v1", strategy); err != nil {
 		t.Fatal(err)
 	}
-	result, err := New(Options{Store: store, Strategies: registry, Executor: executor, Workers: 8})
+	result, err := New(Options{
+		Store: store, Strategies: registry, Executor: executor, Workers: 8,
+		MaximumMarketEventAge: 10 * 365 * 24 * time.Hour, MaximumFutureSkew: 10 * 365 * 24 * time.Hour,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +102,66 @@ func loadedArena(t *testing.T, store *arenaStore, strategy Strategy, executor Ex
 		t.Fatal(err)
 	}
 	return result
+}
+
+func TestPublishRejectsStaleMarketDataBeforeStrategyDispatch(t *testing.T) {
+	store := &arenaStore{bots: hundredBots()}
+	executor := &countingExecutor{}
+	registry := NewRegistry()
+	if err := registry.Register("strategy-v1", holdStrategy{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	instance, err := New(Options{
+		Store: store, Strategies: registry, Executor: executor, Workers: 8,
+		MaximumMarketEventAge: 2 * time.Minute, MaximumFutureSkew: 5 * time.Second,
+		Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := instance.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	report, err := instance.Publish(context.Background(), MarketEvent{
+		Symbol: "BTCUSDT", Timeframe: "1m", MarkPrice: "100", Sequence: 1,
+		OccurredAt: now.Add(-2*time.Minute - time.Millisecond),
+	})
+	if err == nil || !strings.Contains(err.Error(), "STALE_MARKET_DATA") {
+		t.Fatalf("expected stale rejection, got report=%#v err=%v", report, err)
+	}
+	if report.Matched != 100 || executor.calls != 0 || len(store.rejections) != 1 || store.rejections[0].Code != "STALE_MARKET_DATA" {
+		t.Fatalf("stale event reached dispatch or was not audited: report=%#v calls=%d rejections=%#v", report, executor.calls, store.rejections)
+	}
+}
+
+func TestPublishRejectsFutureSkewAndAcceptsBoundaryEvents(t *testing.T) {
+	store := &arenaStore{bots: []Bot{{ID: "bot-1", StrategyVersionID: "strategy-v1", Symbol: "BTCUSDT", Timeframe: "1m", StartingBalance: "100"}}}
+	executor := &countingExecutor{}
+	registry := NewRegistry()
+	if err := registry.Register("strategy-v1", holdStrategy{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	instance, err := New(Options{Store: store, Strategies: registry, Executor: executor,
+		MaximumMarketEventAge: 2 * time.Minute, MaximumFutureSkew: 5 * time.Second, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := instance.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, err = instance.Publish(context.Background(), MarketEvent{Symbol: "BTCUSDT", Timeframe: "1m", MarkPrice: "100", Sequence: 1, OccurredAt: now.Add(5*time.Second + time.Millisecond)})
+	if err == nil || !strings.Contains(err.Error(), "FUTURE_MARKET_DATA") {
+		t.Fatalf("expected future-skew rejection, got %v", err)
+	}
+	if executor.calls != 0 || len(store.rejections) != 1 || store.rejections[0].Code != "FUTURE_MARKET_DATA" {
+		t.Fatalf("future event reached dispatch or was not audited")
+	}
+	_, err = instance.Publish(context.Background(), MarketEvent{Symbol: "BTCUSDT", Timeframe: "1m", MarkPrice: "100", Sequence: 2, OccurredAt: now.Add(-2 * time.Minute)})
+	if err != nil || executor.calls != 1 {
+		t.Fatalf("boundary event should be accepted, calls=%d err=%v", executor.calls, err)
+	}
 }
 
 func TestOneSharedMarketFetchFansOutToOneHundredBots(t *testing.T) {

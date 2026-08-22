@@ -10,6 +10,7 @@ import type { CancelOrderInput, ClosePositionInput, PreviewOrderInput, SubmitOrd
 import { scheduleShadowComparison } from './shadow-compare.js';
 import { cancelTradingEngineOrder, executeTradingEngineOrder, getTradingEngineSnapshot, previewTradingEngineOrder } from './trading-engine.client.js';
 import { appendTradingEvent } from './trading-events.service.js';
+import { assertCentralRiskExecution } from './execution-safety.js';
 
 const PREVIEW_TTL_MS = 2 * 60 * 1000;
 
@@ -77,6 +78,7 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
   if (preview.consumedAt) throw new ApiError(409, 'Bu emir önizlemesi daha önce kullanıldı.', 'ORDER_PREVIEW_CONSUMED');
   if (preview.expiresAt <= new Date()) throw new ApiError(410, 'Emir önizlemesinin süresi doldu. Yeniden önizleme oluşturun.', 'ORDER_PREVIEW_EXPIRED');
   assertTradableAccount(preview.exchangeAccount);
+  assertCentralRiskExecution({ executionEngine: preview.exchangeAccount.executionEngine, reduceOnly: preview.reduceOnly });
 
   const clientOrderId = `kk_${randomUUID().replaceAll('-', '').slice(0, 30)}`;
   let stored;
@@ -284,6 +286,7 @@ async function submitTypeScriptOrder(adapter: ExchangeAdapter, preview: {
   symbol: string; side: 'BUY' | 'SELL'; type: 'MARKET' | 'LIMIT' | 'STOP_MARKET' | 'STOP_LIMIT'; quantity: Prisma.Decimal;
   price: Prisma.Decimal | null; stopPrice: Prisma.Decimal | null; leverage: number; marginMode: 'ISOLATED' | 'CROSS'; reduceOnly: boolean;
 }, clientOrderId: string) {
+  assertCentralRiskExecution({ executionEngine: 'TYPESCRIPT', reduceOnly: preview.reduceOnly });
   if (!preview.reduceOnly) await exchangeCall(() => adapter.configurePosition(preview.symbol, preview.leverage, preview.marginMode));
   return exchangeCall(() => adapter.placeOrder({
     symbol: preview.symbol, side: preview.side, type: preview.type, quantity: preview.quantity.toString(),
