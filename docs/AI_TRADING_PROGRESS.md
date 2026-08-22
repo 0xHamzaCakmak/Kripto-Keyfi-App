@@ -2,9 +2,9 @@
 
 ## Current State
 
-Last completed prompt: PROMPT 37
-Current prompt: PROMPT 38
-Status: PAUSED_BEFORE_FINAL_AUDIT
+Last completed prompt: PROMPT 38
+Current prompt: NONE
+Status: COMPLETED — PAPER/SHADOW APPROVED; LIVE NOT APPROVED
 Updated at: 2026-08-22
 
 ## Completed
@@ -47,12 +47,13 @@ Updated at: 2026-08-22
 - PROMPT 35 — COMPLETED
 - PROMPT 36 — COMPLETED
 - PROMPT 37 — COMPLETED
+- PROMPT 38 — COMPLETED
 
 ## Current Prompt
 
-PROMPT 38 — Final Audit
+No remaining implementation prompt.
 
-PROMPT 37 tamamlandı. Kullanıcı talebi gereği final audit olan PROMPT 38'e başlanmadan duruldu.
+PROMPT 38 final integration audit tamamlandı. PAPER/SHADOW onaylandı; production LIVE iki açık güvenlik bulgusu nedeniyle onaylanmadı.
 
 ## Last Test Result
 
@@ -62,7 +63,7 @@ PROMPT 37 tamamlandı. Kullanıcı talebi gereği final audit olan PROMPT 38'e b
 - Backend build: PASS
 - PROMPT 27 simulation suite: PASS — 1 file, 9 tests covering 16 named scenarios
 - PROMPT 27 scoped backend ESLint: PASS
-- Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 16 files have no lint errors
+- Full backend ESLint baseline: FAIL — pre-existing user-owned `modules/kol/kol.service.ts` contains 14 `no-explicit-any` errors; PROMPT 38 AI Trading/trading/tests scope has no lint errors
 - Go unit/integration tests: PASS — `go test ./...`
 - Go static analysis: PASS — `go vet ./...`
 - PROMPT 37 frontend typecheck/lint: PASS — `npm.cmd run lint`
@@ -72,6 +73,13 @@ PROMPT 37 tamamlandı. Kullanıcı talebi gereği final audit olan PROMPT 38'e b
 - Frontend phase backend build: PASS
 - Frontend phase Go unit/integration tests: PASS — `go test ./...`
 - Frontend phase Go static analysis: PASS — `go vet ./...`
+- PROMPT 38 full backend regression: PASS — 58 files, 252 tests
+- PROMPT 38 backend build: PASS
+- PROMPT 38 scoped AI Trading/trading/tests ESLint: PASS
+- PROMPT 38 frontend typecheck/lint and production build: PASS
+- PROMPT 38 Prisma validate/status: PASS — 45 migrations, schema up to date
+- PROMPT 38 Go unit/integration and static analysis: PASS — `go test ./...`, `go vet ./...`
+- PROMPT 38 autonomous Overview database smoke: PASS — API v1, PAPER/SHADOW, live disabled
 - Manual/grid/exchange regression: PASS through existing adapter, schema, grid-plan, Go bot/risk/execution/reconciliation suites and full builds
 - External exchange acceptance: NOT RUN — production exchange çağrısı yapılmadı
 - Go race detector: NOT RUN — current Windows Go toolchain has CGO disabled; normal concurrency tests and `go vet` passed
@@ -80,11 +88,10 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
-- Shadow actions, sanal PnL ve canlı piyasa takibi gerçek autonomous API verileriyle ayrı Shadow panelinde gösteriliyor.
-- Live panel yalnızca gerçekten `LIVE` lifecycle durumundaki autonomous botları, aktive edilmiş live allocation'ı ve bunlara bağlı pozisyonları dikkate alıyor.
-- PAPER/SHADOW allocation'ları Live sermayeden görsel ve semantik olarak ayrıldı; live emir aksiyonu veya aktivasyon CTA'sı eklenmedi.
-- Live gerçekleşmiş PnL endpointte bulunmadığı için uydurulmadı; arayüzde unavailable olarak işaretlendi.
-- Exchange/position verisi yoksa fail-closed `UNKNOWN`/degraded durumları gösteriliyor.
+- `AI_TRADING_FINAL_AUDIT.md` içinde PROMPT 38'in 13 kontrol maddesi kod, test ve runtime smoke kanıtlarıyla değerlendirildi.
+- PAPER/SHADOW çalışma kilometre taşı onaylandı; autonomous production LIVE unavailable/not approved olarak bırakıldı.
+- Legacy TypeScript manual executor merkezi Go Risk Engine kapsamı ve gerçek Arena absolute freshness guard eksikleri live-readiness blocker olarak kaydedildi.
+- PROMPT 38 büyük refactor veya execution davranışı değişikliği yapmadı.
 
 ## Safety State
 
@@ -282,19 +289,21 @@ PROMPT 15: `20260821060000_add_bot_crossovers`
 
 ## Open TODO
 
-- PROMPT 38 — final audit, full-system validation ve kapanış raporu. Kullanıcı devam onayı bekleniyor.
+- LIVE öncesi F-01: legacy TypeScript manual executor için merkezi, fail-closed Risk Engine zorunluluğu. Execution davranışı değişeceği için kullanıcı onayı gerekli.
+- LIVE öncesi F-02: gerçek Arena dispatch yoluna absolute market-event freshness/skew guard ve audit kararı. Live execution açılmadan tamamlanmalı.
+- Operasyonel: 100-bot soak/load, external exchange acceptance ve desteklenen ortamda Go race-detector kanıtı.
 
-## Known Risks for Next Prompts
+## Known Risks / Future Work
 
 - Mevcut `TradingBot` Prisma enum/table yapısı Node, Go raw SQL ve frontend tarafından ortak kullanılıyor.
 - TypeScript manual executor merkezi Go risk evaluator yolundan geçmiyor; PROMPT 0'da yalnız audit bulgusu olarak kaydedildi.
-- Mevcut scheduler ortak market stream kullanmıyor ve aynı symbol için bot başına REST mark-price isteği yapıyor.
+- Legacy bot scheduler aynı symbol için bot başına REST mark-price isteği yapıyor; yeni Go Arena shared stream fan-out kullanıyor.
 - Teacher ve Researcher çıktıları daha sonraki promptlar tarafından tüketilse bile doğrudan mutation veya execution yetkisi kazanmamalı.
-- User-owned dirty worktree changes exist outside these AI Trading documents; preserve them.
+- PROMPT 38 kapanışında çalışma ağacı yalnız audit/progress doküman değişikliklerini içeriyor.
 
 ## Blockers
 
-Teknik blocker yok. Frontend fazı PROMPT 37 ile tamamlandı; kullanıcı talebi gereği PROMPT 38 final audit öncesinde duruldu.
+PROMPT dizisi tamamlandı. PAPER/SHADOW için teknik blocker yok. Production LIVE, `AI_TRADING_FINAL_AUDIT.md` içindeki F-01 ve F-02 çözülüp ayrıca onaylanana kadar bloklu ve varsayılan kapalıdır.
 
 ## Phase Checkpoints
 
@@ -303,6 +312,13 @@ Teknik blocker yok. Frontend fazı PROMPT 37 ile tamamlandı; kullanıcı talebi
 - Backend fazı PROMPT 27 ile tamamlandı; 58 test dosyası ve 252 test, backend typecheck/build, Go test/vet ve frontend regression build başarılıydı.
 - Live trading kapalı, autonomous live activation bulunmuyor, PAPER/SHADOW güvenli modları ve fail-closed Risk Engine korunuyor.
 - PROMPT 28 frontend audit'i kod değişikliği olmadan tamamlandı ve frontend planı oluşturuldu.
+
+### PHASE_CHECKPOINT 3 — Final Audit
+
+- PROMPT 0-38 dizisi tamamlandı ve `AI_TRADING_FINAL_AUDIT.md` oluşturuldu.
+- PAPER/SHADOW approved; autonomous production LIVE unavailable/not approved.
+- Full backend/frontend/Go/Prisma doğrulamaları başarılı; yalnız bilinen KOL ESLint baseline hataları kapsam dışı olarak devam ediyor.
+- Production migration, gerçek exchange emri, API permission veya live execution değişikliği yapılmadı.
 
 ## Prompt Checkpoints
 
@@ -375,6 +391,13 @@ Teknik blocker yok. Frontend fazı PROMPT 37 ile tamamlandı; kullanıcı talebi
 - Test: PASS — frontend lint/build; backend 6 dosya/23 test; tam backend regression 58 dosya/252 test; backend build; tam Go test/vet.
 - Migration: Yok.
 - TODO: PROMPT 38 final audit. Kullanıcı talebi gereği başlanmadı.
+
+### PROMPT 38
+
+- Değişiklikler: Hedef mimariye karşı 13 maddelik final integration audit, evidence matrix, safety invariants, açık bulgular ve mode bazlı final gate; `AI_TRADING_FINAL_AUDIT.md`.
+- Test: PASS — backend 58 dosya/252 test ve build; AI Trading/trading/tests scoped ESLint; frontend lint/build; Prisma validate/status; Go test/vet; autonomous Overview database smoke.
+- Migration: Yeni migration yok. Yerel veritabanındaki 45 migration güncel; production migration uygulanmadı.
+- TODO: Prompt dizisi tamamlandı. Production LIVE için F-01/F-02 ayrı kullanıcı onayı ve kontrollü implementation/acceptance gerektiriyor.
 
 ## Source Note
 
