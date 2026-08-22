@@ -130,6 +130,15 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Migration
 
+### Local migration application — 2026-08-22
+
+- `prisma migrate deploy` ile bekleyen 13 migration yerel `127.0.0.1:3306/kriptokeyfi` veritabanına başarıyla uygulandı.
+- Ön denetimde `DROP`, `TRUNCATE`, veri silme veya destructive dönüşüm bulunmadı; değişiklikler yeni tablolar, additive enum değerleri ve nullable/default'lu kolonlardan oluşuyor.
+- `prisma migrate status`: PASS — 45 migration, database schema up to date.
+- API health: PASS — HTTP 200, database connected.
+- Migration sonrası backend regression: PASS — 58 test dosyası, 252 test.
+- Production veritabanına migration uygulanmadı.
+
 PROMPT 36: migration yok.
 
 - Frontend risk/read-only exposure ve confirmation guard; schema, production veri veya execution kuralı değişmedi.
