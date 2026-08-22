@@ -1,7 +1,8 @@
 import type { Prisma, TradingBotState } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
-import type { NonCriticalBotSettingsInput, PromotionReviewInput, TriggerPaperGenerationInput } from './autonomous-admin.schema.js';
+import { env } from '../../config/env.js';
+import type { BotCapitalInput, NonCriticalBotSettingsInput, PromotionReviewInput, TestnetActivationInput, TriggerPaperGenerationInput } from './autonomous-admin.schema.js';
 
 export const AUTONOMOUS_ADMIN_API_VERSION = 'v1' as const;
 
@@ -23,6 +24,7 @@ export async function getAutonomousOverview(userId: string) {
     bots, strategies, generations, paperTrades, champions, liveEligible,
     globalKillSwitch: globalRisk?.globalKillSwitch ?? true,
     safeModes: ['PAPER', 'SHADOW'] as const, liveActivationAvailable: false,
+    testnetExecutionAvailable: env.AUTONOMOUS_TESTNET_EXECUTION_ENABLED,
   });
 }
 
@@ -90,7 +92,7 @@ export async function triggerPaperGeneration(userId: string, input: TriggerPaper
 }
 
 export async function pauseAutonomousBot(userId: string, id: string, ipAddress?: string) {
-  return updateRuntimeState(userId, id, ['STARTING', 'RUNNING', 'RECONCILING', 'RISK_BLOCKED'], 'PAUSED', 'PAUSED', 'AI_PAPER_BOT_PAUSED', ipAddress);
+  return updateRuntimeState(userId, id, ['STARTING', 'RUNNING', 'RECONCILING', 'RISK_BLOCKED'], 'PAUSED', 'PAUSED', 'AI_AUTONOMOUS_BOT_PAUSED', ipAddress);
 }
 
 export async function startAutonomousBot(userId: string, id: string, ipAddress?: string) {
@@ -102,9 +104,11 @@ export async function startAutonomousBot(userId: string, id: string, ipAddress?:
 }
 
 export async function resumeAutonomousBot(userId: string, id: string, ipAddress?: string) {
-  const bot = await ownedSafeBot(userId, id);
+  const bot = await prisma.tradingBot.findFirst({ where: { id, userId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'SHADOW', 'DEMO'] } }, select: safeBotSelect });
+  if (!bot) throw new ApiError(404, 'Autonomous bot not found.', 'AUTONOMOUS_BOT_NOT_FOUND');
   if (bot.state !== 'PAUSED') throw new ApiError(409, 'Only a paused autonomous bot can resume.', 'AUTONOMOUS_BOT_NOT_PAUSED');
   if (!['PAPER', 'CHALLENGER', 'CHAMPION'].includes(bot.lifecycleStatus)) throw new ApiError(409, 'Bot lifecycle is not runnable.', 'AUTONOMOUS_LIFECYCLE_NOT_RUNNABLE');
+  if (bot.mode === 'DEMO' && !env.AUTONOMOUS_TESTNET_EXECUTION_ENABLED) throw new ApiError(409, 'Autonomous TESTNET execution feature flag is disabled.', 'AUTONOMOUS_TESTNET_DISABLED');
   await assertAutonomousRuntimeReady(userId, bot.exchangeAccountId);
   return persistBotUpdate(userId, bot, { state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Admin resume; scheduler lease pending.' }, 'AI_PAPER_BOT_RESUMED', ipAddress);
 }
@@ -149,9 +153,85 @@ export async function configureNonCriticalBotSettings(userId: string, id: string
   return persistBotUpdate(userId, bot, { intervalSeconds: input.intervalSeconds }, 'AI_NON_CRITICAL_SETTINGS_UPDATED', ipAddress, input);
 }
 
+export function configuredCapital(value: Prisma.JsonValue, fallback: number) {
+  if (!value || Array.isArray(value) || typeof value !== 'object') return fallback;
+  const candidate = Number((value as Prisma.JsonObject).allocationUsdt);
+  return Number.isFinite(candidate) && candidate > 0 ? candidate : fallback;
+}
+
+export async function configureBotCapital(userId: string, id: string, input: BotCapitalInput, ipAddress?: string) {
+  const bot = await prisma.tradingBot.findFirst({
+    where: { id, userId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'DEMO'] }, lifecycleStatus: { notIn: ['LIVE_ELIGIBLE', 'LIVE', 'ARCHIVED'] } },
+    select: safeBotSelect,
+  });
+  if (!bot) throw new ApiError(404, 'PAPER or TESTNET autonomous bot not found.', 'AUTONOMOUS_BOT_NOT_FOUND');
+  const previousAllocation = configuredCapital(bot.configuration, bot.startingPaperBalance.toNumber());
+  const target = Number((input.action === 'ADD' ? previousAllocation + input.amountUsdt : input.amountUsdt).toFixed(2));
+  if (target < previousAllocation) throw new ApiError(409, 'Bot capital cannot be reduced while autonomous execution is enabled.', 'AUTONOMOUS_CAPITAL_REDUCTION_FORBIDDEN');
+  if (target < 10 || target > 10_000) throw new ApiError(409, 'Bot capital must remain between 10 and 10,000 USDT.', 'AUTONOMOUS_CAPITAL_LIMIT');
+  const source = bot.configuration && !Array.isArray(bot.configuration) && typeof bot.configuration === 'object' ? bot.configuration as Prisma.JsonObject : {};
+  const nextStartingBalance = input.action === 'ADD'
+    ? Number((bot.startingPaperBalance.toNumber() + input.amountUsdt).toFixed(2))
+    : target;
+
+  return prisma.$transaction(async (tx) => {
+    const changed = await tx.tradingBot.updateMany({
+      where: { id: bot.id, userId, type: 'AUTONOMOUS', version: bot.version },
+      data: { configuration: { ...source, allocationUsdt: target }, startingPaperBalance: nextStartingBalance, version: { increment: 1 } },
+    });
+    if (changed.count !== 1) throw new ApiError(409, 'Bot changed concurrently; refresh and retry.', 'BOT_VERSION_CONFLICT');
+    const demoBots = await tx.tradingBot.findMany({
+      where: { exchangeAccountId: bot.exchangeAccountId, userId, type: 'AUTONOMOUS', mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' } },
+      select: { id: true, configuration: true, startingPaperBalance: true },
+    });
+    const demoAllocation = demoBots.reduce((sum, item) => sum + (item.id === bot.id ? target : configuredCapital(item.configuration, item.startingPaperBalance.toNumber())), 0);
+    const profile = await tx.tradingRiskProfile.findUnique({ where: { exchangeAccountId: bot.exchangeAccountId }, select: { id: true, maxAccountOpenNotional: true, maxSymbolOpenNotional: true } });
+    if (profile) await tx.tradingRiskProfile.update({ where: { id: profile.id }, data: {
+      maxAccountOpenNotional: Math.max(profile.maxAccountOpenNotional.toNumber(), demoAllocation).toFixed(2),
+      maxSymbolOpenNotional: Math.max(profile.maxSymbolOpenNotional.toNumber(), target).toFixed(2),
+    } });
+    const updated = await tx.tradingBot.findUniqueOrThrow({ where: { id: bot.id }, select: safeBotSelect });
+    await tx.tradingAuditLog.create({ data: {
+      userId, exchangeAccountId: bot.exchangeAccountId,
+      action: input.action === 'ADD' ? 'AI_BOT_CAPITAL_ADDED' : 'AI_BOT_CAPITAL_SET', entityType: 'TRADING_BOT', entityId: bot.id,
+      metadata: { action: input.action, amountUsdt: input.amountUsdt, previousAllocationUsdt: previousAllocation, allocationUsdt: target,
+        previousStartingBalance: bot.startingPaperBalance.toString(), startingBalance: nextStartingBalance, mode: bot.mode,
+        sharedTestnetQuota: bot.mode === 'DEMO', note: input.note ?? null, productionLive: false, riskEngineBypassed: false },
+      ...(ipAddress ? { ipAddress } : {}),
+    } });
+    return autonomousDTO('AUTONOMOUS_BOT_CAPITAL', { bot: updated, allocationUsdt: target, maximumAllocationUsdt: 10_000, sharedTestnetQuota: bot.mode === 'DEMO' });
+  });
+}
+
+export async function activateAutonomousTestnet(userId: string, id: string, input: TestnetActivationInput, ipAddress?: string) {
+  if (!env.AUTONOMOUS_TESTNET_EXECUTION_ENABLED) throw new ApiError(409, 'Autonomous TESTNET execution feature flag is disabled.', 'AUTONOMOUS_TESTNET_DISABLED');
+  const bot = await prisma.tradingBot.findFirst({ where: { id, userId, type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: 'PAPER' }, select: safeBotSelect });
+  if (!bot) throw new ApiError(404, 'PAPER autonomous bot not found.', 'AUTONOMOUS_BOT_NOT_FOUND');
+  const [account, profile, control, activeCanaries, activeSymbol, paperPosition] = await Promise.all([
+    prisma.exchangeAccount.findFirst({ where: { id: bot.exchangeAccountId, userId }, select: { provider: true, environment: true, executionEngine: true, connectionStatus: true, isActive: true } }),
+    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId: bot.exchangeAccountId }, select: { enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true } }),
+    prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
+    prisma.tradingBot.count({ where: { userId, type: 'AUTONOMOUS', mode: 'DEMO', desiredState: 'RUNNING' } }),
+    prisma.tradingBot.count({ where: { userId, type: 'AUTONOMOUS', mode: 'DEMO', desiredState: 'RUNNING', symbol: bot.symbol } }),
+    prisma.tradingBotPaperPosition.findUnique({ where: { tradingBotId: bot.id }, select: { netQuantity: true } }),
+  ]);
+  if (!account || account.provider !== 'BINANCE' || account.environment !== 'TESTNET' || account.executionEngine !== 'GO' || account.connectionStatus !== 'CONNECTED' || !account.isActive) {
+    throw new ApiError(409, 'Bot requires a connected Binance TESTNET account owned by the Go executor.', 'AUTONOMOUS_TESTNET_ACCOUNT_NOT_READY');
+  }
+  if (!profile?.enabled || profile.accountKillSwitch || (control?.globalKillSwitch ?? true) || !profile.stopLossRequired || profile.marginModePolicy !== 'ISOLATED_ONLY') {
+    throw new ApiError(409, 'TESTNET canary risk profile must be enabled, isolated-only and stop-required.', 'AUTONOMOUS_TESTNET_RISK_GATE_CLOSED');
+  }
+  if (activeCanaries >= 15) throw new ApiError(409, 'The autonomous TESTNET fleet is limited to 15 active bots.', 'AUTONOMOUS_TESTNET_FLEET_LIMIT');
+  if (activeSymbol >= 1) throw new ApiError(409, 'Only one TESTNET bot may own a symbol on the shared exchange account.', 'AUTONOMOUS_TESTNET_SYMBOL_IN_USE');
+  if (paperPosition && !paperPosition.netQuantity.isZero()) throw new ApiError(409, 'Choose a bot with a flat PAPER position before TESTNET activation.', 'AUTONOMOUS_TESTNET_BOT_NOT_FLAT');
+  return persistBotUpdate(userId, bot, { mode: 'DEMO', state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Explicit admin Binance TESTNET canary activation; scheduler lease pending.' }, 'AI_TESTNET_CANARY_ACTIVATED', ipAddress, {
+    note: input.note, confirmation: input.confirmation, environment: 'TESTNET', productionLive: false, maxActiveTestnetBots: 15,
+  }, true);
+}
+
 const safeBotSelect = {
-  id: true, exchangeAccountId: true, mode: true, state: true, desiredState: true, lifecycleStatus: true,
-  intervalSeconds: true, version: true, updatedAt: true,
+  id: true, exchangeAccountId: true, symbol: true, mode: true, state: true, desiredState: true, lifecycleStatus: true,
+  intervalSeconds: true, configuration: true, startingPaperBalance: true, version: true, updatedAt: true,
 } satisfies Prisma.TradingBotSelect;
 
 async function ownedSafeBot(userId: string, id: string) {
@@ -161,14 +241,16 @@ async function ownedSafeBot(userId: string, id: string) {
 }
 
 async function updateRuntimeState(userId: string, id: string, allowed: TradingBotState[], state: TradingBotState, desiredState: 'PAUSED', action: string, ipAddress?: string) {
-  const bot = await ownedSafeBot(userId, id);
+  const bot = await prisma.tradingBot.findFirst({ where: { id, userId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'SHADOW', 'DEMO'] } }, select: safeBotSelect });
+  if (!bot) throw new ApiError(404, 'Autonomous bot not found.', 'AUTONOMOUS_BOT_NOT_FOUND');
   if (!allowed.includes(bot.state)) throw new ApiError(409, 'Autonomous bot runtime transition is invalid.', 'AUTONOMOUS_RUNTIME_TRANSITION_INVALID');
-  return persistBotUpdate(userId, bot, { state, desiredState, stateReason: 'Admin requested safe PAPER/SHADOW pause.' }, action, ipAddress);
+  return persistBotUpdate(userId, bot, { state, desiredState, stateReason: 'Admin requested autonomous runtime pause.' }, action, ipAddress);
 }
 
 async function persistBotUpdate(
   userId: string, bot: Prisma.TradingBotGetPayload<{ select: typeof safeBotSelect }>, data: Prisma.TradingBotUpdateInput,
   action: string, ipAddress?: string, metadata: Record<string, unknown> = {},
+  testnetActivated = false,
 ) {
   return prisma.$transaction(async (tx) => {
     const changed = await tx.tradingBot.updateMany({ where: { id: bot.id, userId, type: 'AUTONOMOUS', version: bot.version }, data: { ...data, version: { increment: 1 } } });
@@ -176,7 +258,7 @@ async function persistBotUpdate(
     const updated = await tx.tradingBot.findUniqueOrThrow({ where: { id: bot.id }, select: safeBotSelect });
     await tx.tradingAuditLog.create({ data: {
       userId, exchangeAccountId: bot.exchangeAccountId, action, entityType: 'TRADING_BOT', entityId: bot.id,
-      metadata: { ...metadata, from: { state: bot.state, lifecycleStatus: bot.lifecycleStatus }, to: { state: updated.state, lifecycleStatus: updated.lifecycleStatus }, liveActivated: false },
+      metadata: { ...metadata, from: { state: bot.state, mode: bot.mode, lifecycleStatus: bot.lifecycleStatus }, to: { state: updated.state, mode: updated.mode, lifecycleStatus: updated.lifecycleStatus }, liveActivated: false, testnetActivated },
       ...(ipAddress ? { ipAddress } : {}),
     } });
     return autonomousDTO('AUTONOMOUS_BOT', updated);

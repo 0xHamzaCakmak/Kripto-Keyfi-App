@@ -17,7 +17,18 @@ export const promotionReviewSchema = z.object({
 export const nonCriticalBotSettingsSchema = z.object({
   intervalSeconds: z.number().int().min(10).max(3_600),
 }).strict();
+export const botCapitalSchema = z.object({
+  action: z.enum(['SET', 'ADD']),
+  amountUsdt: z.number().finite().min(1).max(10_000),
+  note: z.string().trim().min(3).max(500).optional(),
+}).strict();
+export const testnetActivationSchema = z.object({
+  confirmation: z.literal('ENABLE BINANCE TESTNET'),
+  note: z.string().trim().min(3).max(500),
+}).strict();
 
 export type TriggerPaperGenerationInput = z.infer<typeof triggerPaperGenerationSchema>;
 export type PromotionReviewInput = z.infer<typeof promotionReviewSchema>;
 export type NonCriticalBotSettingsInput = z.infer<typeof nonCriticalBotSettingsSchema>;
+export type BotCapitalInput = z.infer<typeof botCapitalSchema>;
+export type TestnetActivationInput = z.infer<typeof testnetActivationSchema>;
