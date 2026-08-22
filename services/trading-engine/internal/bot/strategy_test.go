@@ -1,6 +1,11 @@
 package bot
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
+)
 
 func TestScalpingWarmsUpBeforeSignal(t *testing.T) {
 	instance := scalpingInstance("SHADOW")
@@ -85,6 +90,45 @@ func TestAutonomousStrategyRejectsUnknownFamilyAndMissingProtection(t *testing.T
 	}
 }
 
+func TestAutonomousUsesChartMomentumAndAllocationSizing(t *testing.T) {
+	instance := autonomousMomentumInstance("PAPER")
+	instance.Configuration["signalThresholdBps"] = float64(5)
+	closes := make([]domain.Decimal, 50)
+	for index := range closes {
+		closes[index] = domain.Decimal(decimalStringForTest(100 + float64(index)*0.25))
+	}
+	decision, err := EvaluateStrategyWithChart(instance, "112.25", "100", closes)
+	if err != nil || decision.Kind != "BUY" {
+		t.Fatalf("expected chart-confirmed buy: %#v err=%v", decision, err)
+	}
+	if decision.Metrics["chartSamples"] != 50 || decision.HypotheticalOrder["quantity"] == "0.001" || decision.HypotheticalOrder["leverage"] != 5 {
+		t.Fatalf("chart/allocation sizing was not applied: %#v", decision)
+	}
+}
+
+func TestAutonomousMarketEntryCarriesCompletePlaybookEvidence(t *testing.T) {
+	instance := autonomousMomentumInstance("PAPER")
+	instance.Configuration["signalThresholdBps"] = float64(5)
+	decision, err := EvaluateStrategyWithMarket(instance, "209.5", "209", trendingSnapshot(1))
+	if err != nil || decision.Kind != "BUY" || decision.HypotheticalOrder == nil {
+		t.Fatalf("expected playbook-confirmed entry: %#v err=%v", decision, err)
+	}
+	order := decision.HypotheticalOrder
+	if order["marketRegime"] != "TREND" || order["higherTimeframeAligned"] != true || order["confirmedTimeframes"] != 3 || order["derivativesAligned"] != true {
+		t.Fatalf("entry evidence is incomplete: %#v", order)
+	}
+	conflicting := trendingSnapshot(1)
+	conflicting.Derivatives.FundingRate = "0.002"
+	hold, err := EvaluateStrategyWithMarket(instance, "209.5", "209", conflicting)
+	if err != nil || hold.HypotheticalOrder != nil {
+		t.Fatalf("unconfirmed entry was not held: %#v err=%v", hold, err)
+	}
+}
+
+func decimalStringForTest(value float64) string {
+	return fmt.Sprintf("%.8f", value)
+}
+
 func scalpingInstance(mode string) Instance {
 	return Instance{ID: "bot-1", Type: "SCALPING", Mode: mode, Symbol: "BTCUSDT", Configuration: map[string]any{
 		"side": "BOTH", "quantity": "0.001", "leverage": float64(2), "signalThresholdBps": float64(25),
@@ -99,8 +143,9 @@ func gridInstance(mode string) Instance {
 
 func autonomousMomentumInstance(mode string) Instance {
 	return Instance{ID: "autonomous-1", Type: "AUTONOMOUS", StrategyFamily: "MOMENTUM", Mode: mode, Symbol: "BTCUSDT", Configuration: map[string]any{
-		"side": "BOTH", "quantity": "0.001", "leverage": float64(1), "signalThresholdBps": float64(25),
+		"side": "BOTH", "quantity": "0.001", "leverage": float64(5), "signalThresholdBps": float64(25),
 		"marginMode": "ISOLATED", "stopLossBps": float64(50), "takeProfitBps": float64(100),
+		"allocationUsdt": float64(100), "positionNotionalPct": float64(0.10),
 		"paperFeeBps": float64(4), "paperSlippageBps": float64(2),
 	}}
 }

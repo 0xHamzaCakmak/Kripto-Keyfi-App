@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"sort"
@@ -200,6 +201,23 @@ type order struct {
 	UpdateTime  int64  `json:"updateTime"`
 }
 
+type algoOrder struct {
+	AlgoID        int64  `json:"algoId"`
+	ClientAlgoID  string `json:"clientAlgoId"`
+	OrderType     string `json:"orderType"`
+	Symbol        string `json:"symbol"`
+	Side          string `json:"side"`
+	Quantity      string `json:"quantity"`
+	AlgoStatus    string `json:"algoStatus"`
+	ActualOrderID string `json:"actualOrderId"`
+	ActualPrice   string `json:"actualPrice"`
+	TriggerPrice  string `json:"triggerPrice"`
+	Price         string `json:"price"`
+	ReduceOnly    bool   `json:"reduceOnly"`
+	CreateTime    int64  `json:"createTime"`
+	UpdateTime    int64  `json:"updateTime"`
+}
+
 func (r *Reader) GetOpenOrders(ctx context.Context) ([]domain.Order, error) {
 	var source []order
 	if err := r.signedGet(ctx, r.futuresURL, "/fapi/v1/openOrders", nil, &source); err != nil {
@@ -212,6 +230,16 @@ func (r *Reader) GetOpenOrders(ctx context.Context) ([]domain.Order, error) {
 		}
 		result = append(result, mapOrder(item))
 	}
+	var algos []algoOrder
+	if err := r.signedGet(ctx, r.futuresURL, "/fapi/v1/openAlgoOrders", url.Values{"algoType": {"CONDITIONAL"}}, &algos); err != nil {
+		return nil, err
+	}
+	for _, item := range algos {
+		if item.AlgoID == 0 || item.Symbol == "" || item.ClientAlgoID == "" {
+			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+		}
+		result = append(result, mapAlgoOrder(item))
+	}
 	return result, nil
 }
 
@@ -221,13 +249,27 @@ func (r *Reader) GetOrderByClientID(ctx context.Context, symbol, clientOrderID s
 	var source order
 	if err := r.signedGet(ctx, r.futuresURL, "/fapi/v1/order", url.Values{
 		"symbol": {symbol}, "origClientOrderId": {clientOrderID},
-	}, &source); err != nil {
+	}, &source); err == nil {
+		if source.OrderID == 0 || source.Symbol == "" || source.ClientID == "" {
+			return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+		}
+		return mapOrder(source), nil
+	}
+
+	// Binance stores conditional Futures orders in the Algo Order API. A
+	// reconciliation lookup cannot know from its local record whether Binance
+	// accepted the request as a regular or conditional order, so fall back to
+	// the read-only algo lookup when the regular order is not found.
+	var algo algoOrder
+	if err := r.signedGet(ctx, r.futuresURL, "/fapi/v1/algoOrder", url.Values{
+		"clientAlgoId": {clientOrderID},
+	}, &algo); err != nil {
 		return domain.Order{}, err
 	}
-	if source.OrderID == 0 || source.Symbol == "" || source.ClientID == "" {
+	if algo.AlgoID == 0 || algo.Symbol == "" || algo.ClientAlgoID == "" {
 		return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
 	}
-	return mapOrder(source), nil
+	return mapAlgoOrder(algo), nil
 }
 
 type position struct {
@@ -291,6 +333,66 @@ func (r *Reader) GetMarkPrice(ctx context.Context, symbol string) (domain.Decima
 	return domain.Decimal(body.MarkPrice), nil
 }
 
+// GetRecentCloses returns completed/recent Futures candle closes for
+// autonomous chart analysis. It is public, read-only market data.
+func (r *Reader) GetRecentCloses(ctx context.Context, symbol, interval string, limit int) ([]domain.Decimal, error) {
+	candles, err := r.GetRecentCandles(ctx, symbol, interval, limit)
+	if err != nil {
+		return nil, err
+	}
+	closes := make([]domain.Decimal, 0, len(candles))
+	for _, candle := range candles {
+		closes = append(closes, candle.Close)
+	}
+	return closes, nil
+}
+
+func (r *Reader) GetRecentCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.MarketCandle, error) {
+	if limit < 2 || limit > 500 || interval == "" {
+		return nil, exchange.NewError(domain.ErrorValidation, "INVALID_CHART_QUERY", "", false, false)
+	}
+	var body [][]json.RawMessage
+	if err := r.publicGet(ctx, r.futuresURL, "/fapi/v1/klines", url.Values{
+		"symbol": {symbol}, "interval": {interval}, "limit": {strconv.Itoa(limit)},
+	}, &body); err != nil {
+		return nil, err
+	}
+	candles := make([]domain.MarketCandle, 0, len(body))
+	for _, candle := range body {
+		if len(candle) < 6 {
+			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+		}
+		var open, high, low, closeText, volume string
+		if json.Unmarshal(candle[1], &open) != nil || json.Unmarshal(candle[2], &high) != nil || json.Unmarshal(candle[3], &low) != nil || json.Unmarshal(candle[4], &closeText) != nil || json.Unmarshal(candle[5], &volume) != nil || open == "" || high == "" || low == "" || closeText == "" || volume == "" {
+			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+		}
+		candles = append(candles, domain.MarketCandle{Open: domain.Decimal(open), High: domain.Decimal(high), Low: domain.Decimal(low), Close: domain.Decimal(closeText), Volume: domain.Decimal(volume)})
+	}
+	if len(candles) < 2 {
+		return nil, exchange.NewError(domain.ErrorInternal, "INSUFFICIENT_CHART_DATA", "", false, false)
+	}
+	return candles, nil
+}
+
+func (r *Reader) GetDerivativesContext(ctx context.Context, symbol string) (domain.DerivativesContext, error) {
+	var premium struct {
+		LastFundingRate string `json:"lastFundingRate"`
+	}
+	if err := r.publicGet(ctx, r.futuresURL, "/fapi/v1/premiumIndex", url.Values{"symbol": {symbol}}, &premium); err != nil {
+		return domain.DerivativesContext{}, err
+	}
+	var history []struct {
+		OpenInterest string `json:"sumOpenInterest"`
+	}
+	if err := r.publicGet(ctx, r.futuresURL, "/futures/data/openInterestHist", url.Values{"symbol": {symbol}, "period": {"5m"}, "limit": {"2"}}, &history); err != nil {
+		return domain.DerivativesContext{}, err
+	}
+	if premium.LastFundingRate == "" || len(history) != 2 || history[0].OpenInterest == "" || history[1].OpenInterest == "" {
+		return domain.DerivativesContext{}, exchange.NewError(domain.ErrorInternal, "INVALID_DERIVATIVES_CONTEXT", "", false, false)
+	}
+	return domain.DerivativesContext{FundingRate: domain.Decimal(premium.LastFundingRate), PreviousOpenInterest: domain.Decimal(history[0].OpenInterest), OpenInterest: domain.Decimal(history[1].OpenInterest)}, nil
+}
+
 func (r *Reader) ConfigurePosition(ctx context.Context, symbol string, leverage int, marginMode domain.MarginMode) error {
 	marginType := "ISOLATED"
 	if marginMode == domain.MarginCross {
@@ -327,6 +429,9 @@ func (r *Reader) ConfigurePosition(ctx context.Context, symbol string, leverage 
 }
 
 func (r *Reader) PlaceOrder(ctx context.Context, input exchange.PlaceOrderInput) (domain.Order, error) {
+	if input.Type == domain.OrderStopMarket || input.Type == domain.OrderStopLimit || input.Type == domain.OrderTakeProfitMarket {
+		return r.placeConditionalOrder(ctx, input)
+	}
 	orderType := string(input.Type)
 	if input.Type == domain.OrderStopLimit {
 		orderType = "STOP"
@@ -353,6 +458,51 @@ func (r *Reader) PlaceOrder(ctx context.Context, input exchange.PlaceOrderInput)
 		return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, true)
 	}
 	return mapOrder(result), nil
+}
+
+func (r *Reader) placeConditionalOrder(ctx context.Context, input exchange.PlaceOrderInput) (domain.Order, error) {
+	orderType := string(input.Type)
+	if input.Type == domain.OrderStopLimit {
+		orderType = "STOP"
+	}
+	params := url.Values{
+		"algoType": {"CONDITIONAL"}, "symbol": {input.Symbol}, "side": {string(input.Side)},
+		"type": {orderType}, "quantity": {string(input.Quantity)},
+		"reduceOnly": {strconv.FormatBool(input.ReduceOnly)}, "clientAlgoId": {input.ClientOrderID},
+		"newOrderRespType": {"RESULT"}, "workingType": {"MARK_PRICE"},
+	}
+	if input.Type == domain.OrderStopLimit {
+		params.Set("timeInForce", "GTC")
+	}
+	if input.Price != "" {
+		params.Set("price", string(input.Price))
+	}
+	if input.StopPrice != "" {
+		params.Set("triggerPrice", string(input.StopPrice))
+	}
+	var result algoOrder
+	if err := r.signedRequest(ctx, http.MethodPost, "/fapi/v1/algoOrder", params, &result, nil); err != nil {
+		return domain.Order{}, markWriteUncertain(err)
+	}
+	if result.AlgoID == 0 || result.Symbol == "" || result.ClientAlgoID == "" {
+		return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, true)
+	}
+	return mapAlgoOrder(result), nil
+}
+
+func (r *Reader) CancelConditionalOrder(ctx context.Context, symbol, exchangeOrderID string) (domain.Order, error) {
+	var result struct {
+		AlgoID       int64  `json:"algoId"`
+		ClientAlgoID string `json:"clientAlgoId"`
+		Code         string `json:"code"`
+	}
+	if err := r.signedRequest(ctx, http.MethodDelete, "/fapi/v1/algoOrder", url.Values{"algoId": {exchangeOrderID}}, &result, nil); err != nil {
+		return domain.Order{}, markWriteUncertain(err)
+	}
+	if result.AlgoID == 0 || strconv.FormatInt(result.AlgoID, 10) != exchangeOrderID {
+		return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, true)
+	}
+	return domain.Order{ExchangeOrderID: exchangeOrderID, ClientOrderID: result.ClientAlgoID, Symbol: symbol, Status: domain.OrderCanceled}, nil
 }
 
 func (r *Reader) CancelOrder(ctx context.Context, symbol, exchangeOrderID string) (domain.Order, error) {
@@ -431,6 +581,8 @@ func mapOrder(item order) domain.Order {
 		orderType = domain.OrderStopLimit
 	case "STOP_MARKET":
 		orderType = domain.OrderStopMarket
+	case "TAKE_PROFIT_MARKET":
+		orderType = domain.OrderTakeProfitMarket
 	}
 	side := domain.SideBuy
 	if item.Side == "SELL" {
@@ -458,6 +610,37 @@ func mapOrder(item order) domain.Order {
 	}
 	if exchange.IsNonZero(item.StopPrice) {
 		mapped.StopPrice = domain.Decimal(item.StopPrice)
+	}
+	return mapped
+}
+
+func mapAlgoOrder(item algoOrder) domain.Order {
+	orderType := domain.OrderStopMarket
+	if item.OrderType == "STOP" {
+		orderType = domain.OrderStopLimit
+	} else if item.OrderType == "TAKE_PROFIT_MARKET" {
+		orderType = domain.OrderTakeProfitMarket
+	}
+	side := domain.SideBuy
+	if item.Side == "SELL" {
+		side = domain.SideSell
+	}
+	mapped := domain.Order{
+		ExchangeOrderID: strconv.FormatInt(item.AlgoID, 10), ClientOrderID: item.ClientAlgoID,
+		Symbol: item.Symbol, Side: side, Type: orderType, Status: mapStatus(item.AlgoStatus),
+		Quantity: domain.Decimal(item.Quantity), ExecutedQuantity: "0", ReduceOnly: item.ReduceOnly,
+	}
+	if item.CreateTime > 0 {
+		mapped.CreatedAt = time.UnixMilli(item.CreateTime).UTC()
+	}
+	if item.UpdateTime > 0 {
+		mapped.UpdatedAt = time.UnixMilli(item.UpdateTime).UTC()
+	}
+	if exchange.IsNonZero(item.Price) {
+		mapped.Price = domain.Decimal(item.Price)
+	}
+	if exchange.IsNonZero(item.TriggerPrice) {
+		mapped.StopPrice = domain.Decimal(item.TriggerPrice)
 	}
 	return mapped
 }

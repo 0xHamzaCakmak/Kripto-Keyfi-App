@@ -6,6 +6,14 @@ import "time"
 // internal API boundary as IEEE-754 floating point numbers.
 type Decimal string
 
+type MarketCandle struct {
+	Open, High, Low, Close, Volume Decimal
+}
+
+type DerivativesContext struct {
+	FundingRate, OpenInterest, PreviousOpenInterest Decimal
+}
+
 type ExchangeProvider string
 
 const (
@@ -77,10 +85,11 @@ const (
 type OrderType string
 
 const (
-	OrderMarket     OrderType = "MARKET"
-	OrderLimit      OrderType = "LIMIT"
-	OrderStopMarket OrderType = "STOP_MARKET"
-	OrderStopLimit  OrderType = "STOP_LIMIT"
+	OrderMarket           OrderType = "MARKET"
+	OrderLimit            OrderType = "LIMIT"
+	OrderStopMarket       OrderType = "STOP_MARKET"
+	OrderStopLimit        OrderType = "STOP_LIMIT"
+	OrderTakeProfitMarket OrderType = "TAKE_PROFIT_MARKET"
 )
 
 type MarginMode string

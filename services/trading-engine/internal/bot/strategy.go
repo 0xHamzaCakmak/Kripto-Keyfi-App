@@ -31,6 +31,62 @@ func EvaluateStrategyWithChart(instance Instance, markPrice, referencePrice stri
 	}
 }
 
+func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice string, snapshot MarketSnapshot) (Decision, error) {
+	if instance.Type != "AUTONOMOUS" {
+		return EvaluateStrategy(instance, markPrice, referencePrice)
+	}
+	closes := make([]domain.Decimal, 0, len(snapshot.Candles["1m"]))
+	for _, candle := range snapshot.Candles["1m"] {
+		closes = append(closes, candle.Close)
+	}
+	result, err := evaluateAutonomousStrategy(instance, markPrice, referencePrice, closes)
+	if err != nil || result.HypotheticalOrder == nil {
+		return result, err
+	}
+	side, _ := result.HypotheticalOrder["side"].(string)
+	analysis, err := AnalyzeMarket(snapshot, side)
+	if err != nil {
+		return Decision{}, err
+	}
+	if result.Metrics == nil {
+		result.Metrics = make(map[string]any)
+	}
+	result.Metrics["marketRegime"], result.Metrics["higherDirection"], result.Metrics["middleDirection"], result.Metrics["lowerDirection"] = analysis.Regime, analysis.HigherDirection, analysis.MiddleDirection, analysis.LowerDirection
+	result.Metrics["confirmedTimeframes"], result.Metrics["adx1h"], result.Metrics["adx4h"], result.Metrics["atrExpansion"] = analysis.ConfirmedTimeframes, roundFloat(analysis.ADX1H, 4), roundFloat(analysis.ADX4H, 4), roundFloat(analysis.ATRExpansion, 4)
+	order := result.HypotheticalOrder
+	order["marketRegime"], order["higherTimeframeAligned"], order["confirmedTimeframes"], order["derivativesAligned"] = analysis.Regime, analysis.HigherTimeframeAligned, analysis.ConfirmedTimeframes, analysis.DerivativesAligned
+	order["oiConfirmed"], order["regimeConfidence"] = analysis.OIConfirmed, roundFloat(analysis.RegimeConfidence, 4)
+	if analysis.Regime != "TREND" && analysis.Regime != "RANGE" || !analysis.HigherTimeframeAligned || analysis.ConfirmedTimeframes < 2 || !analysis.DerivativesAligned {
+		result.Kind = "HOLD"
+		result.Summary = "Playbook rejim/çoklu zaman dilimi/funding-OI giriş teyidi tamamlanmadı."
+		result.HypotheticalOrder = nil
+		return result, nil
+	}
+	if !analysis.OIConfirmed {
+		quantity, ok := decimalRat(order["quantity"].(string))
+		if !ok {
+			return Decision{}, errors.New("OI-adjusted quantity is invalid")
+		}
+		order["quantity"] = new(big.Rat).Quo(quantity, big.NewRat(2, 1)).FloatString(18)
+		order["oiSizeMultiplier"] = 0.5
+	} else {
+		order["oiSizeMultiplier"] = 1.0
+	}
+	configuredLeverage := int(order["leverage"].(int))
+	if analysis.RegimeConfidence < 0.65 && configuredLeverage > 5 {
+		configuredLeverage = maxInt(5, configuredLeverage/2)
+		order["leverage"] = configuredLeverage
+	}
+	return result, nil
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
 func evaluateAutonomousStrategy(instance Instance, markPrice, referencePrice string, closes []domain.Decimal) (Decision, error) {
 	if strings.ToUpper(strings.TrimSpace(instance.StrategyFamily)) != "MOMENTUM" {
 		return Decision{}, fmt.Errorf("unsupported autonomous strategy family %q", instance.StrategyFamily)
