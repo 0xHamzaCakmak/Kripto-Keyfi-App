@@ -4,6 +4,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/entrycheck"
 )
 
 type Policy struct {
@@ -19,6 +21,7 @@ type Intent struct {
 	Mode, Side, MarginMode, EntryPrice, StopLoss, TakeProfit, Quantity string
 	Leverage                                                           int
 	RiskReducing, OpensNewPosition                                     bool
+	EntryEvidence                                                      entrycheck.Input
 }
 
 type Snapshot struct {
@@ -138,6 +141,15 @@ func Evaluate(policy Policy, intent Intent, snapshot Snapshot) Decision {
 	}
 	if rewardRatio.Cmp(minimumRR) < 0 {
 		return reject("RISK_MIN_REWARD_RATIO", "Autonomous trade risk/reward is below policy.", metrics)
+	}
+	checkInput := intent.EntryEvidence
+	checkInput.RiskRewardSatisfied = true
+	checkInput.PositionLimitSatisfied = !intent.OpensNewPosition || snapshot.OpenPositions < policy.MaxConcurrentPositions
+	checklist := entrycheck.Validate(checkInput)
+	metrics["entryChecklistPassed"] = checklist.Passed
+	metrics["entryChecklistFailed"] = checklist.Failed
+	if !checklist.Passed {
+		return reject("ENTRY_CHECKLIST_INCOMPLETE", "Autonomous entry did not pass every mandatory playbook criterion.", metrics)
 	}
 	return approve("RISK_APPROVED", "Autonomous intent passed immutable risk controls.", metrics)
 }

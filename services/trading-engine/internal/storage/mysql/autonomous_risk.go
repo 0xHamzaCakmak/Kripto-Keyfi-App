@@ -12,12 +12,21 @@ import (
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/autonomousrisk"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/bot"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/entrycheck"
 )
 
 func evaluateAutonomousPaperRisk(ctx context.Context, tx *sql.Tx, instance bot.Instance, decision bot.Decision, now time.Time) (autonomousrisk.Decision, error) {
 	order := decision.HypotheticalOrder
 	intent := autonomousrisk.Intent{Mode: instance.Mode, Side: textValue(order["side"]), MarginMode: textValue(order["marginMode"]), EntryPrice: decision.MarkPrice,
-		StopLoss: textValue(order["stopLoss"]), TakeProfit: textValue(order["takeProfit"]), Quantity: textValue(order["quantity"]), Leverage: intValue(order["leverage"])}
+		StopLoss: textValue(order["stopLoss"]), TakeProfit: textValue(order["takeProfit"]), Quantity: textValue(order["quantity"]), Leverage: intValue(order["leverage"]),
+		EntryEvidence: entrycheck.Input{Regime: textValue(order["marketRegime"]), HigherTimeframeAligned: boolValue(order["higherTimeframeAligned"]),
+			ConfirmedTimeframes: intValue(order["confirmedTimeframes"]), DerivativesAligned: boolValue(order["derivativesAligned"])}}
+	// DEMO is the persisted marker for explicitly activated TESTNET execution.
+	// The immutable autonomous policy is evaluated with PAPER semantics first;
+	// the central exchange-aware risk engine evaluates the resulting order again.
+	if instance.Mode == "DEMO" {
+		intent.Mode = "PAPER"
+	}
 	var policy autonomousrisk.Policy
 	var starting, netQuantity, realized, unrealized, fees, lastMark string
 	var lastFill sql.NullTime
@@ -228,6 +237,17 @@ func intValue(value any) int {
 		return int(number)
 	default:
 		return 0
+	}
+}
+func boolValue(value any) bool { result, _ := value.(bool); return result }
+func numericBotConfiguration(value any) (float64, bool) {
+	switch number := value.(type) {
+	case int:
+		return float64(number), true
+	case float64:
+		return number, true
+	default:
+		return 0, false
 	}
 }
 func decimalRat(value string) (*big.Rat, bool) {

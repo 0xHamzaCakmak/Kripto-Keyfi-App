@@ -3,6 +3,8 @@ package autonomousrisk
 import (
 	"testing"
 	"time"
+
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/entrycheck"
 )
 
 var now = time.Date(2026, 8, 21, 12, 0, 0, 0, time.UTC)
@@ -91,7 +93,8 @@ func safePolicy() Policy {
 	return Policy{Enabled: true, MaxRiskPerTradePct: "0.01", MaxDailyLossPct: "0.05", MaxWeeklyLossPct: "0.10", MaxDrawdownPct: "0.20", MaxLeverage: 5, MaxConcurrentPositions: 5, MaxTotalExposure: "500", MaxSymbolExposure: "200", MaxPositionSize: "100", MinRiskReward: "1.5", StopLossRequired: true, MarginModePolicy: "ISOLATED_ONLY", CooldownSeconds: 60, MaxConsecutiveLosses: 3}
 }
 func safeIntent() Intent {
-	return Intent{Mode: "PAPER", Side: "BUY", MarginMode: "ISOLATED", EntryPrice: "100", StopLoss: "99", TakeProfit: "102", Quantity: "1", Leverage: 2, OpensNewPosition: true}
+	return Intent{Mode: "PAPER", Side: "BUY", MarginMode: "ISOLATED", EntryPrice: "100", StopLoss: "99", TakeProfit: "102", Quantity: "1", Leverage: 2, OpensNewPosition: true,
+		EntryEvidence: entrycheck.Input{Regime: "TREND", HigherTimeframeAligned: true, ConfirmedTimeframes: 2, DerivativesAligned: true}}
 }
 func safeSnapshot() Snapshot {
 	return Snapshot{Equity: "1000", DailyLoss: "10", WeeklyLoss: "20", DrawdownPct: "0.1", ProjectedTotalExposure: "100", ProjectedSymbolExposure: "100", ProjectedPositionSize: "100", OpenPositions: 0, Now: now}
