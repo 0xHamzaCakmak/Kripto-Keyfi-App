@@ -48,6 +48,7 @@ type fakeReader struct {
 	positions  []domain.Position
 	queried    domain.Order
 	err        error
+	queryErr   error
 	openErrors []error
 	openCalls  int
 	queryCalls int
@@ -69,7 +70,7 @@ func (r *fakeReader) GetPositions(context.Context) ([]domain.Position, error) {
 }
 func (r *fakeReader) GetOrderByClientID(context.Context, string, string) (domain.Order, error) {
 	r.queryCalls++
-	return r.queried, r.err
+	return r.queried, r.queryErr
 }
 
 func TestInitializeReconcilesOpenSnapshotWithoutOrderLookup(t *testing.T) {
@@ -101,6 +102,20 @@ func TestInitializeQueriesTerminalOrderByClientID(t *testing.T) {
 	}
 	if reader.queryCalls != 1 || len(store.applied) != 1 || store.applied[0].Status != domain.OrderFilled {
 		t.Fatalf("terminal order was not reconciled")
+	}
+}
+
+func TestSettledMissingOrderFinalizesFailedWithoutAccountDegradation(t *testing.T) {
+	store := &fakeStore{accounts: []account.Resolved{testAccount("GO")}, orders: []PendingOrder{{
+		ID: "local-missing", ClientOrderID: "kk_missing", Symbol: "BTCUSDT", Status: domain.OrderReconciliationRequired, ExecutionAttempted: true,
+	}}}
+	reader := &fakeReader{queryErr: exchange.NewError(domain.ErrorUnavailable, "EXCHANGE_ORDER_NOT_VISIBLE", "-2013", true, true)}
+	worker := New(Options{Store: store, Factory: func(account.Resolved) (Reader, error) { return reader, nil }, RetryDelay: time.Nanosecond})
+	if err := worker.Initialize(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if reader.queryCalls != 3 || len(store.applied) != 1 || store.applied[0].Status != domain.OrderFailed || store.healthy != 1 || store.degraded != 0 {
+		t.Fatalf("settled missing order was not safely finalized: reader=%#v store=%#v", reader, store)
 	}
 }
 

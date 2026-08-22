@@ -9,14 +9,14 @@ function bot(index: number, score: number | null, totalTrades = 250, lifecycleSt
 
 describe('Evolution Engine', () => {
   it('defaults to a 100 PAPER-candidate population and validates count consistency', () => {
-    expect(DEFAULT_EVOLUTION_CONFIG).toMatchObject({ populationSize: 100, survivorCount: 20, mutationCount: 100, crossoverCount: 0, researcherCandidateCount: 0 });
-    expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 60, crossoverCount: 20, researcherCandidateCount: 20 }).success).toBe(true);
-    expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 59, crossoverCount: 20, researcherCandidateCount: 20 }).success).toBe(false);
+    expect(DEFAULT_EVOLUTION_CONFIG).toMatchObject({ populationSize: 100, survivorCount: 20, mutationCount: 60, crossoverCount: 20, researcherCandidateCount: 0 });
+    expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 50, crossoverCount: 20, researcherCandidateCount: 10 }).success).toBe(true);
+    expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 49, crossoverCount: 20, researcherCandidateCount: 10 }).success).toBe(false);
     expect(runEvolutionBodySchema.safeParse({ sourceGenerationId: 'generation-1', config: { minimumTrades: 300 } }).success).toBe(true);
   });
 
   it('uses score plus minimum evidence, not raw profit, to select survivors', () => {
-    const config = evolutionConfigSchema.parse({ populationSize: 3, survivorCount: 2, mutationCount: 3, researcherCandidateCount: 0, maxGenerations: 10, minimumTrades: 200 });
+    const config = evolutionConfigSchema.parse({ populationSize: 3, survivorCount: 2, mutationCount: 1, crossoverCount: 0, researcherCandidateCount: 0, maxGenerations: 10, minimumTrades: 200 });
     const result = selectEvolutionPopulation([
       bot(1, 90), bot(2, 80), bot(3, 70), bot(4, 99, 10), bot(5, null),
     ], config);
@@ -26,9 +26,9 @@ describe('Evolution Engine', () => {
   });
 
   it('protects LIVE/LIVE_ELIGIBLE bots and never archives Champions', () => {
-    const config = evolutionConfigSchema.parse({ populationSize: 1, survivorCount: 1, mutationCount: 1, researcherCandidateCount: 0, maxGenerations: 10, minimumTrades: 1 });
+    const config = evolutionConfigSchema.parse({ populationSize: 1, survivorCount: 1, mutationCount: 0, crossoverCount: 0, researcherCandidateCount: 0, maxGenerations: 10, minimumTrades: 1 });
     const result = selectEvolutionPopulation([bot(1, 50), bot(2, 100, 250, 'LIVE'), bot(3, 90, 250, 'LIVE_ELIGIBLE'), bot(4, 40, 250, 'CHAMPION')], config);
-    expect(result.protectedBots.map((item) => item.lifecycleStatus)).toEqual(['LIVE', 'LIVE_ELIGIBLE']);
+    expect(result.protectedBots.map((item) => item.lifecycleStatus)).toEqual(['LIVE', 'LIVE_ELIGIBLE', 'CHAMPION']);
     expect(result.survivors[0]?.botId).toBe('bot-1');
     expect(result.weak).toEqual([]);
   });

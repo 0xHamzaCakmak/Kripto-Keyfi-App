@@ -33,6 +33,43 @@ type Service struct {
 	now      func() time.Time
 }
 
+// Positions returns the exchange-authoritative position state through the same
+// TESTNET/DEMO-only account resolver used by order execution.
+func (s *Service) Positions(ctx context.Context, reference domain.ExchangeAccountRef) ([]domain.Position, error) {
+	_, writer, err := s.resolveWriter(ctx, reference)
+	if err != nil {
+		return nil, err
+	}
+	return writer.GetPositions(ctx)
+}
+
+func (s *Service) OpenOrders(ctx context.Context, reference domain.ExchangeAccountRef) ([]domain.Order, error) {
+	_, writer, err := s.resolveWriter(ctx, reference)
+	if err != nil {
+		return nil, err
+	}
+	return writer.GetOpenOrders(ctx)
+}
+
+func (s *Service) MarketRule(ctx context.Context, reference domain.ExchangeAccountRef, symbol string) (domain.SymbolRule, domain.Decimal, error) {
+	_, writer, err := s.resolveWriter(ctx, reference)
+	if err != nil {
+		return domain.SymbolRule{}, "", err
+	}
+	rules, err := writer.GetSymbols(ctx)
+	if err != nil {
+		return domain.SymbolRule{}, "", err
+	}
+	for _, rule := range rules {
+		if rule.Symbol != symbol {
+			continue
+		}
+		mark, markErr := writer.GetMarkPrice(ctx, symbol)
+		return rule, mark, markErr
+	}
+	return domain.SymbolRule{}, "", validationError("TRADING_SYMBOL_NOT_FOUND")
+}
+
 func New(accounts account.Store, orders OrderStore, riskStore risk.Store, client *http.Client, endpoints exchange.Endpoints) *Service {
 	return &Service{accounts: accounts, orders: orders, risk: risk.New(riskStore), now: time.Now, factory: func(resolved account.Resolved) (exchange.Writer, error) {
 		switch resolved.Reference.Provider {
@@ -81,7 +118,7 @@ func (s *Service) Preview(ctx context.Context, request tradingv1.PreviewOrderReq
 	if (request.Type == domain.OrderLimit || request.Type == domain.OrderStopLimit) && (!positive(string(request.Price)) || !stepAligned(string(request.Price), string(rule.TickSize))) {
 		return tradingv1.PreviewOrderResponse{}, validationError("PRICE_TICK_MISMATCH")
 	}
-	if (request.Type == domain.OrderStopMarket || request.Type == domain.OrderStopLimit) && (!positive(string(request.StopPrice)) || !stepAligned(string(request.StopPrice), string(rule.TickSize))) {
+	if (request.Type == domain.OrderStopMarket || request.Type == domain.OrderStopLimit || request.Type == domain.OrderTakeProfitMarket) && (!positive(string(request.StopPrice)) || !stepAligned(string(request.StopPrice), string(rule.TickSize))) {
 		return tradingv1.PreviewOrderResponse{}, validationError("STOP_PRICE_TICK_MISMATCH")
 	}
 	markPrice, err := writer.GetMarkPrice(ctx, request.Symbol)
@@ -147,7 +184,7 @@ func (s *Service) Place(ctx context.Context, command tradingv1.PlaceOrderCommand
 		_ = s.orders.Fail(ctx, stored, failure, s.now())
 		return domain.Order{}, false, &exchange.Error{Normalized: failure}
 	}
-	if !stored.ReduceOnly {
+	if !stored.ReduceOnly && !command.PositionConfigurationVerified {
 		if err := writer.ConfigurePosition(ctx, stored.Symbol, stored.Leverage, stored.MarginMode); err != nil {
 			failure := normalizeFailure(err, false)
 			_ = s.orders.Fail(ctx, stored, failure, s.now())
@@ -207,7 +244,16 @@ func (s *Service) Cancel(ctx context.Context, command tradingv1.CancelOrderComma
 	if claim == ClaimReconciliationRequired {
 		return domain.Order{}, true, exchange.NewError(domain.ErrorRejected, "RECONCILIATION_REQUIRED", "", false, true)
 	}
-	result, err := writer.CancelOrder(ctx, stored.Symbol, stored.ExchangeOrderID)
+	var result domain.Order
+	if stored.Type == domain.OrderStopMarket || stored.Type == domain.OrderStopLimit || stored.Type == domain.OrderTakeProfitMarket {
+		conditionalWriter, ok := writer.(exchange.ConditionalWriter)
+		if !ok {
+			return domain.Order{}, false, validationError("CONDITIONAL_CANCEL_UNSUPPORTED")
+		}
+		result, err = conditionalWriter.CancelConditionalOrder(ctx, stored.Symbol, stored.ExchangeOrderID)
+	} else {
+		result, err = writer.CancelOrder(ctx, stored.Symbol, stored.ExchangeOrderID)
+	}
 	if err != nil {
 		failure := normalizeFailure(err, true)
 		if persistErr := s.orders.FailCancel(ctx, stored, failure, s.now()); persistErr != nil {
@@ -257,7 +303,7 @@ func commandIsFresh(requestedAt, now time.Time) bool {
 
 func verifyPlacedOrder(stored StoredOrder, result domain.Order) *domain.ExchangeError {
 	valid := result.ExchangeOrderID != "" && result.ClientOrderID == stored.ClientOrderID && result.Symbol == stored.Symbol
-	if stored.Type == domain.OrderStopMarket || stored.Type == domain.OrderStopLimit {
+	if stored.Type == domain.OrderStopMarket || stored.Type == domain.OrderStopLimit || stored.Type == domain.OrderTakeProfitMarket {
 		valid = valid && decimalEqual(result.StopPrice, stored.StopPrice)
 	}
 	if valid {

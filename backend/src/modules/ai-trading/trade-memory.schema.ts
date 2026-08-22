@@ -19,6 +19,8 @@ export const tradeMemorySummaryQuerySchema = z.object({
   regime: z.enum(marketRegimes).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(100),
 }).strict();
+export const tradeMemoryStatsQuerySchema = tradeMemoryQuerySchema.omit({ limit: true });
 
 export type TradeMemoryQuery = z.infer<typeof tradeMemoryQuerySchema>;
 export type TradeMemorySummaryQuery = z.infer<typeof tradeMemorySummaryQuerySchema>;
+export type TradeMemoryStatsQuery = z.infer<typeof tradeMemoryStatsQuerySchema>;

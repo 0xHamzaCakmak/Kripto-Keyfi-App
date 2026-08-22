@@ -94,6 +94,11 @@ type PlaceOrderCommand struct {
 	Leverage       int                       `json:"leverage"`
 	MarginMode     domain.MarginMode         `json:"marginMode"`
 	ReduceOnly     bool                      `json:"reduceOnly"`
+	// PositionConfigurationVerified is in-process-only. Autonomous pyramiding
+	// sets it after reading and validating the existing exchange position so
+	// protective open orders do not make Binance reject a redundant
+	// margin/leverage configuration request.
+	PositionConfigurationVerified bool `json:"-"`
 }
 
 type PreviewOrderRequest struct {

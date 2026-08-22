@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"math/big"
 	"testing"
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
@@ -117,11 +118,68 @@ func TestAutonomousMarketEntryCarriesCompletePlaybookEvidence(t *testing.T) {
 	if order["marketRegime"] != "TREND" || order["higherTimeframeAligned"] != true || order["confirmedTimeframes"] != 3 || order["derivativesAligned"] != true {
 		t.Fatalf("entry evidence is incomplete: %#v", order)
 	}
+	stopBps, stopOK := order["stopLossBps"].(float64)
+	if !stopOK || stopBps < 75 || stopBps > 300 || order["fixedRiskPct"] != 0.0075 || order["riskPlanVersion"] != "ATR_ADAPTIVE_FIXED_RISK_V1" {
+		t.Fatalf("adaptive risk plan is incomplete: %#v", order)
+	}
+	quantity, quantityOK := decimalRat(order["quantity"].(string))
+	if !quantityOK {
+		t.Fatalf("adaptive quantity is invalid: %#v", order)
+	}
+	mark, _ := decimalRat("209.5")
+	if new(big.Rat).Mul(quantity, mark).Cmp(big.NewRat(100, 1)) > 0 {
+		t.Fatalf("adaptive quantity exceeded bot allocation: %#v", order)
+	}
 	conflicting := trendingSnapshot(1)
 	conflicting.Derivatives.FundingRate = "0.002"
 	hold, err := EvaluateStrategyWithMarket(instance, "209.5", "209", conflicting)
 	if err != nil || hold.HypotheticalOrder != nil {
 		t.Fatalf("unconfirmed entry was not held: %#v err=%v", hold, err)
+	}
+}
+
+func TestPaperNewsFilterVetoesOnlyConflictingTrustedEvidence(t *testing.T) {
+	instance := autonomousMomentumInstance("PAPER")
+	instance.Configuration["signalThresholdBps"] = float64(5)
+	instance.Configuration["newsFilterEnabled"] = true
+	snapshot := trendingSnapshot(1)
+	snapshot.News = NewsContext{Available: true, Bias: "BEARISH", Score: -0.8, Confidence: 0.9, ArticleIDs: []string{"news-1"}}
+	decision, err := EvaluateStrategyWithMarket(instance, "209.5", "209", snapshot)
+	if err != nil || decision.Kind != "HOLD" || decision.HypotheticalOrder != nil || decision.Metrics["newsScore"] != -0.8 {
+		t.Fatalf("conflicting news was not vetoed: %#v err=%v", decision, err)
+	}
+	instance.Configuration["newsFilterEnabled"] = false
+	decision, err = EvaluateStrategyWithMarket(instance, "209.5", "209", snapshot)
+	if err != nil || decision.Kind != "BUY" || decision.HypotheticalOrder == nil {
+		t.Fatalf("A/B control bot was changed by news: %#v err=%v", decision, err)
+	}
+}
+
+func TestRangeMeanReversionRequiresRSIAndBollingerConfluence(t *testing.T) {
+	instance := autonomousMomentumInstance("PAPER")
+	instance.StrategyFamily = "RSI_MEAN_REVERSION"
+	closes := make([]domain.Decimal, 30)
+	for index := range closes {
+		closes[index] = "100"
+	}
+	closes[len(closes)-1] = "80"
+	decision, err := EvaluateStrategyWithChart(instance, "80", "100", closes)
+	if err != nil || decision.Kind != "BUY" || decision.HypotheticalOrder == nil || decision.Metrics["selectedSubStrategy"] != "RANGE_MEAN_REVERSION" {
+		t.Fatalf("RANGE confluence did not produce mean-reversion entry: %#v err=%v", decision, err)
+	}
+}
+
+func TestPlaybookConfluenceSelectsTrendSubStrategy(t *testing.T) {
+	instance := autonomousMomentumInstance("PAPER")
+	instance.StrategyFamily = "MULTI_AGENT"
+	instance.Configuration["signalThresholdBps"] = float64(5)
+	closes := make([]domain.Decimal, 50)
+	for index := range closes {
+		closes[index] = domain.Decimal(decimalStringForTest(100 + float64(index)*0.25))
+	}
+	decision, err := EvaluateStrategyWithChart(instance, "112.25", "100", closes)
+	if err != nil || decision.Kind != "BUY" || decision.HypotheticalOrder == nil || decision.Metrics["selectedSubStrategy"] != "TREND_MOMENTUM" {
+		t.Fatalf("Playbook Confluence did not select trend strategy: %#v err=%v", decision, err)
 	}
 }
 

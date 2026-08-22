@@ -2,7 +2,9 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
 )
@@ -17,14 +19,29 @@ func (s *strategyRunnerStore) LoadBotMarketAccount(context.Context, string, stri
 	s.loaded = true
 	return s.account, nil
 }
+func (s *strategyRunnerStore) LoadBotStrategyFamily(context.Context, string) (string, error) {
+	return "MOMENTUM", nil
+}
 func (s *strategyRunnerStore) LoadLatestBotDecisionPrice(context.Context, string) (string, error) {
 	return s.reference, nil
+}
+func (s *strategyRunnerStore) LoadRecentNewsContext(context.Context, string, time.Time) (NewsContext, error) {
+	return NewsContext{}, nil
 }
 
 type fixedPriceReader struct{ price domain.Decimal }
 
 func (r fixedPriceReader) GetMarkPrice(context.Context, string) (domain.Decimal, error) {
 	return r.price, nil
+}
+
+type unavailableDerivativesReader struct{ fixedPriceReader }
+
+func (r unavailableDerivativesReader) GetRecentCandles(_ context.Context, _ string, interval string, _ int) ([]domain.MarketCandle, error) {
+	return trendingSnapshot(1).Candles[interval], nil
+}
+func (unavailableDerivativesReader) GetDerivativesContext(context.Context, string) (domain.DerivativesContext, error) {
+	return domain.DerivativesContext{}, errors.New("OI unavailable")
 }
 
 func TestStrategyRunnerUsesPublicMarketAccount(t *testing.T) {
@@ -65,5 +82,38 @@ func TestStrategyRunnerSeparatesPaperAndShadowMarketReaders(t *testing.T) {
 	}
 	if paperCalls != 1 || shadowCalls != 1 {
 		t.Fatalf("market readers crossed mode boundary: paper=%d shadow=%d", paperCalls, shadowCalls)
+	}
+}
+
+func TestStrategyRunnerFansOutOnePriceAcrossPaperPopulation(t *testing.T) {
+	store := &strategyRunnerStore{account: MarketAccount{Provider: domain.ProviderBinance}, reference: "50000"}
+	calls := 0
+	runner := NewStrategyRunnerWithFactory(store, func(MarketAccount) (PriceReader, error) {
+		calls++
+		return fixedPriceReader{price: "50150"}, nil
+	})
+	first, second := scalpingInstance("PAPER"), scalpingInstance("PAPER")
+	second.ID = "bot-2"
+	if _, err := runner.Tick(t.Context(), first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Tick(t.Context(), second); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("expected one shared market read, got %d", calls)
+	}
+}
+
+func TestAutonomousRunnerHoldsWhenDerivativesEvidenceIsUnavailable(t *testing.T) {
+	store := &strategyRunnerStore{account: MarketAccount{Provider: domain.ProviderBinance}, reference: "209"}
+	runner := NewStrategyRunnerWithFactory(store, func(MarketAccount) (PriceReader, error) {
+		return unavailableDerivativesReader{fixedPriceReader{price: "209.5"}}, nil
+	})
+	instance := autonomousMomentumInstance("PAPER")
+	instance.Configuration["signalThresholdBps"] = float64(5)
+	decision, err := runner.Tick(t.Context(), instance)
+	if err != nil || decision.Kind != "HOLD" || decision.HypotheticalOrder != nil || decision.Metrics["derivativesAvailable"] != false {
+		t.Fatalf("missing derivatives evidence did not fail closed: %#v err=%v", decision, err)
 	}
 }

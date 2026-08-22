@@ -53,12 +53,36 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 	}
 	result.Metrics["marketRegime"], result.Metrics["higherDirection"], result.Metrics["middleDirection"], result.Metrics["lowerDirection"] = analysis.Regime, analysis.HigherDirection, analysis.MiddleDirection, analysis.LowerDirection
 	result.Metrics["confirmedTimeframes"], result.Metrics["adx1h"], result.Metrics["adx4h"], result.Metrics["atrExpansion"] = analysis.ConfirmedTimeframes, roundFloat(analysis.ADX1H, 4), roundFloat(analysis.ADX4H, 4), roundFloat(analysis.ATRExpansion, 4)
+	result.Metrics["atrBps15m"] = roundFloat(analysis.ATRBps15m, 4)
+	result.Metrics["derivativesAvailable"] = !snapshot.DerivativesUnavailable
+	result.Metrics["newsAvailable"], result.Metrics["newsBias"], result.Metrics["newsScore"], result.Metrics["newsConfidence"] = snapshot.News.Available, snapshot.News.Bias, roundFloat(snapshot.News.Score, 4), roundFloat(snapshot.News.Confidence, 4)
+	result.Metrics["newsArticleIds"], result.Metrics["newsObservedAt"] = snapshot.News.ArticleIDs, snapshot.News.ObservedAt
+	result.Metrics["liquidationAvailable"], result.Metrics["liquidationSource"], result.Metrics["liquidationCluster"] = snapshot.Liquidations.Available, snapshot.Liquidations.Source, snapshot.Liquidations.Cluster
+	result.Metrics["liquidationEventCount"], result.Metrics["liquidationBuyNotional"], result.Metrics["liquidationSellNotional"], result.Metrics["liquidationPressure"] = snapshot.Liquidations.EventCount, roundFloat(snapshot.Liquidations.BuyNotional, 4), roundFloat(snapshot.Liquidations.SellNotional, 4), roundFloat(snapshot.Liquidations.Pressure, 4)
+	result.Metrics["playbookVersion"] = stringConfigOr(instance.Configuration, "playbookVersion", "TRADING_PLAYBOOK_V1")
+	result.Metrics["experimentId"] = stringConfigOr(instance.Configuration, "experimentId", "ATR_STOP_WALK_FORWARD_V1")
+	result.Metrics["experimentVariant"] = stringConfigOr(instance.Configuration, "experimentVariant", "ATR_1_50")
 	order := result.HypotheticalOrder
 	order["marketRegime"], order["higherTimeframeAligned"], order["confirmedTimeframes"], order["derivativesAligned"] = analysis.Regime, analysis.HigherTimeframeAligned, analysis.ConfirmedTimeframes, analysis.DerivativesAligned
 	order["oiConfirmed"], order["regimeConfidence"] = analysis.OIConfirmed, roundFloat(analysis.RegimeConfidence, 4)
-	if analysis.Regime != "TREND" && analysis.Regime != "RANGE" || !analysis.HigherTimeframeAligned || analysis.ConfirmedTimeframes < 2 || !analysis.DerivativesAligned {
+	family := strings.ToUpper(strings.TrimSpace(instance.StrategyFamily))
+	selected, _ := result.Metrics["selectedSubStrategy"].(string)
+	isMeanReversion := family == "RSI_MEAN_REVERSION" || family == "BOLLINGER_MEAN_REVERSION" || (family == "MULTI_AGENT" && selected == "RANGE_MEAN_REVERSION")
+	marketConfirmed := analysis.DerivativesAligned
+	if isMeanReversion {
+		marketConfirmed = marketConfirmed && analysis.Regime == "RANGE"
+	} else {
+		marketConfirmed = marketConfirmed && analysis.Regime == "TREND" && analysis.HigherTimeframeAligned && analysis.ConfirmedTimeframes >= 2
+	}
+	if !marketConfirmed {
 		result.Kind = "HOLD"
 		result.Summary = "Playbook rejim/çoklu zaman dilimi/funding-OI giriş teyidi tamamlanmadı."
+		result.HypotheticalOrder = nil
+		return result, nil
+	}
+	if instance.Mode == "PAPER" && booleanConfig(instance.Configuration, "newsFilterEnabled") && newsConflicts(snapshot.News, side) {
+		result.Kind = "HOLD"
+		result.Summary = "Güvenilir güncel haber etkisi teknik giriş yönüyle çelişti; PAPER A/B haber filtresi girişi veto etti."
 		result.HypotheticalOrder = nil
 		return result, nil
 	}
@@ -77,7 +101,95 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 		configuredLeverage = maxInt(5, configuredLeverage/2)
 		order["leverage"] = configuredLeverage
 	}
+	if err := applyAdaptiveRiskPlan(instance, markPrice, analysis, order); err != nil {
+		return Decision{}, err
+	}
 	return result, nil
+}
+
+func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketAnalysis, order map[string]any) error {
+	side, sideOK := order["side"].(string)
+	leverage, leverageOK := order["leverage"].(int)
+	allocation, allocationOK := numberConfig(instance.Configuration, "allocationUsdt")
+	if !sideOK || !leverageOK || !allocationOK || allocation <= 0 || leverage < 1 {
+		return errors.New("adaptive risk plan input is invalid")
+	}
+	multiplier := configNumberOr(instance.Configuration, "atrStopMultiplier", 1.5)
+	minimumBps := configNumberOr(instance.Configuration, "adaptiveStopMinBps", 75)
+	maximumBps := configNumberOr(instance.Configuration, "adaptiveStopMaxBps", 300)
+	riskReward := configNumberOr(instance.Configuration, "riskRewardRatio", 1.5)
+	maintenanceMarginBps := configNumberOr(instance.Configuration, "maintenanceMarginBps", 50)
+	liquidationReserveFraction := configNumberOr(instance.Configuration, "liquidationReserveFraction", 0.20)
+	if multiplier <= 0 || minimumBps < 50 || maximumBps < minimumBps || maximumBps > 500 || riskReward < 1 || riskReward > 5 || maintenanceMarginBps < 0 || liquidationReserveFraction < 0.1 || liquidationReserveFraction > 0.5 {
+		return errors.New("adaptive risk configuration is invalid")
+	}
+	stopBps := math.Max(minimumBps, math.Min(maximumBps, analysis.ATRBps15m*multiplier))
+	liquidationDistanceBps := 10_000/float64(leverage) - maintenanceMarginBps
+	safeLiquidationBps := liquidationDistanceBps * (1 - liquidationReserveFraction)
+	if safeLiquidationBps <= 0 {
+		return errors.New("adaptive stop has no liquidation safety distance")
+	}
+	stopBps = math.Min(stopBps, safeLiquidationBps)
+	if stopBps < minimumBps {
+		return errors.New("adaptive stop cannot satisfy minimum distance before liquidation")
+	}
+	takeBps := stopBps * riskReward
+	stop, take, err := protectionPrices(markPrice, side, stopBps, takeBps)
+	if err != nil {
+		return err
+	}
+	riskFraction := configNumberOr(instance.Configuration, "fixedRiskPct", 0.0075)
+	if riskFraction < 0.005 || riskFraction > 0.01 {
+		return errors.New("adaptive fixed-risk fraction is outside the 0.5%-1% boundary")
+	}
+	quantity, err := FixedRiskQuantity(strconv.FormatFloat(allocation, 'f', 8, 64), strconv.FormatFloat(riskFraction, 'f', 8, 64), markPrice, stop)
+	if err != nil {
+		return err
+	}
+	quantity, err = capQuantityToAllocation(quantity, markPrice, allocation)
+	if err != nil {
+		return err
+	}
+	order["quantity"], order["stopLoss"], order["takeProfit"] = quantity, stop, take
+	order["stopLossBps"], order["takeProfitBps"], order["fixedRiskPct"] = roundFloat(stopBps, 4), roundFloat(takeBps, 4), riskFraction
+	order["atrStopMultiplier"], order["atrBps15m"], order["riskRewardRatio"] = multiplier, roundFloat(analysis.ATRBps15m, 4), riskReward
+	order["liquidationDistanceBps"], order["liquidationSafetyBps"] = roundFloat(liquidationDistanceBps, 4), roundFloat(safeLiquidationBps, 4)
+	order["riskPlanVersion"] = "ATR_ADAPTIVE_FIXED_RISK_V1"
+	order["playbookVersion"] = stringConfigOr(instance.Configuration, "playbookVersion", "TRADING_PLAYBOOK_V1")
+	order["experimentId"] = stringConfigOr(instance.Configuration, "experimentId", "ATR_STOP_WALK_FORWARD_V1")
+	order["experimentVariant"] = stringConfigOr(instance.Configuration, "experimentVariant", "ATR_1_50")
+	return nil
+}
+
+func configNumberOr(configuration map[string]any, key string, fallback float64) float64 {
+	if value, ok := numberConfig(configuration, key); ok {
+		return value
+	}
+	return fallback
+}
+
+func stringConfigOr(configuration map[string]any, key, fallback string) string {
+	if value, ok := stringConfig(configuration, key); ok {
+		return value
+	}
+	return fallback
+}
+
+func capQuantityToAllocation(quantityText, markPrice string, allocation float64) (string, error) {
+	quantity, quantityOK := decimalRat(quantityText)
+	mark, markOK := decimalRat(markPrice)
+	allocationValue, allocationOK := decimalRat(strconv.FormatFloat(allocation, 'f', 8, 64))
+	if !quantityOK || !markOK || !allocationOK || quantity.Sign() <= 0 || mark.Sign() <= 0 || allocationValue.Sign() <= 0 {
+		return "", errors.New("adaptive quantity cap input is invalid")
+	}
+	maximum := new(big.Rat).Quo(allocationValue, mark)
+	if quantity.Cmp(maximum) > 0 {
+		quantity = maximum
+	}
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
+	scaled := new(big.Rat).Mul(quantity, new(big.Rat).SetInt(scale))
+	units := new(big.Int).Quo(scaled.Num(), scaled.Denom())
+	return new(big.Rat).Quo(new(big.Rat).SetInt(units), new(big.Rat).SetInt(scale)).FloatString(18), nil
 }
 
 func maxInt(left, right int) int {
@@ -88,14 +200,24 @@ func maxInt(left, right int) int {
 }
 
 func evaluateAutonomousStrategy(instance Instance, markPrice, referencePrice string, closes []domain.Decimal) (Decision, error) {
-	if strings.ToUpper(strings.TrimSpace(instance.StrategyFamily)) != "MOMENTUM" {
-		return Decision{}, fmt.Errorf("unsupported autonomous strategy family %q", instance.StrategyFamily)
-	}
+	family := strings.ToUpper(strings.TrimSpace(instance.StrategyFamily))
 	var result Decision
 	var err error
 	if len(closes) >= 21 {
-		result, err = evaluateChartMomentum(instance, markPrice, closes)
+		switch family {
+		case "MOMENTUM", "ATR_BREAKOUT", "DONCHIAN_BREAKOUT", "VOLUME_SPIKE":
+			result, err = evaluateChartMomentum(instance, markPrice, closes)
+		case "RSI_MEAN_REVERSION", "BOLLINGER_MEAN_REVERSION":
+			result, err = evaluateChartMeanReversion(instance, markPrice, closes)
+		case "MULTI_AGENT":
+			result, err = evaluatePlaybookConfluence(instance, markPrice, closes)
+		default:
+			return Decision{}, fmt.Errorf("unsupported autonomous strategy family %q", instance.StrategyFamily)
+		}
 	} else {
+		if family != "MOMENTUM" {
+			return Decision{}, errors.New("autonomous strategy chart history is incomplete")
+		}
 		result, err = evaluateScalping(instance, markPrice, referencePrice)
 	}
 	if err != nil || result.HypotheticalOrder == nil {
@@ -114,9 +236,9 @@ func evaluateAutonomousStrategy(instance Instance, markPrice, referencePrice str
 	result.HypotheticalOrder["marginMode"] = "ISOLATED"
 	result.HypotheticalOrder["stopLoss"] = stopLoss
 	result.HypotheticalOrder["takeProfit"] = takeProfit
-	result.HypotheticalOrder["strategyFamily"] = "MOMENTUM"
+	result.HypotheticalOrder["strategyFamily"] = family
 	allocation, allocationOK := numberConfig(instance.Configuration, "allocationUsdt")
-	fixedRiskPct := 0.005
+	fixedRiskPct := 0.0075
 	if configured, ok := numberConfig(instance.Configuration, "fixedRiskPct"); ok {
 		fixedRiskPct = configured
 	}
@@ -131,6 +253,89 @@ func evaluateAutonomousStrategy(instance Instance, markPrice, referencePrice str
 	result.HypotheticalOrder["fixedRiskPct"] = fixedRiskPct
 	result.HypotheticalOrder["martingaleAllowed"] = false
 	return result, nil
+}
+
+func evaluateChartMeanReversion(instance Instance, markPrice string, closes []domain.Decimal) (Decision, error) {
+	if len(closes) < 21 {
+		return Decision{}, errors.New("mean-reversion chart history is incomplete")
+	}
+	values := make([]float64, len(closes))
+	for index, closeText := range closes {
+		value, err := strconv.ParseFloat(string(closeText), 64)
+		if err != nil || value <= 0 {
+			return Decision{}, errors.New("mean-reversion chart contains an invalid close")
+		}
+		values[index] = value
+	}
+	window := values[len(values)-20:]
+	mean := 0.0
+	for _, value := range window {
+		mean += value
+	}
+	mean /= float64(len(window))
+	variance := 0.0
+	for _, value := range window {
+		variance += math.Pow(value-mean, 2)
+	}
+	deviation := math.Sqrt(variance / float64(len(window)))
+	lower, upper := mean-2*deviation, mean+2*deviation
+	rsiValue := rsi(values, 14)
+	current := values[len(values)-1]
+	side, _ := stringConfig(instance.Configuration, "side")
+	side = strings.ToUpper(side)
+	kind, summary := "HOLD", "RSI ve Bollinger birlikte aşırı sapma teyidi üretmedi."
+	if current <= lower && rsiValue <= 35 && (side == "BUY" || side == "BOTH") {
+		kind, summary = "BUY", "Alt Bollinger bandı ve düşük RSI RANGE dönüş sinyali üretti."
+	} else if current >= upper && rsiValue >= 65 && (side == "SELL" || side == "BOTH") {
+		kind, summary = "SELL", "Üst Bollinger bandı ve yüksek RSI RANGE dönüş sinyali üretti."
+	}
+	metrics := map[string]any{"rsi14": roundFloat(rsiValue, 4), "bollingerMean": roundFloat(mean, 8), "bollingerLower": roundFloat(lower, 8), "bollingerUpper": roundFloat(upper, 8), "selectedSubStrategy": "RANGE_MEAN_REVERSION"}
+	return decision(instance, kind, summary, markPrice, strconv.FormatFloat(values[len(values)-2], 'f', -1, 64), metrics), nil
+}
+
+func evaluatePlaybookConfluence(instance Instance, markPrice string, closes []domain.Decimal) (Decision, error) {
+	momentum, momentumErr := evaluateChartMomentum(instance, markPrice, closes)
+	meanReversion, meanErr := evaluateChartMeanReversion(instance, markPrice, closes)
+	if momentumErr != nil {
+		return Decision{}, momentumErr
+	}
+	if meanErr != nil {
+		return Decision{}, meanErr
+	}
+	momentumActive, meanActive := momentum.HypotheticalOrder != nil, meanReversion.HypotheticalOrder != nil
+	if momentumActive {
+		if momentum.Metrics == nil {
+			momentum.Metrics = make(map[string]any)
+		}
+		momentum.Metrics["selectedSubStrategy"] = "TREND_MOMENTUM"
+		momentum.Summary = "Playbook Confluence TREND alt stratejisi: " + momentum.Summary
+		return momentum, nil
+	}
+	if meanActive {
+		meanReversion.Summary = "Playbook Confluence RANGE alt stratejisi: " + meanReversion.Summary
+		return meanReversion, nil
+	}
+	return Decision{Kind: "HOLD", Summary: "Playbook Confluence alt stratejileri giriş üretmedi.", MarkPrice: markPrice, Metrics: map[string]any{"selectedSubStrategy": "NONE"}}, nil
+}
+
+func rsi(values []float64, period int) float64 {
+	if len(values) <= period {
+		return 50
+	}
+	gains, losses := 0.0, 0.0
+	for index := len(values) - period; index < len(values); index++ {
+		change := values[index] - values[index-1]
+		if change > 0 {
+			gains += change
+		} else {
+			losses -= change
+		}
+	}
+	if losses == 0 {
+		return 100
+	}
+	rs := gains / losses
+	return 100 - 100/(1+rs)
 }
 
 func evaluateChartMomentum(instance Instance, markPrice string, closes []domain.Decimal) (Decision, error) {
@@ -344,6 +549,18 @@ func numberConfig(configuration map[string]any, key string) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func booleanConfig(configuration map[string]any, key string) bool {
+	value, _ := configuration[key].(bool)
+	return value
+}
+
+func newsConflicts(news NewsContext, side string) bool {
+	if !news.Available || news.Confidence < 0.65 || math.Abs(news.Score) < 0.20 {
+		return false
+	}
+	return (strings.EqualFold(side, "BUY") && news.Score < 0) || (strings.EqualFold(side, "SELL") && news.Score > 0)
 }
 func roundFloat(value float64, decimals int) float64 {
 	factor := math.Pow10(decimals)

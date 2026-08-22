@@ -41,6 +41,12 @@ type Writer interface {
 	CancelOrder(context.Context, string, string) (domain.Order, error)
 }
 
+// ConditionalWriter is implemented by exchanges that route protective
+// conditional orders through a distinct API from regular orders.
+type ConditionalWriter interface {
+	CancelConditionalOrder(context.Context, string, string) (domain.Order, error)
+}
+
 type Endpoints struct {
 	BinanceFutures   string
 	BinanceFuturesWS string

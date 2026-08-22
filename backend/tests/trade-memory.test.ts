@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Prisma } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
-import { tradeMemoryQuerySchema, tradeMemorySummaryQuerySchema } from '../src/modules/ai-trading/trade-memory.schema.js';
+import { tradeMemoryQuerySchema, tradeMemoryStatsQuerySchema, tradeMemorySummaryQuerySchema } from '../src/modules/ai-trading/trade-memory.schema.js';
 import { presentSummary } from '../src/modules/ai-trading/trade-memory.service.js';
 
 describe('trade memory', () => {
@@ -10,6 +10,7 @@ describe('trade memory', () => {
     expect(tradeMemoryQuerySchema.parse({ outcome: 'FAILURE', side: 'SELL', limit: '200' })).toMatchObject({ outcome: 'FAILURE', side: 'SELL', limit: 200 });
     expect(tradeMemoryQuerySchema.safeParse({ limit: 201 }).success).toBe(false);
     expect(tradeMemorySummaryQuerySchema.parse({ groupBy: 'REGIME' }).groupBy).toBe('REGIME');
+    expect(tradeMemoryStatsQuerySchema.parse({ outcome: 'ALL' })).toEqual({ outcome: 'ALL' });
   });
 
   it('presents stable aggregate metrics without dividing by zero', () => {
@@ -35,6 +36,7 @@ describe('trade memory', () => {
     const service = readFileSync(new URL('../src/modules/ai-trading/trade-memory.service.ts', import.meta.url), 'utf8');
     expect(service).toContain("tradingBot: { userId, type: 'AUTONOMOUS' }");
     expect(service).toContain("b.userId = ${userId}");
+    expect(service).toContain('getTradeMemoryStats');
     expect(service).not.toMatch(/submitOrder|tradingOutboxEvent\.create|paperTrade\.(create|update|delete)/);
   });
 });

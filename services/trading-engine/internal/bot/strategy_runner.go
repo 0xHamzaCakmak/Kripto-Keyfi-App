@@ -25,6 +25,9 @@ type MarketContextReader interface {
 	GetRecentCandles(context.Context, string, string, int) ([]domain.MarketCandle, error)
 	GetDerivativesContext(context.Context, string) (domain.DerivativesContext, error)
 }
+type LiquidationContextReader interface {
+	LiquidationContext(context.Context, string, time.Time) (LiquidationContext, error)
+}
 type MarketAccount struct {
 	Provider    domain.ExchangeProvider
 	Environment domain.ExchangeEnvironment
@@ -34,6 +37,7 @@ type StrategyStore interface {
 	LoadBotMarketAccount(context.Context, string, string) (MarketAccount, error)
 	LoadBotStrategyFamily(context.Context, string) (string, error)
 	LoadLatestBotDecisionPrice(context.Context, string) (string, error)
+	LoadRecentNewsContext(context.Context, string, time.Time) (NewsContext, error)
 }
 
 type StrategyRunner struct {
@@ -46,6 +50,11 @@ type StrategyRunner struct {
 	derivativesCache            map[string]cachedDerivatives
 	cacheTTL                    time.Duration
 	now                         func() time.Time
+	liquidationReader           LiquidationContextReader
+}
+
+func (r *StrategyRunner) SetLiquidationReader(reader LiquidationContextReader) {
+	r.liquidationReader = reader
 }
 
 type cachedPrice struct {
@@ -126,9 +135,22 @@ func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision,
 		}
 		derivatives, marketErr := r.getDerivativesContext(ctx, factory, account, instance.Mode, instance.Symbol)
 		if marketErr != nil {
-			return Decision{}, fmt.Errorf("load autonomous derivatives context: %w", marketErr)
+			// A demo/public symbol may expose valid candles but no OI history.
+			// Missing evidence blocks the entry instead of crashing the bot.
+			snapshot.DerivativesUnavailable = true
+		} else {
+			snapshot.Derivatives = derivatives
 		}
-		snapshot.Derivatives = derivatives
+		news, newsErr := r.store.LoadRecentNewsContext(ctx, instance.Symbol, r.now().UTC())
+		if newsErr == nil {
+			snapshot.News = news
+		}
+		if r.liquidationReader != nil {
+			liquidations, liquidationErr := r.liquidationReader.LiquidationContext(ctx, instance.Symbol, r.now().UTC())
+			if liquidationErr == nil {
+				snapshot.Liquidations = liquidations
+			}
+		}
 		return EvaluateStrategyWithMarket(instance, string(markPrice), referencePrice, snapshot)
 	}
 	return EvaluateStrategy(instance, string(markPrice), referencePrice)

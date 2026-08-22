@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -20,6 +21,11 @@ type Config struct {
 	ShadowRead        bool
 	ShutdownTimeout   time.Duration
 	BotScheduler      bool
+	BotWorkers        int
+	BotPollInterval   time.Duration
+	AutonomousTestnet bool
+	LiquidationStream bool
+	LiquidationURL    string
 	AIObserver        bool
 	AIObserverURL     string
 	AIObserverToken   string
@@ -82,6 +88,28 @@ func Load() (Config, error) {
 			return Config{}, errors.New("DATABASE_URL must use mysql:// when bot scheduler is enabled")
 		}
 	}
+	botWorkers, err := strconv.Atoi(valueOrDefault("TRADING_ENGINE_BOT_WORKERS", "4"))
+	if err != nil || botWorkers < 1 || botWorkers > 32 {
+		return Config{}, errors.New("TRADING_ENGINE_BOT_WORKERS must be between 1 and 32")
+	}
+	botPollInterval, err := time.ParseDuration(valueOrDefault("TRADING_ENGINE_BOT_POLL_INTERVAL", "250ms"))
+	if err != nil || botPollInterval < 100*time.Millisecond || botPollInterval > 10*time.Second {
+		return Config{}, errors.New("TRADING_ENGINE_BOT_POLL_INTERVAL must be between 100ms and 10s")
+	}
+	autonomousTestnet, err := parseBoolean(valueOrDefault("TRADING_ENGINE_AUTONOMOUS_TESTNET_ENABLED", "false"))
+	if err != nil {
+		return Config{}, err
+	}
+	if autonomousTestnet && (mode != "cutover" || !shadowRead || !botScheduler) {
+		return Config{}, errors.New("autonomous testnet execution requires cutover mode, shadow reads and bot scheduler")
+	}
+	liquidationStream, err := parseBoolean(valueOrDefault("TRADING_ENGINE_LIQUIDATION_STREAM_ENABLED", "false"))
+	if err != nil {
+		return Config{}, err
+	}
+	if liquidationStream && !botScheduler {
+		return Config{}, errors.New("liquidation stream requires bot scheduler")
+	}
 	aiObserver, err := parseBoolean(valueOrDefault("TRADING_ENGINE_AI_OBSERVER_ENABLED", "false"))
 	if err != nil {
 		return Config{}, err
@@ -115,6 +143,11 @@ func Load() (Config, error) {
 		ShadowRead:        shadowRead,
 		ShutdownTimeout:   shutdownTimeout,
 		BotScheduler:      botScheduler,
+		BotWorkers:        botWorkers,
+		BotPollInterval:   botPollInterval,
+		AutonomousTestnet: autonomousTestnet,
+		LiquidationStream: liquidationStream,
+		LiquidationURL:    strings.TrimSpace(os.Getenv("TRADING_ENGINE_LIQUIDATION_STREAM_URL")),
 		AIObserver:        aiObserver,
 		AIObserverURL:     aiURL,
 		AIObserverToken:   aiToken,

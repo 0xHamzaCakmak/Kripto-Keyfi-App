@@ -28,6 +28,17 @@ func TestPlaceClaimsAndExecutesExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestPlaceSkipsRedundantConfigurationOnlyWhenVerifiedInProcess(t *testing.T) {
+	store := &fakeStore{claim: ClaimAcquired, order: sampleStoredOrder()}
+	writer := &fakeWriter{placed: domain.Order{ExchangeOrderID: "exchange-1", ClientOrderID: "kk_123", Symbol: "BTCUSDT", Status: domain.OrderOpen}}
+	command := samplePlaceCommand()
+	command.PositionConfigurationVerified = true
+	_, _, err := testService(store, writer).Place(t.Context(), command)
+	if err != nil || writer.configureCalls != 0 || writer.placeCalls != 1 {
+		t.Fatalf("verified position configuration was not honored: writer=%#v err=%v", writer, err)
+	}
+}
+
 func TestPlaceReplayNeverWritesToExchange(t *testing.T) {
 	stored := sampleStoredOrder()
 	stored.ExchangeOrderID = "exchange-existing"

@@ -92,6 +92,35 @@ func TestReaderGetsOrderByStableClientID(t *testing.T) {
 	}
 }
 
+func TestReaderLoadsAutonomousMarketContext(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/v5/market/kline":
+			if request.URL.Query().Get("interval") != "15" {
+				t.Fatalf("unexpected interval: %s", request.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"retCode":0,"result":{"list":[["2","101","102","100","101.5","20","0"],["1","100","101","99","100.5","10","0"]]}}`))
+		case "/v5/market/tickers":
+			_, _ = w.Write([]byte(`{"retCode":0,"result":{"list":[{"fundingRate":"0.0001"}]}}`))
+		case "/v5/market/open-interest":
+			_, _ = w.Write([]byte(`{"retCode":0,"result":{"list":[{"openInterest":"110"},{"openInterest":"100"}]}}`))
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer server.Close()
+	reader := New(Options{Client: server.Client(), BaseURL: server.URL})
+	candles, err := reader.GetRecentCandles(t.Context(), "BTCUSDT", "15m", 2)
+	if err != nil || len(candles) != 2 || candles[0].Close != "100.5" || candles[1].Close != "101.5" {
+		t.Fatalf("unexpected Bybit candles: %#v err=%v", candles, err)
+	}
+	derivatives, err := reader.GetDerivativesContext(t.Context(), "BTCUSDT")
+	if err != nil || derivatives.FundingRate != "0.0001" || derivatives.OpenInterest != "110" || derivatives.PreviousOpenInterest != "100" {
+		t.Fatalf("unexpected Bybit derivatives: %#v err=%v", derivatives, err)
+	}
+}
+
 func TestWriterSignsConfigurePlaceAndCancelRequests(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

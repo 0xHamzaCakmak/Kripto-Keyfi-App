@@ -21,6 +21,16 @@ const envSchema = z.object({
   TRADING_CREDENTIALS_MASTER_KEY: z.string().regex(/^[a-fA-F0-9]{64}$/, 'must be a 32-byte hexadecimal key'),
   TRADING_ENGINE_SHADOW_COMPARE_ENABLED: booleanString.default('false'),
   TRADING_ENGINE_EXECUTION_ENABLED: booleanString.default('false'),
+  AUTONOMOUS_TESTNET_EXECUTION_ENABLED: booleanString.default('false'),
+  AI_TRADING_EVOLUTION_ENABLED: booleanString.default('true'),
+  AI_TRADING_EVOLUTION_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(5),
+  AI_TRADING_EVOLUTION_MIN_TRADES: z.coerce.number().int().min(50).max(1_000_000).default(200),
+  AI_TRADING_MAX_GENERATIONS: z.coerce.number().int().min(2).max(1000).default(20),
+  AI_TRADING_UNIVERSE_ENABLED: booleanString.default('true'),
+  AI_TRADING_UNIVERSE_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(5),
+  AI_TRADING_LEARNING_ENABLED: booleanString.default('true'),
+  AI_TRADING_LEARNING_INTERVAL_MINUTES: z.coerce.number().int().min(5).max(1440).default(15),
+  AI_TRADING_LEARNING_MIN_NEW_TRADES: z.coerce.number().int().min(10).max(100_000).default(100),
   TRADING_ENGINE_URL: z.string().url().default('http://127.0.0.1:8081'),
   TRADING_ENGINE_TOKEN: z.string().default(''),
   NEWS_AI_PROVIDER: z.enum(['multi', 'groq', 'deepseek', 'disabled']).default('multi'),
@@ -71,8 +81,11 @@ const envSchema = z.object({
   if (value.COOKIE_SAME_SITE === 'none' && !value.COOKIE_SECURE) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['COOKIE_SAME_SITE'], message: 'none requires COOKIE_SECURE=true' });
   }
-  if ((value.TRADING_ENGINE_SHADOW_COMPARE_ENABLED || value.TRADING_ENGINE_EXECUTION_ENABLED) && value.TRADING_ENGINE_TOKEN.length < 32) {
+  if ((value.TRADING_ENGINE_SHADOW_COMPARE_ENABLED || value.TRADING_ENGINE_EXECUTION_ENABLED || value.AUTONOMOUS_TESTNET_EXECUTION_ENABLED) && value.TRADING_ENGINE_TOKEN.length < 32) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['TRADING_ENGINE_TOKEN'], message: 'must contain at least 32 characters when shadow comparison is enabled' });
+  }
+  if (value.AUTONOMOUS_TESTNET_EXECUTION_ENABLED && !value.TRADING_ENGINE_EXECUTION_ENABLED) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['AUTONOMOUS_TESTNET_EXECUTION_ENABLED'], message: 'requires TRADING_ENGINE_EXECUTION_ENABLED=true' });
   }
   const r2Values = [value.R2_ACCOUNT_ID, value.R2_ACCESS_KEY_ID, value.R2_SECRET_ACCESS_KEY, value.R2_BUCKET_NAME, value.R2_PUBLIC_URL];
   const configuredR2Values = r2Values.filter(Boolean).length;

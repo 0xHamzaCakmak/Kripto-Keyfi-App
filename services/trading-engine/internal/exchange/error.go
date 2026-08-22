@@ -11,6 +11,9 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
+	if e.Normalized.ExchangeCode != "" {
+		return fmt.Sprintf("exchange request failed: %s (exchange code %s)", e.Normalized.Code, e.Normalized.ExchangeCode)
+	}
 	return fmt.Sprintf("exchange request failed: %s", e.Normalized.Code)
 }
 

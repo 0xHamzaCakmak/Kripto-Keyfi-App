@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
-import type { TradeMemoryQuery, TradeMemorySummaryQuery } from './trade-memory.schema.js';
+import type { TradeMemoryQuery, TradeMemoryStatsQuery, TradeMemorySummaryQuery } from './trade-memory.schema.js';
 
 type SummaryRow = {
   groupKey: string;
@@ -17,17 +17,7 @@ const closedStatuses = ['CLOSED', 'LIQUIDATED'] as const;
 
 export async function listTradeMemory(userId: string, query: TradeMemoryQuery) {
   const trades = await prisma.paperTrade.findMany({
-    where: {
-      tradingBot: { userId, type: 'AUTONOMOUS' },
-      status: { in: [...closedStatuses] },
-      ...(query.botId ? { tradingBotId: query.botId } : {}),
-      ...(query.strategyVersionId ? { strategyVersionId: query.strategyVersionId } : {}),
-      ...(query.symbol ? { symbol: query.symbol } : {}),
-      ...(query.side ? { side: query.side } : {}),
-      ...(query.regime ? { marketRegimeSnapshot: { regime: query.regime } } : {}),
-      ...(query.outcome === 'BEST' ? { realizedPnl: { gt: 0 } } : {}),
-      ...(query.outcome === 'FAILURE' ? { realizedPnl: { lt: 0 } } : {}),
-    },
+    where: memoryWhere(userId, query),
     include: {
       tradingBot: { select: { id: true, name: true } },
       strategyVersion: { select: { id: true, version: true, strategy: { select: { id: true, name: true, family: true } } } },
@@ -41,6 +31,30 @@ export async function listTradeMemory(userId: string, query: TradeMemoryQuery) {
     take: query.limit,
   });
   return trades.map(presentTradeMemory);
+}
+
+export async function getTradeMemoryStats(userId: string, query: TradeMemoryStatsQuery) {
+  const where = memoryWhere(userId, query);
+  const [aggregate, wins, losses] = await Promise.all([
+    prisma.paperTrade.aggregate({ where, _count: { _all: true }, _sum: { realizedPnl: true, fees: true, funding: true, slippageCost: true } }),
+    prisma.paperTrade.count({ where: { ...where, realizedPnl: { gt: 0 } } }),
+    prisma.paperTrade.count({ where: { ...where, realizedPnl: { lt: 0 } } }),
+  ]);
+  return {
+    tradeCount: aggregate._count._all, wins, losses,
+    netPnl: aggregate._sum.realizedPnl?.toString() ?? '0', fees: aggregate._sum.fees?.toString() ?? '0',
+    funding: aggregate._sum.funding?.toString() ?? '0', slippage: aggregate._sum.slippageCost?.toString() ?? '0',
+  };
+}
+
+function memoryWhere(userId: string, query: TradeMemoryStatsQuery): Prisma.PaperTradeWhereInput {
+  return {
+    tradingBot: { userId, type: 'AUTONOMOUS' }, status: { in: [...closedStatuses] },
+    ...(query.botId ? { tradingBotId: query.botId } : {}), ...(query.strategyVersionId ? { strategyVersionId: query.strategyVersionId } : {}),
+    ...(query.symbol ? { symbol: query.symbol } : {}), ...(query.side ? { side: query.side } : {}),
+    ...(query.regime ? { marketRegimeSnapshot: { regime: query.regime } } : {}),
+    ...(query.outcome === 'BEST' ? { realizedPnl: { gt: 0 } } : {}), ...(query.outcome === 'FAILURE' ? { realizedPnl: { lt: 0 } } : {}),
+  };
 }
 
 export async function summarizeTradeMemory(userId: string, query: TradeMemorySummaryQuery) {

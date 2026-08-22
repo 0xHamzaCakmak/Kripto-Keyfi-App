@@ -13,8 +13,19 @@ const parameterSchema = { parameters: {
   quantity: { type: 'string' as const, minLength: 1, maxLength: 40, default: '0.001' },
   leverage: { type: 'integer' as const, min: 5, max: 20, step: 1, default: 5 },
   marginMode: { type: 'enum' as const, values: ['ISOLATED'], default: 'ISOLATED' },
-  stopLossBps: { type: 'number' as const, min: 20, max: 200, step: 10, default: 50 },
-  takeProfitBps: { type: 'number' as const, min: 40, max: 400, step: 20, default: 100 },
+  stopLossBps: { type: 'number' as const, min: 75, max: 300, step: 25, default: 75 },
+  takeProfitBps: { type: 'number' as const, min: 100, max: 600, step: 25, default: 125 },
+  fixedRiskPct: { type: 'number' as const, min: 0.005, max: 0.01, step: 0.0025, default: 0.0075 },
+  atrStopMultiplier: { type: 'number' as const, min: 1, max: 2.5, step: 0.25, default: 1.5 },
+  adaptiveStopMinBps: { type: 'number' as const, min: 75, max: 150, step: 25, default: 75 },
+  adaptiveStopMaxBps: { type: 'number' as const, min: 200, max: 300, step: 25, default: 300 },
+  riskRewardRatio: { type: 'number' as const, min: 1, max: 3, step: 0.25, default: 1.5 },
+  maintenanceMarginBps: { type: 'number' as const, min: 25, max: 100, step: 25, default: 50 },
+  liquidationReserveFraction: { type: 'number' as const, min: 0.1, max: 0.5, step: 0.1, default: 0.2 },
+  newsFilterEnabled: { type: 'boolean' as const, default: false },
+  playbookVersion: { type: 'enum' as const, values: ['TRADING_PLAYBOOK_V1'], default: 'TRADING_PLAYBOOK_V1' },
+  experimentId: { type: 'enum' as const, values: ['ATR_STOP_WALK_FORWARD_V1'], default: 'ATR_STOP_WALK_FORWARD_V1' },
+  experimentVariant: { type: 'enum' as const, values: ['ATR_1_25', 'ATR_1_50', 'ATR_1_75'], default: 'ATR_1_50' },
   paperFeeBps: { type: 'number' as const, min: 0, max: 20, step: 1, default: 4 },
   paperSlippageBps: { type: 'number' as const, min: 0, max: 20, step: 1, default: 2 },
   allocationUsdt: { type: 'number' as const, min: 100, max: 100, default: 100 },
@@ -61,8 +72,11 @@ async function main() {
   }
   let strategyVersion = strategy.versions[0];
   if (!strategyVersion) throw new Error('Bootstrap strategy version is unavailable.');
-  const schema = strategyVersion.parameterSchema as { parameters?: { leverage?: { min?: number; max?: number } } };
-  if (schema.parameters?.leverage?.min !== 5 || schema.parameters.leverage.max !== 20) {
+  const schema = strategyVersion.parameterSchema as { parameters?: { leverage?: { min?: number; max?: number }; fixedRiskPct?: { default?: number }; atrStopMultiplier?: { default?: number }; newsFilterEnabled?: { default?: boolean }; playbookVersion?: { default?: string } } };
+  if (schema.parameters?.leverage?.min !== 5 || schema.parameters.leverage.max !== 20
+    || schema.parameters.fixedRiskPct?.default !== 0.0075 || schema.parameters.atrStopMultiplier?.default !== 1.5
+    || schema.parameters.newsFilterEnabled?.default !== false
+    || schema.parameters.playbookVersion?.default !== 'TRADING_PLAYBOOK_V1') {
     await createStrategyVersion(account.userId, strategy.id, {
       allowedMarkets: ['FUTURES'], supportedTimeframes: ['1m', '5m', '15m'], parameterSchema,
     });
@@ -82,6 +96,8 @@ async function main() {
   let started = 0;
   for (let index = 0; index < POPULATION; index += 1) {
     const ordinal = String(index + 1).padStart(3, '0');
+    const atrMultiplier = [1.25, 1.5, 1.75][index % 3]!;
+    const experimentVariant = ['ATR_1_25', 'ATR_1_50', 'ATR_1_75'][index % 3]!;
     let name = `${BOT_PREFIX} #${ordinal}`;
     let bot = await prisma.tradingBot.findFirst({ where: { userId: account.userId, name, mode: 'PAPER' } });
     if (!bot) {
@@ -107,8 +123,19 @@ async function main() {
           quantity,
           leverage: 5 + (index % 16),
           marginMode: 'ISOLATED',
-          stopLossBps: 50,
-          takeProfitBps: 100,
+          stopLossBps: 75,
+          takeProfitBps: 125,
+          fixedRiskPct: 0.0075,
+          atrStopMultiplier: atrMultiplier,
+          adaptiveStopMinBps: 75,
+          adaptiveStopMaxBps: 300,
+          riskRewardRatio: 1.5,
+          maintenanceMarginBps: 50,
+          liquidationReserveFraction: 0.2,
+          newsFilterEnabled: index % 2 === 0,
+          playbookVersion: 'TRADING_PLAYBOOK_V1',
+          experimentId: 'ATR_STOP_WALK_FORWARD_V1',
+          experimentVariant,
           paperFeeBps: 4,
           paperSlippageBps: 2,
           allocationUsdt: 100,
@@ -139,11 +166,18 @@ async function main() {
     if (bot.intervalSeconds !== 15 || bot.strategyVersionId !== strategyVersion.id || bot.generationId !== generation.id
       || (currentConfiguration as Record<string, unknown>).leverage !== desiredLeverage
       || (currentConfiguration as Record<string, unknown>).positionNotionalPct !== 0.10
+      || (currentConfiguration as Record<string, unknown>).fixedRiskPct !== 0.0075
+      || (currentConfiguration as Record<string, unknown>).atrStopMultiplier !== atrMultiplier
+      || (currentConfiguration as Record<string, unknown>).newsFilterEnabled !== (index % 2 === 0)
       || (currentConfiguration as Record<string, unknown>).pyramidingEnabled !== true) {
       bot = await prisma.tradingBot.update({
         where: { id: bot.id },
         data: { strategyVersionId: strategyVersion.id, generationId: generation.id, intervalSeconds: 15,
-          configuration: { ...currentConfiguration, leverage: desiredLeverage, allocationUsdt: preservedAllocation, positionNotionalPct: 0.10, pyramidingEnabled: true },
+          configuration: { ...currentConfiguration, leverage: desiredLeverage, allocationUsdt: preservedAllocation, positionNotionalPct: 0.10, pyramidingEnabled: true,
+            stopLossBps: 75, takeProfitBps: 125, fixedRiskPct: 0.0075, atrStopMultiplier: atrMultiplier,
+            adaptiveStopMinBps: 75, adaptiveStopMaxBps: 300, riskRewardRatio: 1.5,
+            maintenanceMarginBps: 50, liquidationReserveFraction: 0.2, newsFilterEnabled: index % 2 === 0,
+            playbookVersion: 'TRADING_PLAYBOOK_V1', experimentId: 'ATR_STOP_WALK_FORWARD_V1', experimentVariant },
         },
       });
     }

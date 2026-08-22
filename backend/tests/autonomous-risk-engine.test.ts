@@ -17,7 +17,7 @@ describe('immutable autonomous risk engine integration', () => {
     expect(evaluation).toBeGreaterThan(-1);
     expect(fill).toBeGreaterThan(evaluation);
     expect(storage).toContain('instance.Type == "AUTONOMOUS"');
-    expect(storage).toContain('instance.Mode == "PAPER" && riskApproved');
+    expect(storage).toContain('persistPaperCycle(ctx, tx, instance, decision, decisionID, now, riskApproved)');
   });
 
   it('keeps AI learning modules unable to mutate risk policy or submit orders', () => {

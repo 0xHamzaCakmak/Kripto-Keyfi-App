@@ -65,6 +65,12 @@ func classifyHTTPError(status int, exchangeCode string) error {
 	if status == http.StatusTooManyRequests || exchangeCode == "10006" {
 		return NewError(domain.ErrorRateLimit, "EXCHANGE_RATE_LIMITED", exchangeCode, true, false)
 	}
+	// Binance Demo can briefly return -2013 immediately after accepting a
+	// market order. Reconciliation reads may retry this eventual-consistency
+	// response; execution idempotency still prevents resubmission.
+	if exchangeCode == "-2013" {
+		return NewError(domain.ErrorUnavailable, "EXCHANGE_ORDER_NOT_VISIBLE", exchangeCode, true, true)
+	}
 	return NewError(domain.ErrorRejected, "EXCHANGE_REJECTED", exchangeCode, false, false)
 }
 

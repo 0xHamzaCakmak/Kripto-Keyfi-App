@@ -526,6 +526,13 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 			if side != openTrade.Side {
 				return nil, nil
 			}
+			quantity, hasAllocation, capErr := capPaperPyramidQuantity(quantity, position.NetQuantity, decision.MarkPrice, instance.Configuration)
+			if capErr != nil {
+				return nil, capErr
+			}
+			if !hasAllocation {
+				return nil, nil
+			}
 			execution, applyErr := bot.ApplyPaperExecution(position, side, quantity, decision.MarkPrice, feeBps, slippageBps)
 			if applyErr != nil {
 				return nil, fmt.Errorf("apply paper pyramid execution: %w", applyErr)
@@ -545,7 +552,7 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 			if calcErr != nil {
 				return nil, calcErr
 			}
-			stop, take, protectionErr := configuredProtectionPrices(instance.Configuration, side, execution.AvgEntryPrice)
+			stop, take, protectionErr := plannedProtectionPrices(instance.Configuration, decision.HypotheticalOrder, side, execution.AvgEntryPrice)
 			if protectionErr != nil {
 				return nil, protectionErr
 			}
@@ -630,17 +637,48 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 		return nil, calcErr
 	}
 	tradeID := fmt.Sprintf("paper_%s_%d", instance.ID, decisionID)
+	playbookVersion, _ := decision.HypotheticalOrder["playbookVersion"].(string)
+	experimentID, _ := decision.HypotheticalOrder["experimentId"].(string)
+	experimentVariant, _ := decision.HypotheticalOrder["experimentVariant"].(string)
+	riskPlanVersion, _ := decision.HypotheticalOrder["riskPlanVersion"].(string)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO paper_trades
 (id, tradingBotId, strategyVersionId, symbol, side, status, entryPrice, quantity, leverage, fees, funding, slippageCost, realizedPnl, stopLoss, takeProfit, maxFavorableExcursion, maxAdverseExcursion, decisionSummary, marketContext, openedAt, createdAt, updatedAt)
-VALUES (?, ?, NULLIF(?, ''), ?, ?, 'OPEN', ?, ?, ?, ?, 0, ?, 0, NULLIF(?, ''), NULLIF(?, ''), 0, 0, ?, JSON_OBJECT('partialTakeProfitTaken', false), ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
+VALUES (?, ?, NULLIF(?, ''), ?, ?, 'OPEN', ?, ?, ?, ?, 0, ?, 0, NULLIF(?, ''), NULLIF(?, ''), 0, 0, ?, JSON_OBJECT('partialTakeProfitTaken', false, 'playbookVersion', ?, 'experimentId', ?, 'experimentVariant', ?, 'riskPlanVersion', ?), ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
 		tradeID, instance.ID, instance.StrategyVersionID, instance.Symbol, execution.Side, execution.FillPrice, execution.Quantity,
-		int(leverage), execution.Fee, entrySlippage, stopLoss, takeProfit, decision.Summary, now); err != nil {
+		int(leverage), execution.Fee, entrySlippage, stopLoss, takeProfit, decision.Summary, playbookVersion, experimentID, experimentVariant, riskPlanVersion, now); err != nil {
 		return nil, fmt.Errorf("open autonomous paper trade: %w", err)
 	}
 	if err = savePaperPosition(ctx, tx, instance, position, execution, decision.MarkPrice, now, exists); err != nil {
 		return nil, err
 	}
 	return &execution, nil
+}
+
+func capPaperPyramidQuantity(requestedText, currentQuantityText, markText string, configuration map[string]any) (string, bool, error) {
+	allocation, configured := paperNumber(configuration["allocationUsdt"])
+	if !configured || allocation <= 0 {
+		return requestedText, true, nil
+	}
+	requested, requestedOK := new(big.Rat).SetString(requestedText)
+	current, currentOK := new(big.Rat).SetString(currentQuantityText)
+	mark, markOK := new(big.Rat).SetString(markText)
+	allocationValue, allocationOK := new(big.Rat).SetString(strconv.FormatFloat(allocation, 'f', 8, 64))
+	if !requestedOK || !currentOK || !markOK || !allocationOK || requested.Sign() <= 0 || mark.Sign() <= 0 {
+		return "", false, errors.New("paper allocation quantity is invalid")
+	}
+	current.Abs(current)
+	remainingNotional := new(big.Rat).Sub(allocationValue, new(big.Rat).Mul(current, mark))
+	if remainingNotional.Sign() <= 0 {
+		return "", false, nil
+	}
+	maximumQuantity := new(big.Rat).Quo(remainingNotional, mark)
+	if requested.Cmp(maximumQuantity) > 0 {
+		requested = maximumQuantity
+	}
+	if requested.Sign() <= 0 {
+		return "", false, nil
+	}
+	return requested.FloatString(18), true, nil
 }
 
 func loadPaperPosition(ctx context.Context, tx *sql.Tx, botID string) (bot.PaperPosition, bool, error) {
@@ -707,9 +745,21 @@ VALUES (?, ?, NULLIF(?, ''), ?, ?, 'OPEN', ?, ?, 1, 0, 0, 0, 0, ?, ?, 0, 0, 'Rec
 }
 
 func configuredProtectionPrices(configuration map[string]any, side, entryValue string) (string, string, error) {
+	return plannedProtectionPrices(configuration, nil, side, entryValue)
+}
+
+func plannedProtectionPrices(configuration, plan map[string]any, side, entryValue string) (string, string, error) {
 	entry, entryOK := new(big.Rat).SetString(entryValue)
 	stopBps, stopOK := paperNumber(configuration["stopLossBps"])
 	takeBps, takeOK := paperNumber(configuration["takeProfitBps"])
+	if plan != nil {
+		if planned, ok := paperNumber(plan["stopLossBps"]); ok {
+			stopBps, stopOK = planned, true
+		}
+		if planned, ok := paperNumber(plan["takeProfitBps"]); ok {
+			takeBps, takeOK = planned, true
+		}
+	}
 	if !entryOK || !stopOK || !takeOK || stopBps <= 0 || takeBps <= 0 {
 		return "", "", errors.New("paper protection configuration is invalid")
 	}

@@ -278,6 +278,68 @@ func (r *Reader) GetMarkPrice(ctx context.Context, symbol string) (domain.Decima
 	return domain.Decimal(body.Result.List[0].MarkPrice), nil
 }
 
+func (r *Reader) GetRecentCandles(ctx context.Context, symbol, interval string, limit int) ([]domain.MarketCandle, error) {
+	intervals := map[string]string{"1m": "1", "5m": "5", "15m": "15", "1h": "60", "4h": "240"}
+	bybitInterval, ok := intervals[interval]
+	if !ok || limit < 2 || limit > 1000 {
+		return nil, exchange.NewError(domain.ErrorValidation, "INVALID_CHART_REQUEST", "", false, false)
+	}
+	query := url.Values{"category": {"linear"}, "symbol": {strings.ToUpper(symbol)}, "interval": {bybitInterval}, "limit": {strconv.Itoa(limit)}}
+	var body response[struct {
+		List [][]string `json:"list"`
+	}]
+	if err := r.publicGet(ctx, "/v5/market/kline", query.Encode(), &body); err != nil {
+		return nil, err
+	}
+	if err := assertResponse(body.RetCode); err != nil {
+		return nil, err
+	}
+	if len(body.Result.List) < 2 {
+		return nil, exchange.NewError(domain.ErrorInternal, "INSUFFICIENT_CHART_DATA", "", false, false)
+	}
+	result := make([]domain.MarketCandle, 0, len(body.Result.List))
+	for index := len(body.Result.List) - 1; index >= 0; index-- {
+		item := body.Result.List[index]
+		if len(item) < 6 || item[1] == "" || item[2] == "" || item[3] == "" || item[4] == "" || item[5] == "" {
+			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+		}
+		result = append(result, domain.MarketCandle{Open: domain.Decimal(item[1]), High: domain.Decimal(item[2]), Low: domain.Decimal(item[3]), Close: domain.Decimal(item[4]), Volume: domain.Decimal(item[5])})
+	}
+	return result, nil
+}
+
+func (r *Reader) GetDerivativesContext(ctx context.Context, symbol string) (domain.DerivativesContext, error) {
+	query := url.Values{"category": {"linear"}, "symbol": {strings.ToUpper(symbol)}}
+	var ticker response[struct {
+		List []struct {
+			FundingRate string `json:"fundingRate"`
+		} `json:"list"`
+	}]
+	if err := r.publicGet(ctx, "/v5/market/tickers", query.Encode(), &ticker); err != nil {
+		return domain.DerivativesContext{}, err
+	}
+	if err := assertResponse(ticker.RetCode); err != nil {
+		return domain.DerivativesContext{}, err
+	}
+	query.Set("intervalTime", "5min")
+	query.Set("limit", "2")
+	var interest response[struct {
+		List []struct {
+			OpenInterest string `json:"openInterest"`
+		} `json:"list"`
+	}]
+	if err := r.publicGet(ctx, "/v5/market/open-interest", query.Encode(), &interest); err != nil {
+		return domain.DerivativesContext{}, err
+	}
+	if err := assertResponse(interest.RetCode); err != nil {
+		return domain.DerivativesContext{}, err
+	}
+	if len(ticker.Result.List) != 1 || ticker.Result.List[0].FundingRate == "" || len(interest.Result.List) < 2 || interest.Result.List[0].OpenInterest == "" || interest.Result.List[1].OpenInterest == "" {
+		return domain.DerivativesContext{}, exchange.NewError(domain.ErrorInternal, "INVALID_DERIVATIVES_CONTEXT", "", false, false)
+	}
+	return domain.DerivativesContext{FundingRate: domain.Decimal(ticker.Result.List[0].FundingRate), OpenInterest: domain.Decimal(interest.Result.List[0].OpenInterest), PreviousOpenInterest: domain.Decimal(interest.Result.List[1].OpenInterest)}, nil
+}
+
 func (r *Reader) ConfigurePosition(ctx context.Context, symbol string, leverage int, marginMode domain.MarginMode) error {
 	mode := "REGULAR_MARGIN"
 	if marginMode == domain.MarginIsolated {
@@ -311,7 +373,7 @@ func (r *Reader) PlaceOrder(ctx context.Context, input exchange.PlaceOrderInput)
 	if input.PositionIndex != nil {
 		payload["positionIdx"] = *input.PositionIndex
 	}
-	if (input.Type == domain.OrderStopMarket || input.Type == domain.OrderStopLimit) && input.StopPrice != "" {
+	if (input.Type == domain.OrderStopMarket || input.Type == domain.OrderStopLimit || input.Type == domain.OrderTakeProfitMarket) && input.StopPrice != "" {
 		markPrice, err := r.GetMarkPrice(ctx, input.Symbol)
 		if err != nil {
 			return domain.Order{}, err

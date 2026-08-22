@@ -30,8 +30,8 @@ export function StatusBadge({ children, tone = 'neutral' }: { children: ReactNod
     tone === 'safe' ? 'border-secondary/20 bg-secondary/10 text-secondary' : tone === 'danger' ? 'border-error/20 bg-error/10 text-error' : tone === 'warning' ? 'border-tertiary/20 bg-tertiary/10 text-tertiary' : 'border-outline/20 bg-surface-highest text-on-surface-variant')}>{children}</span>;
 }
 
-export function ModeBadge({ mode }: { mode: 'PAPER' | 'SHADOW' | 'LIVE' | 'UNKNOWN' }) {
-  const meta = mode === 'PAPER' ? ['Simülasyon · gerçek emir yok', 'warning'] : mode === 'SHADOW' ? ['Canlı piyasa · gerçek emir yok', 'neutral'] : mode === 'LIVE' ? ['Gerçek sermaye', 'danger'] : ['Mod bilinmiyor', 'neutral'];
+export function ModeBadge({ mode }: { mode: 'PAPER' | 'SHADOW' | 'DEMO' | 'LIVE' | 'UNKNOWN' }) {
+  const meta = mode === 'PAPER' ? ['Simülasyon · gerçek emir yok', 'warning'] : mode === 'SHADOW' ? ['Canlı piyasa · gerçek emir yok', 'neutral'] : mode === 'DEMO' ? ['Binance TESTNET · test bakiyesi', 'danger'] : mode === 'LIVE' ? ['Gerçek sermaye', 'danger'] : ['Mod bilinmiyor', 'neutral'];
   return <StatusBadge tone={meta[1] as 'neutral' | 'warning' | 'danger'}>{mode} · {meta[0]}</StatusBadge>;
 }
 

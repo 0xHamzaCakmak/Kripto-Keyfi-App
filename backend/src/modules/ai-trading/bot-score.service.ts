@@ -38,13 +38,15 @@ async function loadScoreRows(userId: string) {
     SELECT m.id AS metricId, m.tradingBotId, b.name AS botName, m.strategyVersionId,
       m.score, m.metrics, m.snapshotAt
     FROM bot_metrics m
+    JOIN (
+      SELECT metrics.tradingBotId, MAX(metrics.id) AS metricId
+      FROM bot_metrics metrics
+      JOIN trading_bots owned ON owned.id = metrics.tradingBotId
+      WHERE owned.userId = ${userId} AND owned.type = 'AUTONOMOUS'
+      GROUP BY metrics.tradingBotId
+    ) latest ON latest.metricId = m.id
     JOIN trading_bots b ON b.id = m.tradingBotId
-    WHERE b.userId = ${userId} AND b.type = 'AUTONOMOUS' AND m.score IS NOT NULL
-      AND m.id = (
-        SELECT latest.id FROM bot_metrics latest
-        WHERE latest.tradingBotId = m.tradingBotId
-        ORDER BY latest.snapshotAt DESC, latest.id DESC LIMIT 1
-      )
+    WHERE m.score IS NOT NULL
     ORDER BY m.score DESC, m.snapshotAt DESC, m.tradingBotId ASC
   `);
 }

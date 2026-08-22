@@ -1,0 +1,26 @@
+[Unit]
+Description=KriptoKeyfi Go Trading Engine (PAPER and TESTNET only)
+After=network-online.target mysql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kriptokeyfi
+Group=kriptokeyfi
+WorkingDirectory=/opt/kriptokeyfi/services/trading-engine
+EnvironmentFile=/etc/kriptokeyfi/trading-engine.env
+ExecStart=/opt/kriptokeyfi/services/trading-engine/trading-engine
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/kriptokeyfi
+StandardOutput=append:/var/log/kriptokeyfi/trading-engine.log
+StandardError=append:/var/log/kriptokeyfi/trading-engine-error.log
+
+[Install]
+WantedBy=multi-user.target

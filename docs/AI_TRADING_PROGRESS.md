@@ -634,3 +634,36 @@ Requested prompt filenames were absent. Repository contains `docs/AI_TRADING_IMP
 - Haber analizi: Haber ingest/localization, coin eşleştirme, `marketImpact`, güven ve review verileri mevcut; ancak autonomous Go sinyaline bağlanmış sayısal, zaman-aşımı kontrollü news feature yok. Sonraki çalışma, yalnız güvenilir/yeni haberleri coin bazlı bias/risk skoru olarak üretip giriş boyutunu azaltan veya veto eden fail-closed feature-fusion katmanıdır.
 - Test: PASS — backend 61 dosya/264 test, backend typecheck/build, frontend typecheck ve production build. Manual trade, Grid, exchange adapter ve autonomous risk testleri geçti.
 - Migration: Yok. API key/permission, withdrawal/transfer ve production LIVE davranışı değişmedi.
+# PHASE_CHECKPOINT 20 — PAPER/TESTNET TRADE PLAN PARITY + ADAPTIVE ATR RISK (2026-08-22)
+
+- Tamamlanan kapsam: Autonomous MOMENTUM sinyal planı 15m ATR tabanlı adaptif korumaya geçirildi. Stop mesafesi `1.5 × ATR`, minimum 75 bps (%0,75), maksimum 300 bps (%3); take-profit varsayılan 1,5R olarak hesaplanır.
+- Risk: Varsayılan sabit sermaye riski %0,50'den %0,75'e yükseltildi; fail-closed izin bandı %0,50–%1 olarak korundu. Stop genişlediğinde miktar `riskBudget / entry-stop distance` ile küçülür ve toplam bot allocation notional'ını aşamaz.
+- Likidasyon güvenliği: Stop, kaldıraçtan türetilen yaklaşık likidasyon mesafesinin %20 güvenlik rezervi içinde kalacak şekilde sınırlandırılır. 5x–20x ve isolated margin zorunluluğu değişmedi.
+- Parite: TESTNET executor artık risk motorunun onayladığı quantity değerini `allocation × positionNotionalPct` ile yeniden hesaplamaz; yalnız exchange step size'a aşağı yuvarlar ve kalan bot kotasına sınırlar. PAPER pyramiding de aynı allocation üst sınırını uygular. Yeni ortalama giriş sonrası PAPER/TESTNET koruma fiyatları karar içindeki adaptif bps planından yeniden üretilir.
+- Kanıt: Karar kaydına `riskPlanVersion=ATR_1_5_FIXED_RISK_V1`, ATR, adaptif SL/TP bps, risk yüzdesi ve likidasyon güvenlik mesafesi eklenir.
+- Test: `go test ./...` başarılı; yeni binary `services/trading-engine/trading-engine.next.exe` olarak derlendi. Backend `npm run typecheck` başarılı.
+- Migration: Yok.
+- Güvenlik: Production LIVE açılmadı. Running engine henüz değiştirilmedi; mevcut TESTNET pozisyonları/koruyucu emirleri bu checkpoint sırasında değiştirilmedi.
+- Açık TODO: Yeni engine'i reconciliation ile devreye almak; haber filtresi/A-B, liquidation cluster, RANGE mean-reversion + birleşik strateji, Bybit context, walk-forward ve VPS supervisor/alarm.
+
+### PHASE_CHECKPOINT 21 — Adaptive Strategy v4 + Evidence Pipeline + VPS Operations (2026-08-22)
+
+- Tamamlanan kapsam: PAPER ve Binance TESTNET aynı `ATR_ADAPTIVE_FIXED_RISK_V1` giriş miktarı/SL/TP planını kullanır. Varsayılan işlem başı sermaye riski `%0,75`; izin bandı `%0,50–%1`. Stop `ATR × varyant`, `%0,75–%3` ve kaldıraç/likidasyon güvenlik mesafesiyle sınırlandırılır; stop genişlediğinde miktar küçülür. Varsayılan TP `1,5R`.
+- Strateji cephaneliği: 100 PAPER bot, yaşam döngüsü değiştirilmeden `60 MOMENTUM + 20 RSI/Bollinger RANGE mean-reversion + 20 Playbook Confluence` olarak dağıtıldı. Strateji şeması `TRADING_PLAYBOOK_V1` sürüm 5'e yükseltildi.
+- Haber A/B: Yalnız yayınlanmış, READY, güvenilir/aktif kaynaklı, review gerektirmeyen, son 6 saat ve coin eşleşmeli haberler kullanılır. Haber tek başına giriş üretemez; yüksek güvenli teknik-sinyal çatışmasını yalnız PAPER varyantında veto eder. PAPER botlarda %50 açık/%50 kapalı deney ataması vardır; TESTNET haber etkisi kanıt oluşana kadar kapalıdır.
+- Walk-forward: `ATR_STOP_WALK_FORWARD_V1` için `ATR_1_25`, `ATR_1_50`, `ATR_1_75` varyantları ve kronolojik %70 train/%30 out-of-sample raporu eklendi. Her varyant en az 200 OOS kapanış görmeden uygun sayılmaz; otomatik Champion/TESTNET/LIVE terfisi yoktur. İlk rapor yeni etiketli kapanış olmadığı için boş ve beklenen durumdadır.
+- Piyasa bağlamı: Binance public force-order websocket üzerinden 5 dakikalık liquidation pressure/cluster kanıtı eklendi; yeniden bağlanma ve 10 dakikalık heartbeat penceresi vardır. Bybit V5 public kline, funding ve open-interest reader'ları eklendi; Bybit emir/executor aktivasyonu yapılmadı.
+- Runtime kabulü: Go engine v4 PID `3188`, `:8081` readiness `ready`, startup reconciliation başarılı. Binance TESTNET hesabı CONNECTED/GO; 15/15 DEMO bot RUNNING, error/blocked/missing strategy `0`. Production LIVE `false`.
+- VPS: systemd backend/engine servisleri, restart policy, health-check timer, walk-forward timer, opsiyonel webhook alarmı ve Hostinger kurulum rehberi `deploy/` altında hazırlandı. Bu yerel oturum VPS'e deployment yapmadı.
+- Test: PASS — tam Go `go test ./...`, Go production binary build, backend 61 dosya/264 test, backend typecheck ve production build. Bootstrap ve fleet runtime smoke kontrolleri başarılı.
+- Migration: Yok. Destructive migration, production veri değişikliği, API key/permission, withdrawal/transfer veya production gerçek para emri yok.
+- Açık TODO: Deney başına 200 OOS kapanış kanıtını biriktirmek; yalnız pozitif test expectancy/profit factor gösteren 10–15 botu insan onayıyla seçmek; PAPER haber varyantı pozitif kanıt gösterirse TESTNET haber etkisini ayrı kontrollü rollout ile değerlendirmek; VPS dosyalarını gerçek sunucuda kurup alarm webhook'unu tanımlamak.
+
+### PHASE_CHECKPOINT 22 — Hostinger VPS 7/24 Runbook ve Yayın Katmanı (2026-08-22)
+
+- Tamamlanan kapsam: Hostinger/Ubuntu için DNS, firewall, secret environment, build, migration, systemd, Nginx reverse proxy, HTTPS, health-check, log ve güvenli update adımlarını içeren `deploy/VPS_RUNBOOK_TR.md` eklendi. SPA `/`, backend `/api` ve Socket.IO aynı HTTPS origin altında çalışacak Nginx örneği eklendi.
+- Düzeltme: VPS health-check backend varsayılanı gerçek servis portuyla eşleşecek şekilde `5000` → `4000` yapıldı.
+- Süreklilik: Backend ve Go Engine `Restart=always`; dakika bazlı health timer ve günlük walk-forward timer hazırdır. Gerçek VPS'e kurulum bu yerel oturumda yapılmadı.
+- Başarılı bot akışı: Champion ve walk-forward kanıt kapıları runbook'a kaydedildi. Mevcut 15 TESTNET bot çalışır; yeni Champion'ı açık pozisyon güvenliğiyle zayıf DEMO botunun yerine otomatik alan fleet-rebalance henüz yoktur ve açık TODO olarak bırakıldı. Mevcut geçiş yönetici onaylı TESTNET canary'dir.
+- Test: `git diff --check` PASS. Windows ortamında `sh`/Nginx bulunmadığı için Linux `sh -n` ve `nginx -t` kontrolleri VPS kurulum adımında çalıştırılacaktır.
+- Migration: Yok. Production gerçek-para LIVE, API permission ve withdrawal/transfer davranışı değişmedi.

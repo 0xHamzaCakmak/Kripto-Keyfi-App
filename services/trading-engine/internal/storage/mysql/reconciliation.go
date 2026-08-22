@@ -64,7 +64,12 @@ func (s *AccountStore) ListReconciliationOrders(ctx context.Context, accountID s
 	const query = `SELECT id, userId, exchangeAccountId, clientOrderId, symbol, status, executionAttemptedAt
 FROM trading_orders
 WHERE exchangeAccountId = ? AND executionEngine = 'GO'
-AND status IN ('SUBMITTING', 'OPEN', 'PARTIALLY_FILLED', 'CANCELING', 'CLOSING', 'RECONCILIATION_REQUIRED')
+AND (
+  (status = 'RECONCILIATION_REQUIRED' AND updatedAt <= DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 30 SECOND))
+  OR (status IN ('OPEN', 'PARTIALLY_FILLED') AND updatedAt <= DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 30 SECOND))
+  OR (status = 'SUBMITTING' AND createdAt <= DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 30 SECOND))
+  OR (status IN ('CANCELING', 'CLOSING') AND updatedAt <= DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 30 SECOND))
+)
 ORDER BY createdAt`
 	rows, err := s.database.QueryContext(ctx, query, accountID)
 	if err != nil {

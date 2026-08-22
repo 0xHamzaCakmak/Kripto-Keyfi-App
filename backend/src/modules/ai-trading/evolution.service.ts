@@ -3,6 +3,7 @@ import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import { createMutation } from './mutation.service.js';
 import { createCrossover, schemasAreCompatible } from './crossover.service.js';
+import { cloneFactoryBot } from './bot-factory.service.js';
 import { strategyParameterSchemaSchema, type StrategyParameterSchema } from './strategy-registry.schema.js';
 import { DEFAULT_EVOLUTION_CONFIG, evolutionConfigSchema, type EvolutionConfig, type EvolutionRunsQuery, type RunEvolutionInput } from './evolution.schema.js';
 
@@ -11,7 +12,7 @@ export type EvolutionEvidence = {
 };
 
 export function selectEvolutionPopulation(evidence: EvolutionEvidence[], config: EvolutionConfig) {
-  const protectedBots = evidence.filter((item) => item.lifecycleStatus === 'LIVE' || item.lifecycleStatus === 'LIVE_ELIGIBLE');
+  const protectedBots = evidence.filter((item) => item.lifecycleStatus === 'CHAMPION' || item.lifecycleStatus === 'LIVE' || item.lifecycleStatus === 'LIVE_ELIGIBLE');
   const mutable = evidence.filter((item) => !protectedBots.includes(item));
   const eligible = mutable.filter((item) => item.score !== null && item.totalTrades >= config.minimumTrades)
     .sort((left, right) => right.score! - left.score! || left.botId.localeCompare(right.botId));
@@ -64,6 +65,13 @@ export async function runEvolution(userId: string, input: RunEvolutionInput, ipA
     targetGenerationId = target.id;
     const survivorBots = source.bots.filter((bot) => selection.survivors.some((item) => item.botId === bot.id));
     const children = [];
+    for (let index = 0; index < survivorBots.length; index++) {
+      const survivor = survivorBots[index]!;
+      children.push(await cloneFactoryBot(userId, survivor.id, {
+        name: `g${target.number}-s${index + 1}-${survivor.name}`.slice(0, 100),
+        generationId: target.id, mode: 'PAPER',
+      }, ipAddress));
+    }
     for (let index = 0; index < config.mutationCount; index++) {
       const parent = survivorBots[index % survivorBots.length]!;
       const mutation = deriveMutation(parent.strategyVersion?.parameterSchema, parent.configuration, index);
@@ -94,8 +102,12 @@ export async function runEvolution(userId: string, input: RunEvolutionInput, ipA
         reason: `EvolutionRun ${run.id}: ResearchHypothesis ${hypothesis.id}`, mutations: [mutation], mode: 'PAPER',
       }, ipAddress));
     }
-    await archiveWeakBots(userId, selection.weak, run.id, ipAddress);
+    await retireSourcePopulation(userId, source.bots.map((bot) => bot.id), selection.protectedBots.map((bot) => bot.botId), run.id, ipAddress);
     await prisma.$transaction([
+      prisma.tradingBot.updateMany({
+        where: { id: { in: children.map((child) => child.id) }, userId, type: 'AUTONOMOUS', mode: 'PAPER' },
+        data: { lifecycleStatus: 'PAPER', state: 'STARTING', desiredState: 'RUNNING', intervalSeconds: 15, stateReason: `Evolution ${run.id} PAPER evaluation started.`, schedulerOwner: null, leaseExpiresAt: null, version: { increment: 1 } },
+      }),
       prisma.generation.update({ where: { id: target.id }, data: { status: 'EVALUATING', metadata: { evolutionRunId: run.id, sourceGenerationId: source.id, mode: 'PAPER', liveEnabled: false, childIds: children.map((child) => child.id) } } }),
       prisma.generation.update({ where: { id: source.id }, data: { status: 'COMPLETED', completedAt: new Date() } }),
       prisma.evolutionRun.update({ where: { id: run.id }, data: { status: 'COMPLETED', targetGenerationId: target.id, completedAt: new Date(), selection: { survivorIds: selection.survivors.map((item) => item.botId), archivedIds: selection.weak.map((item) => item.botId), childIds: children.map((child) => child.id), liveChanged: false } } }),
@@ -115,11 +127,13 @@ export async function listEvolutionRuns(userId: string, query: EvolutionRunsQuer
   return prisma.evolutionRun.findMany({ where: { createdById: userId, ...(query.status ? { status: query.status } : {}) }, include: { sourceGeneration: { select: { number: true, status: true } }, targetGeneration: { select: { number: true, status: true } } }, orderBy: { createdAt: 'desc' }, take: query.limit });
 }
 
-async function archiveWeakBots(userId: string, weak: EvolutionEvidence[], runId: string, ipAddress?: string) {
-  await prisma.$transaction(weak.flatMap((item) => [
-    prisma.tradingBot.updateMany({ where: { id: item.botId, userId, type: 'AUTONOMOUS', lifecycleStatus: { notIn: ['CHAMPION', 'LIVE_ELIGIBLE', 'LIVE'] } }, data: { lifecycleStatus: item.lifecycleStatus === 'DRAFT' || item.lifecycleStatus === 'CANDIDATE' || item.lifecycleStatus === 'TESTING' ? 'REJECTED' : 'ARCHIVED', version: { increment: 1 } } }),
-    prisma.tradingAuditLog.create({ data: { userId, action: 'AI_EVOLUTION_BOT_REJECTED', entityType: 'TRADING_BOT', entityId: item.botId, metadata: { evolutionRunId: runId, score: item.score, totalTrades: item.totalTrades, liveChanged: false }, ...(ipAddress ? { ipAddress } : {}) } }),
-  ]));
+async function retireSourcePopulation(userId: string, sourceIds: string[], protectedIds: string[], runId: string, ipAddress?: string) {
+  const retired = sourceIds.filter((id) => !protectedIds.includes(id));
+  if (retired.length === 0) return;
+  await prisma.$transaction([
+    prisma.tradingBot.updateMany({ where: { id: { in: retired }, userId, type: 'AUTONOMOUS' }, data: { lifecycleStatus: 'ARCHIVED', state: 'STOPPED', desiredState: 'STOPPED', schedulerOwner: null, leaseExpiresAt: null, stateReason: `Retired after Evolution ${runId}.`, version: { increment: 1 } } }),
+    prisma.tradingAuditLog.create({ data: { userId, action: 'AI_EVOLUTION_SOURCE_RETIRED', entityType: 'EVOLUTION_RUN', entityId: runId, metadata: { retiredBotIds: retired, protectedBotIds: protectedIds, liveChanged: false }, ...(ipAddress ? { ipAddress } : {}) } }),
+  ]);
 }
 
 function deriveMutation(schemaValue: Prisma.JsonValue | undefined, configuration: Prisma.JsonValue, index: number, keyword?: string) {
@@ -136,7 +150,8 @@ function deriveMutation(schemaValue: Prisma.JsonValue | undefined, configuration
   return { parameter: name, operation: 'SET' as const, value: definition.type === 'integer' ? Math.round(value) : Number(value.toFixed(12)) };
 }
 function numericParameters(schema: StrategyParameterSchema, keyword?: string) {
-  const values = Object.entries(schema.parameters).filter((entry): entry is [string, Extract<StrategyParameterSchema['parameters'][string], { type: 'number' | 'integer' }>] => entry[1].type === 'number' || entry[1].type === 'integer');
+  const values = Object.entries(schema.parameters).filter((entry): entry is [string, Extract<StrategyParameterSchema['parameters'][string], { type: 'number' | 'integer' }>] =>
+    (entry[1].type === 'number' || entry[1].type === 'integer') && entry[1].min < entry[1].max);
   return keyword ? [...values.filter(([name]) => name.toLowerCase().includes(keyword)), ...values.filter(([name]) => !name.toLowerCase().includes(keyword))] : values;
 }
 function suggestedKeyword(value: Prisma.JsonValue) {

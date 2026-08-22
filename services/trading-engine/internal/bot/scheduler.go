@@ -9,6 +9,7 @@ import (
 
 type Instance struct {
 	ID, UserID, ExchangeAccountID, Name, Type, Mode, Symbol string
+	StrategyVersionID                                       string
 	StrategyFamily                                          string
 	State                                                   State
 	DesiredState                                            string
@@ -40,11 +41,20 @@ type AIObservation struct {
 }
 
 type Store interface {
-	AcquireNext(context.Context, string, time.Time, time.Time) (*Instance, error)
+	AcquireNext(context.Context, string, time.Time, time.Time, bool) (*Instance, error)
 	CheckGate(context.Context, Instance) (Gate, error)
 	UpdateState(context.Context, *Instance, string, State, string, time.Time) error
-	CompleteCycle(context.Context, Instance, string, Decision, time.Time, time.Time) error
+	CompleteCycle(context.Context, Instance, string, Decision, time.Time, time.Time) (CycleResult, error)
 	Release(context.Context, string, string) error
+}
+
+type CycleResult struct {
+	DecisionID   int64
+	RiskApproved bool
+}
+
+type TestnetExecutor interface {
+	Execute(context.Context, Instance, Decision, int64, time.Time) error
 }
 
 type Runner interface {
@@ -55,10 +65,15 @@ type SignalObserver interface {
 	Observe(context.Context, Instance, Decision) (*AIObservation, error)
 }
 
+type PerformanceRefresher interface {
+	RefreshBotPerformance(context.Context, string) error
+}
+
 type Scheduler struct {
 	store                   Store
 	runner                  Runner
 	observer                SignalObserver
+	testnetExecutor         TestnetExecutor
 	owner                   string
 	logger                  *slog.Logger
 	interval, leaseDuration time.Duration
@@ -71,6 +86,7 @@ type Options struct {
 	Owner                   string
 	Logger                  *slog.Logger
 	Observer                SignalObserver
+	TestnetExecutor         TestnetExecutor
 	Interval, LeaseDuration time.Duration
 }
 
@@ -80,6 +96,11 @@ func NewScheduler(options Options) *Scheduler {
 		interval = time.Second
 	}
 	leaseDuration := options.LeaseDuration
+	if leaseDuration <= 0 {
+		// A cycle can include multiple TESTNET HTTP reads. Keep ownership long
+		// enough that another worker cannot reclaim the bot mid-analysis.
+		leaseDuration = 30 * time.Second
+	}
 	if leaseDuration <= interval {
 		leaseDuration = 3 * interval
 	}
@@ -87,7 +108,7 @@ func NewScheduler(options Options) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Scheduler{store: options.Store, runner: options.Runner, observer: options.Observer, owner: options.Owner, logger: logger, interval: interval, leaseDuration: leaseDuration, now: time.Now}
+	return &Scheduler{store: options.Store, runner: options.Runner, observer: options.Observer, testnetExecutor: options.TestnetExecutor, owner: options.Owner, logger: logger, interval: interval, leaseDuration: leaseDuration, now: time.Now}
 }
 
 func (s *Scheduler) Run(ctx context.Context) {
@@ -105,7 +126,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 
 func (s *Scheduler) runOnce(ctx context.Context) {
 	now := s.now().UTC()
-	instance, err := s.store.AcquireNext(ctx, s.owner, now, now.Add(s.leaseDuration))
+	instance, err := s.store.AcquireNext(ctx, s.owner, now, now.Add(s.leaseDuration), s.testnetExecutor != nil)
 	if err != nil {
 		s.logger.Warn("bot lease acquisition failed", "error", err)
 		return
@@ -113,7 +134,7 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	if instance == nil {
 		return
 	}
-	if instance.Mode != "SHADOW" && instance.Mode != "PAPER" {
+	if instance.Mode != "SHADOW" && instance.Mode != "PAPER" && !(instance.Mode == "DEMO" && s.testnetExecutor != nil) {
 		s.transition(ctx, instance, StateError, "Demo runner shadow kabulü tamamlanmadan kilitli.", now)
 		return
 	}
@@ -142,6 +163,7 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	strategyStartedAt := time.Now()
 	decision, err := s.runner.Tick(ctx, *instance)
 	if err != nil {
+		s.logger.Warn("bot runner cycle failed", "bot_id", instance.ID, "symbol", instance.Symbol, "mode", instance.Mode, "error", err)
 		s.transition(ctx, instance, StateError, "Runner çevrimi başarısız.", now)
 		return
 	}
@@ -157,8 +179,22 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 			decision.AIObservation = observation
 		}
 	}
-	if err := s.store.CompleteCycle(ctx, *instance, s.owner, decision, now, now.Add(s.leaseDuration)); err != nil {
+	cycle, err := s.store.CompleteCycle(ctx, *instance, s.owner, decision, now, now.Add(s.leaseDuration))
+	if err != nil {
 		s.logger.Warn("bot cycle persistence failed", "bot_id", instance.ID, "error", err)
+		return
+	}
+	if instance.Mode == "PAPER" {
+		if refresher, ok := s.store.(PerformanceRefresher); ok {
+			if err := refresher.RefreshBotPerformance(ctx, instance.ID); err != nil {
+				s.logger.Warn("paper performance refresh failed", "bot_id", instance.ID, "error", err)
+			}
+		}
+	}
+	if instance.Mode == "DEMO" && cycle.RiskApproved && decision.HypotheticalOrder != nil {
+		if err := s.testnetExecutor.Execute(ctx, *instance, decision, cycle.DecisionID, now); err != nil {
+			s.logger.Error("autonomous testnet execution failed", "bot_id", instance.ID, "decision_id", cycle.DecisionID, "error", err)
+		}
 	}
 }
 

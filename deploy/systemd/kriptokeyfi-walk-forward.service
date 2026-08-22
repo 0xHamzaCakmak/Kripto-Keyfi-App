@@ -1,0 +1,13 @@
+[Unit]
+Description=KriptoKeyfi PAPER walk-forward evidence evaluation
+After=kriptokeyfi-backend.service
+
+[Service]
+Type=oneshot
+User=kriptokeyfi
+Group=kriptokeyfi
+WorkingDirectory=/opt/kriptokeyfi/backend
+EnvironmentFile=/etc/kriptokeyfi/backend.env
+ExecStart=/usr/bin/npm run evaluate:ai-walk-forward
+NoNewPrivileges=true
+PrivateTmp=true

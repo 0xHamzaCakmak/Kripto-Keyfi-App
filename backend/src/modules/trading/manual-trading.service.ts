@@ -114,7 +114,7 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
   try {
     const exchangeOrder = goExecution
       ? (await executeTradingEngineOrder(preview.exchangeAccount, preview, stored)).order
-      : await submitTypeScriptOrder(adapter!, preview, clientOrderId);
+      : await submitTypeScriptOrder(adapter!, preview as typeof preview & { type: 'MARKET' | 'LIMIT' | 'STOP_MARKET' | 'STOP_LIMIT' }, clientOrderId);
     const status = exchangeOrder.status === 'FILLED' ? 'FILLED' : 'OPEN';
     const completed = await prisma.$transaction(async (tx) => {
       const order = goExecution

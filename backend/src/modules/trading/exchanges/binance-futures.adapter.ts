@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import type {
   CredentialValidationResult, ExchangeAdapter, ExchangeBalance, ExchangeCredentials, ExchangeOrder,
   ExchangePosition, ExchangeSymbol, MarginMode, PlaceOrderInput,
+  ExchangeTrade,
 } from './exchange-adapter.js';
 import { ExchangeAdapterError } from './exchange-adapter.js';
 import { getJson, requestJson } from './http.js';
@@ -25,6 +26,10 @@ type BinanceOrder = {
 type BinancePosition = {
   symbol?: string; positionAmt?: string; entryPrice?: string; markPrice?: string; unRealizedProfit?: string;
   liquidationPrice?: string; leverage?: string; marginType?: string; positionSide?: string;
+};
+type BinanceUserTrade = {
+  id?: number; orderId?: number; symbol?: string; side?: string; price?: string; qty?: string; quoteQty?: string;
+  realizedPnl?: string; commission?: string; commissionAsset?: string; maker?: boolean; time?: number;
 };
 
 export class BinanceFuturesAdapter implements ExchangeAdapter {
@@ -104,15 +109,15 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
     const marginResult = await this.signedRequest(
       '/fapi/v1/marginType', 'POST',
       { symbol, marginType: marginMode === 'CROSS' ? 'CROSSED' : 'ISOLATED' },
-      [-4046, -4048],
+      [-4046, -4047, -4048, -4067],
     ) as { code?: number };
-    if (marginResult.code === -4048) {
+    if (marginResult.code !== undefined && [-4047, -4048, -4067].includes(marginResult.code)) {
       const openPosition = (await this.getPositions()).find((position) => position.symbol === symbol);
       if (!openPosition || openPosition.marginMode !== marginMode) {
         throw new ExchangeAdapterError(
           'MARGIN_MODE_CHANGE_BLOCKED',
           'Açık pozisyon varken margin modu değiştirilemez. Mevcut pozisyonu kapatın veya mevcut margin modunu seçin.',
-          -4048,
+          marginResult.code,
         );
       }
     }
@@ -155,6 +160,23 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
         ...(isNonZero(position.liquidationPrice) ? { liquidationPrice: position.liquidationPrice } : {}),
         unrealizedPnl: position.unRealizedProfit ?? '0', leverage: position.leverage,
         marginMode: position.marginType === 'isolated' ? 'ISOLATED' as const : 'CROSS' as const,
+      }];
+    });
+  }
+
+  async getUserTrades(symbol: string, limit = 1000): Promise<ExchangeTrade[]> {
+    const body = await this.signedRequest('/fapi/v1/userTrades', 'GET', {
+      symbol, limit: Math.max(1, Math.min(1000, Math.trunc(limit))).toString(),
+    });
+    return (Array.isArray(body) ? body as BinanceUserTrade[] : []).flatMap((trade) => {
+      if (trade.id === undefined || trade.orderId === undefined || !trade.symbol || trade.time === undefined) return [];
+      return [{
+        tradeId: trade.id.toString(), exchangeOrderId: trade.orderId.toString(), symbol: trade.symbol,
+        side: trade.side === 'SELL' ? 'SELL' as const : 'BUY' as const,
+        price: trade.price ?? '0', quantity: trade.qty ?? '0', quoteQuantity: trade.quoteQty ?? '0',
+        realizedPnl: trade.realizedPnl ?? '0', commission: trade.commission ?? '0',
+        commissionAsset: trade.commissionAsset ?? 'UNKNOWN', maker: trade.maker === true,
+        occurredAt: new Date(trade.time).toISOString(),
       }];
     });
   }

@@ -20,6 +20,13 @@ type fixedRunner struct{}
 
 type fixedObserver struct{ err error }
 
+func TestSchedulerDefaultLeaseCoversRemoteMarketReads(t *testing.T) {
+	scheduler := NewScheduler(Options{Interval: 250 * time.Millisecond})
+	if scheduler.leaseDuration < 30*time.Second {
+		t.Fatalf("default lease is too short for remote market reads: %s", scheduler.leaseDuration)
+	}
+}
+
 func (o fixedObserver) Observe(context.Context, Instance, Decision) (*AIObservation, error) {
 	if o.err != nil {
 		return nil, o.err
@@ -31,7 +38,7 @@ func (fixedRunner) Tick(context.Context, Instance) (Decision, error) {
 	return Decision{Kind: "BUY", Summary: "Test kararı.", MarkPrice: "1", HypotheticalOrder: map[string]any{"submittedToExchange": false}}, nil
 }
 
-func (s *schedulerStore) AcquireNext(context.Context, string, time.Time, time.Time) (*Instance, error) {
+func (s *schedulerStore) AcquireNext(context.Context, string, time.Time, time.Time, bool) (*Instance, error) {
 	instance := s.instance
 	s.instance = nil
 	return instance, nil
@@ -42,9 +49,9 @@ func (s *schedulerStore) UpdateState(_ context.Context, instance *Instance, _ st
 	instance.State = state
 	return nil
 }
-func (s *schedulerStore) CompleteCycle(_ context.Context, _ Instance, _ string, decision Decision, _, _ time.Time) error {
+func (s *schedulerStore) CompleteCycle(_ context.Context, _ Instance, _ string, decision Decision, _, _ time.Time) (CycleResult, error) {
 	s.decision = decision
-	return nil
+	return CycleResult{DecisionID: 1, RiskApproved: true}, nil
 }
 func (*schedulerStore) Release(context.Context, string, string) error { return nil }
 

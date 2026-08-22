@@ -30,7 +30,7 @@ export type ExchangeSymbol = {
 };
 
 export type OrderSide = 'BUY' | 'SELL';
-export type OrderType = 'MARKET' | 'LIMIT' | 'STOP_MARKET' | 'STOP_LIMIT';
+export type OrderType = 'MARKET' | 'LIMIT' | 'STOP_MARKET' | 'TAKE_PROFIT_MARKET' | 'STOP_LIMIT';
 export type MarginMode = 'ISOLATED' | 'CROSS';
 
 export type PlaceOrderInput = {
@@ -74,6 +74,21 @@ export type ExchangePosition = {
   positionIndex?: number;
 };
 
+export type ExchangeTrade = {
+  tradeId: string;
+  exchangeOrderId: string;
+  symbol: string;
+  side: OrderSide;
+  price: string;
+  quantity: string;
+  quoteQuantity: string;
+  realizedPnl: string;
+  commission: string;
+  commissionAsset: string;
+  maker: boolean;
+  occurredAt: string;
+};
+
 export interface ExchangeAdapter {
   validateCredentials(): Promise<CredentialValidationResult>;
   getBalances(): Promise<ExchangeBalance[]>;
@@ -84,6 +99,7 @@ export interface ExchangeAdapter {
   getOpenOrders(): Promise<ExchangeOrder[]>;
   cancelOrder(symbol: string, exchangeOrderId: string): Promise<ExchangeOrder>;
   getPositions(): Promise<ExchangePosition[]>;
+  getUserTrades?(symbol: string, limit?: number): Promise<ExchangeTrade[]>;
 }
 
 export class ExchangeAdapterError extends Error {

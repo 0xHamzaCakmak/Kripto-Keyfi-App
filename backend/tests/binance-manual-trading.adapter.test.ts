@@ -72,4 +72,47 @@ describe('Binance manual trading adapter', () => {
     await adapter.configurePosition('BTCUSDT', 2, 'CROSS');
     expect(fetchMock.mock.calls[0]?.[0].toString()).toContain('marginType=CROSSED');
   });
+
+  it('updates leverage when open protective orders block a no-op margin request', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+      if (url.includes('/fapi/v1/marginType?')) {
+        return Response.json({ code: -4067, msg: 'Position side cannot be changed if there exists open orders.' }, { status: 400 });
+      }
+      if (url.includes('/fapi/v2/positionRisk?')) {
+        return Response.json([{
+          symbol: 'BTCUSDT', positionAmt: '0.01', entryPrice: '60000', markPrice: '60100',
+          unRealizedProfit: '1', leverage: '1', marginType: 'isolated', positionSide: 'BOTH',
+        }]);
+      }
+      if (url.includes('/fapi/v1/leverage?')) return Response.json({ leverage: 5 });
+      return Response.json({}, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = new BinanceFuturesAdapter({ apiKey: 'demo-key', apiSecret: 'demo-secret' });
+
+    await expect(adapter.configurePosition('BTCUSDT', 5, 'ISOLATED')).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls.some(([url]) => url.toString().includes('/fapi/v1/leverage?'))).toBe(true);
+  });
+
+  it('loads actual Binance TESTNET Futures fills for bot history', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+      if (url.includes('/fapi/v1/userTrades?')) return Response.json([{
+        id: 77, orderId: 91, symbol: 'BTCUSDT', side: 'SELL', price: '61000', qty: '0.002',
+        quoteQty: '122', realizedPnl: '2', commission: '0.0488', commissionAsset: 'USDT', maker: false,
+        time: 1700000000000,
+      }]);
+      return Response.json({}, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = new BinanceFuturesAdapter({ apiKey: 'demo-key', apiSecret: 'demo-secret' });
+
+    await expect(adapter.getUserTrades('BTCUSDT')).resolves.toEqual([{
+      tradeId: '77', exchangeOrderId: '91', symbol: 'BTCUSDT', side: 'SELL', price: '61000', quantity: '0.002',
+      quoteQuantity: '122', realizedPnl: '2', commission: '0.0488', commissionAsset: 'USDT', maker: false,
+      occurredAt: '2023-11-14T22:13:20.000Z',
+    }]);
+    expect(fetchMock.mock.calls[0]?.[0].toString()).toContain('symbol=BTCUSDT');
+  });
 });

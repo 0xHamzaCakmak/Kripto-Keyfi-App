@@ -76,6 +76,7 @@ enum TradingOrderType {
   LIMIT
   STOP_MARKET
   STOP_LIMIT
+  TAKE_PROFIT_MARKET
 }
 
 enum TradingMarginMode {
@@ -1618,7 +1619,7 @@ model TradingOrder {
   id                   String                 @id @default(cuid())
   userId               String
   exchangeAccountId    String
-  previewId            String                 @unique
+  previewId            String?                @unique
   idempotencyKey       String                 @db.VarChar(80)
   clientOrderId        String                 @unique @db.VarChar(36)
   exchangeOrderId      String?                @db.VarChar(100)
@@ -1646,7 +1647,7 @@ model TradingOrder {
 
   user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   exchangeAccount ExchangeAccount    @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
-  preview         ManualOrderPreview @relation(fields: [previewId], references: [id], onDelete: Restrict)
+  preview         ManualOrderPreview? @relation(fields: [previewId], references: [id], onDelete: Restrict)
   riskEvents      TradingRiskEvent[]
 
   @@unique([userId, idempotencyKey])

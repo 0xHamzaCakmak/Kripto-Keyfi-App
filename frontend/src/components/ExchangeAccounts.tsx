@@ -29,6 +29,7 @@ export default function ExchangeAccounts() {
   const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [showForm, setShowForm] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<ExchangeAccount | null>(null);
   const [showSecret, setShowSecret] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -83,13 +84,21 @@ export default function ExchangeAccounts() {
     setSubmitting(true); setFormError(''); setError(''); setNotice('');
     const isBinance = form.provider === 'BINANCE';
     try {
-      await api.post('/admin/trading/exchange-accounts', {
-        ...form,
-        environment: isBinance ? 'TESTNET' : 'DEMO',
-        accountType: isBinance ? 'USDT_M' : 'UNIFIED',
-      });
-      setForm(emptyForm); setShowForm(false); setShowSecret(false);
-      setNotice('Borsa hesabı doğrulandı ve şifreli olarak kaydedildi.');
+      if (editingAccount) {
+        await api.patch(`/admin/trading/exchange-accounts/${editingAccount.id}/credentials`, {
+          apiKey: form.apiKey,
+          apiSecret: form.apiSecret,
+        });
+      } else {
+        await api.post('/admin/trading/exchange-accounts', {
+          ...form,
+          environment: isBinance ? 'TESTNET' : 'DEMO',
+          accountType: isBinance ? 'USDT_M' : 'UNIFIED',
+        });
+      }
+      const rotated = editingAccount !== null;
+      setForm(emptyForm); setShowForm(false); setShowSecret(false); setEditingAccount(null);
+      setNotice(rotated ? 'API bilgileri doğrulandı ve mevcut hesap üzerinde yeniden şifrelendi.' : 'Borsa hesabı doğrulandı ve şifreli olarak kaydedildi.');
       await loadAccounts();
     } catch (reason) {
       setFormError(getApiErrorMessage(reason, 'Borsa hesabı doğrulanamadı.'));
@@ -125,7 +134,7 @@ export default function ExchangeAccounts() {
   return <div className="space-y-6">
     <header className="flex flex-col gap-5 rounded-[30px] border border-outline/10 bg-surface p-6 md:flex-row md:items-center md:justify-between md:p-8">
       <div><p className="text-xs font-black uppercase tracking-[0.22em] text-primary">Trading Bot / Faz 2</p><h1 className="mt-2 font-headline text-3xl font-black text-white md:text-4xl">Borsa Hesapları</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-on-surface-variant">Binance Demo Spot/Main ve USDⓈ-M Futures bakiyelerini tek bağlantıda izleyin. Anahtarlar sunucuda AES-256-GCM ile şifrelenir.</p></div>
-      <button type="button" onClick={() => { setFormError(''); setShowForm(true); }} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-black text-background"><Plus size={18}/> Hesap ekle</button>
+      <button type="button" onClick={() => { setEditingAccount(null); setForm(emptyForm); setFormError(''); setShowForm(true); }} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-black text-background"><Plus size={18}/> Hesap ekle</button>
     </header>
 
     <div className="flex items-start gap-3 rounded-2xl border border-tertiary/20 bg-tertiary/5 p-4 text-sm text-on-surface-variant"><ShieldCheck className="mt-0.5 shrink-0 text-tertiary" size={20}/><p>Yalnızca testnet/demo anahtarları kabul edilir. Para çekme yetkisini kapalı tutun ve mümkünse sunucu IP adresini whitelist’e ekleyin.</p></div>
@@ -143,21 +152,21 @@ export default function ExchangeAccounts() {
         {account.withdrawalEnabled && <div className="mt-4 flex gap-2 rounded-xl bg-error/10 p-3 text-xs text-error"><AlertTriangle size={16}/> Para çekme/transfer yetkisi açık görünüyor; anahtarı değiştirmeniz önerilir.</div>}
         {!account.canTrade && <div className="mt-4 flex items-start gap-2 rounded-xl border border-error/20 bg-error/10 p-3 text-xs leading-5 text-error"><AlertTriangle className="mt-0.5 shrink-0" size={16}/><span>Hesap okunabiliyor ancak Futures işlem yetkisi kapalı. Manuel emir için Binance Demo API anahtarında işlem/Futures yetkisini açın, ardından aşağıdaki “Bağlantıyı test et” butonuyla yetki durumunu yenileyin.</span></div>}
         <BalanceGroups provider={account.provider} balances={balances[account.id] ?? []} loading={balanceLoading[account.id] === true} error={balanceErrors[account.id]}/>
-        <div className="mt-5 flex flex-wrap gap-2"><Action onClick={() => void testConnection(account)} disabled={workingId === account.id} icon={RefreshCw} label="Bağlantıyı test et"/><button type="button" onClick={() => void remove(account)} disabled={workingId === account.id} className="ml-auto inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-error hover:bg-error/10 disabled:opacity-50"><Trash2 size={15}/> Sil</button></div>
+        <div className="mt-5 flex flex-wrap gap-2"><Action onClick={() => void testConnection(account)} disabled={workingId === account.id} icon={RefreshCw} label="Bağlantıyı test et"/><Action onClick={() => { setEditingAccount(account); setForm({ name: account.name, provider: account.provider, apiKey: '', apiSecret: '', description: account.description ?? '' }); setFormError(''); setShowForm(true); }} disabled={workingId === account.id} icon={KeyRound} label="API bilgilerini yenile"/><button type="button" onClick={() => void remove(account)} disabled={workingId === account.id} className="ml-auto inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-error hover:bg-error/10 disabled:opacity-50"><Trash2 size={15}/> Sil</button></div>
       </article>
     ))}</div>}
 
     {showForm && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-background/85 p-4 backdrop-blur-sm"><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[30px] border border-outline/10 bg-surface p-5 shadow-2xl md:p-7">
-      <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-wider text-primary">Güvenli bağlantı</p><h2 className="mt-2 font-headline text-2xl font-black text-white">Borsa hesabı ekle</h2></div><button type="button" onClick={() => setShowForm(false)} className="rounded-xl p-2 text-on-surface-variant hover:bg-surface-high"><X size={20}/></button></div>
+      <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase tracking-wider text-primary">Güvenli bağlantı</p><h2 className="mt-2 font-headline text-2xl font-black text-white">{editingAccount ? 'API bilgilerini yenile' : 'Borsa hesabı ekle'}</h2></div><button type="button" onClick={() => { setShowForm(false); setEditingAccount(null); }} className="rounded-xl p-2 text-on-surface-variant hover:bg-surface-high"><X size={20}/></button></div>
       <form onSubmit={(event) => void submit(event)} className="mt-6 space-y-4">
         {formError && <div role="alert" className="flex items-start gap-3 rounded-xl border border-error/20 bg-error/10 p-4 text-sm leading-6 text-error"><AlertTriangle className="mt-0.5 shrink-0" size={18}/><span>{formError}</span></div>}
-        <Field label="Hesap adı"><input required minLength={2} maxLength={80} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="input" placeholder="Binance Test Hesabım"/></Field>
-        <Field label="Borsa ve ortam"><select value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value as Provider })} className="input"><option value="BINANCE">Binance Demo · Spot/Main + USDⓈ-M Futures</option><option value="BYBIT">Bybit V5 · Demo · Unified</option></select></Field>
+        {!editingAccount && <Field label="Hesap adı"><input required minLength={2} maxLength={80} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} className="input" placeholder="Binance Test Hesabım"/></Field>}
+        {!editingAccount && <Field label="Borsa ve ortam"><select value={form.provider} onChange={(event) => setForm({ ...form, provider: event.target.value as Provider })} className="input"><option value="BINANCE">Binance Demo · Spot/Main + USDⓈ-M Futures</option><option value="BYBIT">Bybit V5 · Demo · Unified</option></select></Field>}
         <Field label="API Key"><div className="relative"><KeyRound className="absolute left-3 top-3.5 text-outline" size={17}/><input required minLength={8} maxLength={256} autoComplete="off" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} className="input pl-10"/></div></Field>
         <Field label="API Secret"><div className="relative"><input required minLength={8} maxLength={256} type={showSecret ? 'text' : 'password'} autoComplete="new-password" value={form.apiSecret} onChange={(event) => setForm({ ...form, apiSecret: event.target.value })} className="input pr-11"/><button type="button" onClick={() => setShowSecret((value) => !value)} className="absolute right-3 top-3 text-outline" aria-label={showSecret ? 'Secret gizle' : 'Secret göster'}>{showSecret ? <EyeOff size={18}/> : <Eye size={18}/>}</button></div></Field>
-        <Field label="Açıklama (isteğe bağlı)"><textarea maxLength={500} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className="input min-h-24 resize-y" placeholder="Bu hesabın kullanım amacı"/></Field>
+        {!editingAccount && <Field label="Açıklama (isteğe bağlı)"><textarea maxLength={500} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className="input min-h-24 resize-y" placeholder="Bu hesabın kullanım amacı"/></Field>}
         <div className="flex items-start gap-3 rounded-xl bg-primary/5 p-3 text-xs leading-5 text-on-surface-variant"><AlertTriangle className="mt-0.5 shrink-0 text-primary" size={16}/> Kaydetmeden önce salt-okunur hesap isteğiyle anahtar doğrulanır. Binance için demo.binance.com hesabında oluşturulan anahtarı kullanın. Secret daha sonra arayüzde gösterilmez.</div>
-        <button type="submit" disabled={submitting} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-black text-background disabled:opacity-60">{submitting ? <LoaderCircle className="animate-spin" size={18}/> : <ShieldCheck size={18}/>} Doğrula ve şifreli kaydet</button>
+        <button type="submit" disabled={submitting} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3.5 text-sm font-black text-background disabled:opacity-60">{submitting ? <LoaderCircle className="animate-spin" size={18}/> : <ShieldCheck size={18}/>} {editingAccount ? 'Doğrula ve yeniden şifrele' : 'Doğrula ve şifreli kaydet'}</button>
       </form>
     </div></div>}
   </div>;

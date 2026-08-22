@@ -10,15 +10,35 @@ import (
 )
 
 type MarketSnapshot struct {
-	Candles     map[string][]domain.MarketCandle
-	Derivatives domain.DerivativesContext
+	Candles                map[string][]domain.MarketCandle
+	Derivatives            domain.DerivativesContext
+	DerivativesUnavailable bool
+	News                   NewsContext
+	Liquidations           LiquidationContext
+}
+
+type LiquidationContext struct {
+	Available                           bool
+	Source, ObservedAt                  string
+	WindowSeconds, EventCount           int
+	BuyNotional, SellNotional, Pressure float64
+	Cluster                             bool
+}
+
+type NewsContext struct {
+	Available  bool
+	Bias       string
+	Score      float64
+	Confidence float64
+	ArticleIDs []string
+	ObservedAt string
 }
 
 type MarketAnalysis struct {
-	Regime, Direction, HigherDirection, MiddleDirection, LowerDirection string
-	HigherTimeframeAligned, DerivativesAligned, OIConfirmed             bool
-	ConfirmedTimeframes                                                 int
-	RegimeConfidence, ADX1H, ADX4H, ATRExpansion, FundingRate           float64
+	Regime, Direction, HigherDirection, MiddleDirection, LowerDirection  string
+	HigherTimeframeAligned, DerivativesAligned, OIConfirmed              bool
+	ConfirmedTimeframes                                                  int
+	RegimeConfidence, ADX1H, ADX4H, ATRExpansion, ATRBps15m, FundingRate float64
 }
 
 func AnalyzeMarket(snapshot MarketSnapshot, side string) (MarketAnalysis, error) {
@@ -54,6 +74,10 @@ func AnalyzeMarket(snapshot MarketSnapshot, side string) (MarketAnalysis, error)
 	if err != nil {
 		return MarketAnalysis{}, err
 	}
+	atrBps15m, err := normalizedATRBps(snapshot.Candles["15m"], 14)
+	if err != nil {
+		return MarketAnalysis{}, err
+	}
 	regime := "UNCERTAIN"
 	confidence := math.Min(adx1h, adx4h) / 50
 	if atrExpansion > 1.5 {
@@ -85,7 +109,23 @@ func AnalyzeMarket(snapshot MarketSnapshot, side string) (MarketAnalysis, error)
 	return MarketAnalysis{Regime: regime, Direction: direction, HigherDirection: higher, MiddleDirection: middle, LowerDirection: lower,
 		HigherTimeframeAligned: higher == direction, ConfirmedTimeframes: confirmed, DerivativesAligned: derivativesAligned,
 		OIConfirmed: derivativesAligned && oi > previousOI, RegimeConfidence: math.Max(0, math.Min(1, confidence)),
-		ADX1H: adx1h, ADX4H: adx4h, ATRExpansion: atrExpansion, FundingRate: funding}, nil
+		ADX1H: adx1h, ADX4H: adx4h, ATRExpansion: atrExpansion, ATRBps15m: atrBps15m, FundingRate: funding}, nil
+}
+
+func normalizedATRBps(candles []domain.MarketCandle, period int) (float64, error) {
+	trueRangeValues, err := trueRanges(candles)
+	if err != nil || len(trueRangeValues) < period {
+		return 0, errors.New("ATR history is incomplete")
+	}
+	lastClose, ok := parseMarketDecimal(candles[len(candles)-1].Close)
+	if !ok || lastClose <= 0 {
+		return 0, errors.New("ATR normalization close is invalid")
+	}
+	total := 0.0
+	for _, value := range trueRangeValues[len(trueRangeValues)-period:] {
+		total += value
+	}
+	return total / float64(period) / lastClose * 10_000, nil
 }
 
 func emaDirection(values []float64, fastPeriod, slowPeriod int) string {

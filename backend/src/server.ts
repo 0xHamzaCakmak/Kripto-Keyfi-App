@@ -11,6 +11,9 @@ import { scheduleNewsSync } from './modules/news/news.worker.js';
 import { ensureDefaultNewsCatalog } from './modules/news/news.catalog.js';
 import { scheduleYoutubeSync } from './modules/videos/youtube.worker.js';
 import { scheduleYoutubeMetricsCollection } from './modules/videos/youtube-metrics.worker.js';
+import { scheduleAutonomousEvolution } from './modules/ai-trading/evolution.worker.js';
+import { scheduleAutonomousUniverse } from './modules/ai-trading/universe.worker.js';
+import { scheduleAutonomousLearning } from './modules/ai-trading/learning.worker.js';
 
 let server: Server | undefined;
 let shuttingDown = false;
@@ -18,6 +21,9 @@ let stopNewsSync: (() => void) | undefined;
 let stopYoutubeSync: (() => void) | undefined;
 let stopYoutubeMetricsCollection: (() => void) | undefined;
 let stopChatReconciliation: (() => void) | undefined;
+let stopAutonomousEvolution: (() => void) | undefined;
+let stopAutonomousUniverse: (() => void) | undefined;
+let stopAutonomousLearning: (() => void) | undefined;
 let chatIo: ChatIo | undefined;
 
 async function shutdown(signal: string) {
@@ -27,6 +33,9 @@ async function shutdown(signal: string) {
   stopYoutubeSync?.();
   stopYoutubeMetricsCollection?.();
   stopChatReconciliation?.();
+  stopAutonomousEvolution?.();
+  stopAutonomousUniverse?.();
+  stopAutonomousLearning?.();
   chatIo?.close();
   logger.info({ signal }, 'graceful shutdown started');
   server?.close((error) => {
@@ -58,6 +67,9 @@ async function start() {
     if (env.YOUTUBE_SYNC_ENABLED) stopYoutubeSync = scheduleYoutubeSync();
     if (env.YOUTUBE_METRICS_ENABLED) stopYoutubeMetricsCollection = scheduleYoutubeMetricsCollection();
     stopChatReconciliation = scheduleChatReconciliation();
+    if (env.AI_TRADING_EVOLUTION_ENABLED) stopAutonomousEvolution = scheduleAutonomousEvolution();
+    if (env.AI_TRADING_UNIVERSE_ENABLED) stopAutonomousUniverse = scheduleAutonomousUniverse();
+    if (env.AI_TRADING_LEARNING_ENABLED) stopAutonomousLearning = scheduleAutonomousLearning();
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : undefined;
     logger.fatal({ err: error instanceof Error ? { name: error.name, message: error.message, ...(code ? { code } : {}) } : error }, code === 'EADDRINUSE' ? `Port ${env.PORT} is already in use; stop the existing backend process before starting another.` : 'application startup failed');

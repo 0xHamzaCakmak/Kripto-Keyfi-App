@@ -10,12 +10,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/autonomousexecution"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/bot"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/config"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/credential"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/execution"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/httpapi"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/liquidation"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/realtime"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/reconciliation"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/shadow"
@@ -108,6 +110,12 @@ func main() {
 			// Strategy evaluation reads real public market prices through a read-only interface.
 			// Account/order/reconciliation paths remain pinned to demo endpoints above.
 			runner := bot.NewStrategyRunner(store, &http.Client{Timeout: 8 * time.Second}, exchange.DemoEndpoints(), exchange.PublicMarketEndpoints())
+			if cfg.LiquidationStream {
+				collector := liquidation.New(cfg.LiquidationURL, logger)
+				runner.SetLiquidationReader(collector)
+				go collector.Run(signalContext)
+				logger.Info("public Binance liquidation stream enabled", "production_live", false)
+			}
 			var observer bot.SignalObserver
 			if cfg.AIObserver {
 				createdObserver, observerErr := bot.NewHTTPObserver(bot.HTTPObserverOptions{
@@ -122,9 +130,22 @@ func main() {
 				observer = createdObserver
 				logger.Info("comparison-only AI observer enabled", "provider", cfg.AIProvider, "model", cfg.AIModel, "prompt_version", cfg.AIPromptVersion)
 			}
-			scheduler := bot.NewScheduler(bot.Options{Store: store, Runner: runner, Observer: observer, Owner: owner, Logger: logger})
-			go scheduler.Run(signalContext)
-			logger.Info("shadow/paper bot scheduler enabled", "owner", owner)
+			var testnetExecutor bot.TestnetExecutor
+			if cfg.AutonomousTestnet {
+				if executionService == nil {
+					logger.Error("autonomous TESTNET execution requested without cutover executor")
+					stop()
+					return
+				}
+				testnetExecutor = autonomousexecution.New(store, executionService)
+				logger.Warn("autonomous Binance TESTNET execution enabled", "production_live", false)
+			}
+			for workerIndex := 0; workerIndex < cfg.BotWorkers; workerIndex++ {
+				workerOwner := fmt.Sprintf("%s:w%d", owner, workerIndex+1)
+				scheduler := bot.NewScheduler(bot.Options{Store: store, Runner: runner, Observer: observer, TestnetExecutor: testnetExecutor, Owner: workerOwner, Logger: logger, Interval: cfg.BotPollInterval})
+				go scheduler.Run(signalContext)
+			}
+			logger.Info("shadow/paper bot scheduler enabled", "owner", owner, "workers", cfg.BotWorkers, "poll_interval", cfg.BotPollInterval)
 		}
 		if cfg.Realtime && store != nil {
 			manager := realtime.New(realtime.Options{

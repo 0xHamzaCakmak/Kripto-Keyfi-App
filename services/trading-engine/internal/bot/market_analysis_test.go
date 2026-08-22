@@ -13,6 +13,9 @@ func TestAnalyzeMarketRequiresAlignedTrendAndTwoTimeframes(t *testing.T) {
 	if err != nil || analysis.Regime != "TREND" || !analysis.HigherTimeframeAligned || analysis.ConfirmedTimeframes != 3 || !analysis.DerivativesAligned || !analysis.OIConfirmed {
 		t.Fatalf("unexpected trend analysis: %#v err=%v", analysis, err)
 	}
+	if analysis.ATRBps15m <= 0 {
+		t.Fatalf("normalized ATR evidence is missing: %#v", analysis)
+	}
 	short, err := AnalyzeMarket(snapshot, "SELL")
 	if err != nil || short.HigherTimeframeAligned || short.ConfirmedTimeframes != 0 {
 		t.Fatalf("counter-trend entry was aligned: %#v err=%v", short, err)

@@ -1,0 +1,25 @@
+[Unit]
+Description=KriptoKeyfi Node Backend
+After=network-online.target mysql.service kriptokeyfi-trading-engine.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kriptokeyfi
+Group=kriptokeyfi
+WorkingDirectory=/opt/kriptokeyfi/backend
+EnvironmentFile=/etc/kriptokeyfi/backend.env
+ExecStart=/usr/bin/node /opt/kriptokeyfi/backend/dist/server.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/kriptokeyfi
+StandardOutput=append:/var/log/kriptokeyfi/backend.log
+StandardError=append:/var/log/kriptokeyfi/backend-error.log
+
+[Install]
+WantedBy=multi-user.target

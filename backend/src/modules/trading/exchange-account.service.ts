@@ -3,7 +3,7 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { apiKeyHint, decryptCredential, encryptCredential } from '../../security/credential-vault.js';
 import { ApiError } from '../../utils/api-error.js';
-import type { CreateExchangeAccountInput, UpdateExecutionEngineInput } from './exchange-account.schema.js';
+import type { CreateExchangeAccountInput, UpdateExchangeCredentialsInput, UpdateExecutionEngineInput } from './exchange-account.schema.js';
 import { createExchangeAdapter } from './exchanges/exchange-adapter.factory.js';
 import { ExchangeAdapterError } from './exchanges/exchange-adapter.js';
 import type { CredentialValidationResult } from './exchanges/exchange-adapter.js';
@@ -68,6 +68,37 @@ export async function testExchangeAccount(userId: string, id: string) {
     where: { id },
     data: { connectionStatus: 'CONNECTED', canTrade: validation.canTrade, withdrawalEnabled: validation.withdrawalEnabled, lastConnectedAt: new Date() },
     select: publicSelect,
+  });
+}
+
+export async function updateExchangeCredentials(userId: string, id: string, input: UpdateExchangeCredentialsInput) {
+  const account = await ownedAccount(userId, id);
+  const validation = await exchangeCall(() => createExchangeAdapter(account.provider, {
+    apiKey: input.apiKey,
+    apiSecret: input.apiSecret,
+    ...(input.passphrase ? { passphrase: input.passphrase } : {}),
+  }).validateCredentials());
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.exchangeAccount.update({
+      where: { id },
+      data: {
+        apiKeyEncrypted: encryptCredential(input.apiKey),
+        apiSecretEncrypted: encryptCredential(input.apiSecret),
+        passphraseEncrypted: input.passphrase ? encryptCredential(input.passphrase) : null,
+        apiKeyHint: apiKeyHint(input.apiKey),
+        connectionStatus: 'CONNECTED',
+        canTrade: validation.canTrade,
+        withdrawalEnabled: validation.withdrawalEnabled,
+        lastConnectedAt: new Date(),
+      },
+      select: publicSelect,
+    });
+    await tx.tradingAuditLog.create({ data: {
+      userId, exchangeAccountId: id, action: 'EXCHANGE_CREDENTIALS_ROTATED',
+      entityType: 'EXCHANGE_ACCOUNT', entityId: id,
+      metadata: { provider: account.provider, environment: account.environment, apiKeyHint: updated.apiKeyHint },
+    } });
+    return updated;
   });
 }
 

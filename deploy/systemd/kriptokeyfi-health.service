@@ -1,0 +1,12 @@
+[Unit]
+Description=KriptoKeyfi health and stale-decision alarm
+After=kriptokeyfi-backend.service kriptokeyfi-trading-engine.service
+
+[Service]
+Type=oneshot
+User=kriptokeyfi
+Group=kriptokeyfi
+EnvironmentFile=-/etc/kriptokeyfi/alerts.env
+ExecStart=/opt/kriptokeyfi/deploy/health-check.sh
+NoNewPrivileges=true
+PrivateTmp=true

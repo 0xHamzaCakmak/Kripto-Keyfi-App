@@ -185,7 +185,16 @@ func (w *Worker) reconcile(ctx context.Context, resolved account.Resolved, reaso
 				return reader.GetOrderByClientID(callContext, local.Symbol, local.ClientOrderID)
 			})
 			if err != nil {
-				return fmt.Errorf("query order %s by client id: %w", local.ID, err)
+				var normalized *exchange.Error
+				if errors.As(err, &normalized) && normalized.Normalized.Code == "EXCHANGE_ORDER_NOT_VISIBLE" {
+					// The store only exposes orders after a 30-second settlement
+					// window. If neither Binance regular nor Algo history contains
+					// the idempotent client ID then, finalize the local attempt as
+					// failed instead of degrading the whole account.
+					exchangeOrder = domain.Order{ClientOrderID: local.ClientOrderID, Symbol: local.Symbol, Status: domain.OrderFailed}
+				} else {
+					return fmt.Errorf("query order %s by client id: %w", local.ID, err)
+				}
 			}
 		}
 		if exchangeOrder.Status == domain.OrderReconciliationRequired {

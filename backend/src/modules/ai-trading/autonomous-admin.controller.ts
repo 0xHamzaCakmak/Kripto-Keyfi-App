@@ -2,15 +2,16 @@ import type { Request, Response } from 'express';
 import type { z } from 'zod';
 import { success } from '../../utils/response.js';
 import {
-  archiveCandidate, configureNonCriticalBotSettings, getArenaStatus, getAutonomousOverview,
+  activateAutonomousTestnet, archiveCandidate, configureBotCapital, configureNonCriticalBotSettings, getArenaStatus, getAutonomousOverview,
   listGenerations, listLiveEligibilityStatus, pauseAutonomousBot, resumeAutonomousBot, reviewPromotion, startAutonomousBot, triggerPaperGeneration,
 } from './autonomous-admin.service.js';
 import type {
-  autonomousGenerationQuerySchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema,
-  promotionReviewSchema, triggerPaperGenerationSchema,
+  autonomousGenerationQuerySchema, botCapitalSchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema,
+  promotionReviewSchema, testnetActivationSchema, triggerPaperGenerationSchema,
 } from './autonomous-admin.schema.js';
 import { autonomousDTO } from './autonomous-admin.service.js';
 import { createFactoryBot } from './bot-factory.service.js';
+import { getTestnetBotOperation, listTestnetBotOperations } from './testnet-operations.service.js';
 
 export async function autonomousOverview(req: Request, res: Response) { return success(res, await getAutonomousOverview(req.user!.id)); }
 export async function arenaStatus(req: Request, res: Response) { return success(res, await getArenaStatus(req.user!.id)); }
@@ -36,3 +37,11 @@ export async function promotion(req: Request, res: Response) {
 export async function settings(req: Request, res: Response) {
   return success(res, await configureNonCriticalBotSettings(req.user!.id, req.params.id as string, req.body as z.infer<typeof nonCriticalBotSettingsSchema>, req.ip));
 }
+export async function capital(req: Request, res: Response) {
+  return success(res, await configureBotCapital(req.user!.id, req.params.id as string, req.body as z.infer<typeof botCapitalSchema>, req.ip));
+}
+export async function activateTestnet(req: Request, res: Response) {
+  return success(res, await activateAutonomousTestnet(req.user!.id, req.params.id as string, req.body as z.infer<typeof testnetActivationSchema>, req.ip));
+}
+export async function testnetOperations(req: Request, res: Response) { return success(res, await listTestnetBotOperations(req.user!.id)); }
+export async function testnetBotOperation(req: Request, res: Response) { return success(res, await getTestnetBotOperation(req.user!.id, req.params.id as string)); }
