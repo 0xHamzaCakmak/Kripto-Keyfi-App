@@ -20,7 +20,8 @@ func evaluateAutonomousPaperRisk(ctx context.Context, tx *sql.Tx, instance bot.I
 	intent := autonomousrisk.Intent{Mode: instance.Mode, Side: textValue(order["side"]), MarginMode: textValue(order["marginMode"]), EntryPrice: decision.MarkPrice,
 		StopLoss: textValue(order["stopLoss"]), TakeProfit: textValue(order["takeProfit"]), Quantity: textValue(order["quantity"]), Leverage: intValue(order["leverage"]),
 		EntryEvidence: entrycheck.Input{Regime: textValue(order["marketRegime"]), HigherTimeframeAligned: boolValue(order["higherTimeframeAligned"]),
-			ConfirmedTimeframes: intValue(order["confirmedTimeframes"]), DerivativesAligned: boolValue(order["derivativesAligned"])}}
+			ConfirmedTimeframes: intValue(order["confirmedTimeframes"]), DerivativesAligned: boolValue(order["derivativesAligned"])},
+		ExecutionMode: instance.Mode, ObservationApproved: boolValue(instance.Configuration["observationApproved"])}
 	// DEMO is the persisted marker for explicitly activated TESTNET execution.
 	// The immutable autonomous policy is evaluated with PAPER semantics first;
 	// the central exchange-aware risk engine evaluates the resulting order again.
@@ -67,6 +68,17 @@ FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, instance.ID
 			lastFill = sql.NullTime{}
 		}
 	}
+	// A bot's configured allocation is an immutable upper bound for its
+	// aggregate same-symbol position, not only for each individual order.
+	if allocation, ok := numericBotConfiguration(instance.Configuration["allocationUsdt"]); ok && allocation > 0 {
+		configured := ratText(new(big.Rat).SetFloat64(allocation))
+		if current, currentOK := decimalRat(policy.MaxPositionSize); currentOK {
+			limit, _ := decimalRat(configured)
+			if current.Cmp(limit) > 0 {
+				policy.MaxPositionSize = configured
+			}
+		}
+	}
 
 	quantity, qok := decimalRat(intent.Quantity)
 	entry, eok := decimalRat(intent.EntryPrice)
@@ -84,7 +96,16 @@ FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, instance.ID
 COALESCE(CAST(SUM(ABS(pos.netQuantity) * pos.lastMarkPrice) AS CHAR), '0'),
 COALESCE(CAST(SUM(CASE WHEN pos.symbol = ? THEN ABS(pos.netQuantity) * pos.lastMarkPrice ELSE 0 END) AS CHAR), '0')
 FROM trading_bot_paper_positions pos JOIN trading_bots b ON b.id = pos.tradingBotId
-WHERE b.exchangeAccountId = ? AND pos.netQuantity <> 0`
+WHERE b.id = ? AND pos.netQuantity <> 0`
+	exposureScope := instance.ID
+	if instance.Mode == "DEMO" {
+		exposureQuery = `SELECT COUNT(*),
+COALESCE(CAST(SUM(ABS(pos.netQuantity) * pos.lastMarkPrice) AS CHAR), '0'),
+COALESCE(CAST(SUM(CASE WHEN pos.symbol = ? THEN ABS(pos.netQuantity) * pos.lastMarkPrice ELSE 0 END) AS CHAR), '0')
+FROM trading_bot_paper_positions pos JOIN trading_bots b ON b.id = pos.tradingBotId
+WHERE b.exchangeAccountId = ? AND b.mode = 'DEMO' AND pos.netQuantity <> 0`
+		exposureScope = instance.ExchangeAccountID
+	}
 	if instance.Mode == "SHADOW" {
 		exposureQuery = `SELECT COUNT(*),
 COALESCE(CAST(SUM(ABS(latest.netQuantity) * latest.markPrice) AS CHAR), '0'),
@@ -92,8 +113,9 @@ COALESCE(CAST(SUM(CASE WHEN b.symbol = ? THEN ABS(latest.netQuantity) * latest.m
 FROM shadow_trades latest JOIN trading_bots b ON b.id = latest.tradingBotId
 WHERE b.exchangeAccountId = ? AND b.mode = 'SHADOW' AND latest.netQuantity <> 0
 AND latest.id = (SELECT current.id FROM shadow_trades current WHERE current.tradingBotId = latest.tradingBotId ORDER BY current.id DESC LIMIT 1)`
+		exposureScope = instance.ExchangeAccountID
 	}
-	if err := tx.QueryRowContext(ctx, exposureQuery, instance.Symbol, instance.ExchangeAccountID).Scan(&openPositions, &totalExposure, &symbolExposure); err != nil {
+	if err := tx.QueryRowContext(ctx, exposureQuery, instance.Symbol, exposureScope).Scan(&openPositions, &totalExposure, &symbolExposure); err != nil {
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous exposure: %w", err)
 	}
 	projectedTotal, ok := addDecimal(totalExposure, ratText(orderNotional))
@@ -119,14 +141,23 @@ AND latest.id = (SELECT current.id FROM shadow_trades current WHERE current.trad
 	lossQuery := `SELECT
 COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0'),
 COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0')
-FROM trading_bot_paper_fills f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchangeAccountId = ?`
+FROM trading_bot_paper_fills f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.id = ?`
+	lossScope := instance.ID
+	if instance.Mode == "DEMO" {
+		lossQuery = `SELECT
+COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0'),
+COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0')
+FROM trading_bot_paper_fills f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchangeAccountId = ? AND b.mode = 'DEMO'`
+		lossScope = instance.ExchangeAccountID
+	}
 	if instance.Mode == "SHADOW" {
 		lossQuery = `SELECT
 COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0'),
 COALESCE(CAST(SUM(CASE WHEN f.occurredAt >= ? AND f.realizedPnl < 0 THEN -f.realizedPnl ELSE 0 END) AS CHAR), '0')
 FROM shadow_trades f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchangeAccountId = ? AND b.mode = 'SHADOW'`
+		lossScope = instance.ExchangeAccountID
 	}
-	if err := tx.QueryRowContext(ctx, lossQuery, dayStart, weekStart, instance.ExchangeAccountID).Scan(&dailyLoss, &weeklyLoss); err != nil {
+	if err := tx.QueryRowContext(ctx, lossQuery, dayStart, weekStart, lossScope).Scan(&dailyLoss, &weeklyLoss); err != nil {
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous losses: %w", err)
 	}
 	drawdown := "0"
@@ -134,9 +165,9 @@ FROM shadow_trades f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchan
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous drawdown: %w", err)
 	}
-	consecutive, err := consecutivePaperLosses(ctx, tx, instance.ID, policy.MaxConsecutiveLosses)
+	consecutive, consecutiveAt, err := consecutivePaperLosses(ctx, tx, instance.ID, policy.MaxConsecutiveLosses)
 	if instance.Mode == "SHADOW" {
-		consecutive, err = consecutiveShadowLosses(ctx, tx, instance.ID, policy.MaxConsecutiveLosses)
+		consecutive, consecutiveAt, err = consecutiveShadowLosses(ctx, tx, instance.ID, policy.MaxConsecutiveLosses)
 	}
 	if err != nil {
 		return autonomousrisk.Decision{}, err
@@ -151,7 +182,7 @@ FROM shadow_trades f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchan
 	}
 	snapshot := autonomousrisk.Snapshot{Equity: equity, DailyLoss: dailyLoss, WeeklyLoss: weeklyLoss, DrawdownPct: drawdown,
 		ProjectedTotalExposure: projectedTotal, ProjectedSymbolExposure: projectedSymbol, ProjectedPositionSize: projectedPosition,
-		OpenPositions: openPositions, ConsecutiveLosses: consecutive, Now: now}
+		OpenPositions: openPositions, ConsecutiveLosses: consecutive, ConsecutiveLossAt: consecutiveAt, Now: now}
 	if lastFill.Valid {
 		snapshot.LastFillAt = &lastFill.Time
 	}
@@ -163,53 +194,65 @@ FROM shadow_trades f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchan
 	return result, nil
 }
 
-func consecutiveShadowLosses(ctx context.Context, tx *sql.Tx, botID string, limit int) (int, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT CAST(realizedPnl - fee AS CHAR) FROM shadow_trades
+func consecutiveShadowLosses(ctx context.Context, tx *sql.Tx, botID string, limit int) (int, *time.Time, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT CAST(realizedPnl - fee AS CHAR), occurredAt FROM shadow_trades
 WHERE tradingBotId = ? AND action = 'WOULD_CLOSE' AND realizedPnl - fee <> 0 ORDER BY occurredAt DESC, id DESC LIMIT ?`, botID, limit)
 	if err != nil {
-		return 0, fmt.Errorf("load consecutive autonomous shadow losses: %w", err)
+		return 0, nil, fmt.Errorf("load consecutive autonomous shadow losses: %w", err)
 	}
 	defer rows.Close()
 	count := 0
+	var latest *time.Time
 	for rows.Next() {
 		var value string
-		if err := rows.Scan(&value); err != nil {
-			return 0, err
+		var occurredAt time.Time
+		if err := rows.Scan(&value, &occurredAt); err != nil {
+			return 0, nil, err
 		}
 		number, ok := decimalRat(value)
 		if !ok {
-			return 0, errors.New("invalid autonomous shadow loss")
+			return 0, nil, errors.New("invalid autonomous shadow loss")
 		}
 		if number.Sign() >= 0 {
 			break
 		}
+		if latest == nil {
+			value := occurredAt
+			latest = &value
+		}
 		count++
 	}
-	return count, rows.Err()
+	return count, latest, rows.Err()
 }
 
-func consecutivePaperLosses(ctx context.Context, tx *sql.Tx, botID string, limit int) (int, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT CAST(realizedPnl AS CHAR) FROM trading_bot_paper_fills WHERE tradingBotId = ? AND realizedPnl <> 0 ORDER BY occurredAt DESC, id DESC LIMIT ?`, botID, limit)
+func consecutivePaperLosses(ctx context.Context, tx *sql.Tx, botID string, limit int) (int, *time.Time, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT CAST(realizedPnl AS CHAR), occurredAt FROM trading_bot_paper_fills WHERE tradingBotId = ? AND realizedPnl <> 0 ORDER BY occurredAt DESC, id DESC LIMIT ?`, botID, limit)
 	if err != nil {
-		return 0, fmt.Errorf("load consecutive autonomous losses: %w", err)
+		return 0, nil, fmt.Errorf("load consecutive autonomous losses: %w", err)
 	}
 	defer rows.Close()
 	count := 0
+	var latest *time.Time
 	for rows.Next() {
 		var value string
-		if err := rows.Scan(&value); err != nil {
-			return 0, err
+		var occurredAt time.Time
+		if err := rows.Scan(&value, &occurredAt); err != nil {
+			return 0, nil, err
 		}
 		number, ok := decimalRat(value)
 		if !ok {
-			return 0, errors.New("invalid autonomous loss")
+			return 0, nil, errors.New("invalid autonomous loss")
 		}
 		if number.Sign() >= 0 {
 			break
 		}
+		if latest == nil {
+			value := occurredAt
+			latest = &value
+		}
 		count++
 	}
-	return count, rows.Err()
+	return count, latest, rows.Err()
 }
 
 func recordAutonomousRiskDecision(ctx context.Context, tx *sql.Tx, instance bot.Instance, decision autonomousrisk.Decision, now time.Time) error {

@@ -37,7 +37,6 @@ func TestEnforcesLossDrawdownCooldownAndConsecutiveLock(t *testing.T) {
 		{"daily", "RISK_MAX_DAILY_LOSS", func(s *Snapshot) { s.DailyLoss = "51" }},
 		{"weekly", "RISK_MAX_WEEKLY_LOSS", func(s *Snapshot) { s.WeeklyLoss = "101" }},
 		{"drawdown", "RISK_MAX_DRAWDOWN", func(s *Snapshot) { s.DrawdownPct = "0.21" }},
-		{"consecutive", "RISK_CONSECUTIVE_LOSS_LOCK", func(s *Snapshot) { s.ConsecutiveLosses = 3 }},
 		{"cooldown", "RISK_COOLDOWN_ACTIVE", func(s *Snapshot) { value := now.Add(-30 * time.Second); s.LastFillAt = &value }},
 	}
 	for _, test := range tests {
@@ -48,6 +47,29 @@ func TestEnforcesLossDrawdownCooldownAndConsecutiveLock(t *testing.T) {
 				t.Fatalf("expected %s: %#v", test.code, decision)
 			}
 		})
+	}
+}
+
+func TestConsecutiveLossesKeepPaperLearningAndLockTestnet(t *testing.T) {
+	lossAt := now.Add(-time.Hour)
+	snapshot := safeSnapshot()
+	snapshot.ConsecutiveLosses = 3
+	snapshot.ConsecutiveLossAt = &lossAt
+	if decision := Evaluate(safePolicy(), safeIntent(), snapshot); !decision.Approved || decision.Metrics["observationMode"] != true {
+		t.Fatalf("paper observation should continue: %#v", decision)
+	}
+	testnet := safeIntent()
+	testnet.ExecutionMode = "DEMO"
+	if decision := Evaluate(safePolicy(), testnet, snapshot); decision.Code != "RISK_OBSERVATION_MODE_ACTIVE" {
+		t.Fatalf("testnet was not paused: %#v", decision)
+	}
+	snapshot.Now = now.Add(25 * time.Hour)
+	if decision := Evaluate(safePolicy(), testnet, snapshot); decision.Code != "RISK_OBSERVATION_APPROVAL_REQUIRED" {
+		t.Fatalf("testnet did not require approval: %#v", decision)
+	}
+	testnet.ObservationApproved = true
+	if decision := Evaluate(safePolicy(), testnet, snapshot); !decision.Approved {
+		t.Fatalf("approved observation exit was rejected: %#v", decision)
 	}
 }
 
@@ -93,7 +115,7 @@ func safePolicy() Policy {
 	return Policy{Enabled: true, MaxRiskPerTradePct: "0.01", MaxDailyLossPct: "0.05", MaxWeeklyLossPct: "0.10", MaxDrawdownPct: "0.20", MaxLeverage: 5, MaxConcurrentPositions: 5, MaxTotalExposure: "500", MaxSymbolExposure: "200", MaxPositionSize: "100", MinRiskReward: "1.5", StopLossRequired: true, MarginModePolicy: "ISOLATED_ONLY", CooldownSeconds: 60, MaxConsecutiveLosses: 3}
 }
 func safeIntent() Intent {
-	return Intent{Mode: "PAPER", Side: "BUY", MarginMode: "ISOLATED", EntryPrice: "100", StopLoss: "99", TakeProfit: "102", Quantity: "1", Leverage: 2, OpensNewPosition: true,
+	return Intent{Mode: "PAPER", ExecutionMode: "PAPER", Side: "BUY", MarginMode: "ISOLATED", EntryPrice: "100", StopLoss: "99", TakeProfit: "102", Quantity: "1", Leverage: 2, OpensNewPosition: true,
 		EntryEvidence: entrycheck.Input{Regime: "TREND", HigherTimeframeAligned: true, ConfirmedTimeframes: 2, DerivativesAligned: true}}
 }
 func safeSnapshot() Snapshot {

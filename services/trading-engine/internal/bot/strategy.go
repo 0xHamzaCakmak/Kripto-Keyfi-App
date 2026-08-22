@@ -5,10 +5,17 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
+
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
 )
 
 func EvaluateStrategy(instance Instance, markPrice, referencePrice string) (Decision, error) {
+	return EvaluateStrategyWithChart(instance, markPrice, referencePrice, nil)
+}
+
+func EvaluateStrategyWithChart(instance Instance, markPrice, referencePrice string, closes []domain.Decimal) (Decision, error) {
 	if _, ok := decimalRat(markPrice); !ok {
 		return Decision{}, errors.New("mark price is invalid")
 	}
@@ -18,17 +25,23 @@ func EvaluateStrategy(instance Instance, markPrice, referencePrice string) (Deci
 	case "GRID":
 		return evaluateGrid(instance, markPrice, referencePrice)
 	case "AUTONOMOUS":
-		return evaluateAutonomousStrategy(instance, markPrice, referencePrice)
+		return evaluateAutonomousStrategy(instance, markPrice, referencePrice, closes)
 	default:
 		return Decision{}, fmt.Errorf("unsupported bot strategy %q", instance.Type)
 	}
 }
 
-func evaluateAutonomousStrategy(instance Instance, markPrice, referencePrice string) (Decision, error) {
+func evaluateAutonomousStrategy(instance Instance, markPrice, referencePrice string, closes []domain.Decimal) (Decision, error) {
 	if strings.ToUpper(strings.TrimSpace(instance.StrategyFamily)) != "MOMENTUM" {
 		return Decision{}, fmt.Errorf("unsupported autonomous strategy family %q", instance.StrategyFamily)
 	}
-	result, err := evaluateScalping(instance, markPrice, referencePrice)
+	var result Decision
+	var err error
+	if len(closes) >= 21 {
+		result, err = evaluateChartMomentum(instance, markPrice, closes)
+	} else {
+		result, err = evaluateScalping(instance, markPrice, referencePrice)
+	}
 	if err != nil || result.HypotheticalOrder == nil {
 		return result, err
 	}
@@ -46,7 +59,65 @@ func evaluateAutonomousStrategy(instance Instance, markPrice, referencePrice str
 	result.HypotheticalOrder["stopLoss"] = stopLoss
 	result.HypotheticalOrder["takeProfit"] = takeProfit
 	result.HypotheticalOrder["strategyFamily"] = "MOMENTUM"
+	allocation, allocationOK := numberConfig(instance.Configuration, "allocationUsdt")
+	fixedRiskPct := 0.005
+	if configured, ok := numberConfig(instance.Configuration, "fixedRiskPct"); ok {
+		fixedRiskPct = configured
+	}
+	if !allocationOK || allocation <= 0 || fixedRiskPct < 0.005 || fixedRiskPct > 0.01 {
+		return Decision{}, errors.New("autonomous fixed-risk sizing configuration is invalid")
+	}
+	quantity, err := FixedRiskQuantity(strconv.FormatFloat(allocation, 'f', 8, 64), strconv.FormatFloat(fixedRiskPct, 'f', 8, 64), markPrice, stopLoss)
+	if err != nil {
+		return Decision{}, err
+	}
+	result.HypotheticalOrder["quantity"] = quantity
+	result.HypotheticalOrder["fixedRiskPct"] = fixedRiskPct
+	result.HypotheticalOrder["martingaleAllowed"] = false
 	return result, nil
+}
+
+func evaluateChartMomentum(instance Instance, markPrice string, closes []domain.Decimal) (Decision, error) {
+	threshold, ok := numberConfig(instance.Configuration, "signalThresholdBps")
+	if !ok || threshold <= 0 || len(closes) < 21 {
+		return Decision{}, errors.New("autonomous chart momentum configuration is invalid")
+	}
+	values := make([]float64, 0, len(closes))
+	for _, closeText := range closes {
+		closeRat, valid := decimalRat(string(closeText))
+		if !valid || closeRat.Sign() <= 0 {
+			return Decision{}, errors.New("autonomous chart contains an invalid close")
+		}
+		value, _ := closeRat.Float64()
+		values = append(values, value)
+	}
+	fast, slow := ema(values, 9), ema(values, 21)
+	if slow <= 0 {
+		return Decision{}, errors.New("autonomous chart EMA is invalid")
+	}
+	momentumBps := (fast - slow) / slow * 10_000
+	mark, _ := decimalRat(markPrice)
+	markFloat, _ := mark.Float64()
+	side, _ := stringConfig(instance.Configuration, "side")
+	side = strings.ToUpper(side)
+	kind := "HOLD"
+	summary := "1m grafik EMA momentumu sinyal eşiğinin altında kaldı."
+	if momentumBps >= threshold && markFloat >= fast && (side == "BUY" || side == "BOTH") {
+		kind, summary = "BUY", "1m grafik EMA momentumu ve fiyat teyidi LONG sinyali üretti."
+	} else if momentumBps <= -threshold && markFloat <= fast && (side == "SELL" || side == "BOTH") {
+		kind, summary = "SELL", "1m grafik EMA momentumu ve fiyat teyidi SHORT sinyali üretti."
+	}
+	metrics := map[string]any{"chartTimeframe": "1m", "chartSamples": len(values), "emaFast": roundFloat(fast, 8), "emaSlow": roundFloat(slow, 8), "chartMomentumBps": roundFloat(momentumBps, 4), "thresholdBps": threshold}
+	return decision(instance, kind, summary, markPrice, strconv.FormatFloat(values[len(values)-2], 'f', -1, 64), metrics), nil
+}
+
+func ema(values []float64, period int) float64 {
+	result := values[0]
+	alpha := 2.0 / float64(period+1)
+	for _, value := range values[1:] {
+		result = value*alpha + result*(1-alpha)
+	}
+	return result
 }
 
 func evaluateScalping(instance Instance, markPrice, referencePrice string) (Decision, error) {
@@ -114,7 +185,8 @@ func evaluateGrid(instance Instance, markPrice, referencePrice string) (Decision
 
 func decision(instance Instance, kind, summary, markPrice, referencePrice string, metrics map[string]any) Decision {
 	result := Decision{Kind: kind, Summary: summary, MarkPrice: markPrice, ReferencePrice: referencePrice, Metrics: metrics}
-	if (instance.Mode != "PAPER" && instance.Mode != "SHADOW") || (kind != "BUY" && kind != "SELL" && kind != "GRID_BUY" && kind != "GRID_SELL") {
+	modeAllowed := instance.Mode == "PAPER" || instance.Mode == "SHADOW" || (instance.Mode == "DEMO" && instance.Type == "AUTONOMOUS")
+	if !modeAllowed || (kind != "BUY" && kind != "SELL" && kind != "GRID_BUY" && kind != "GRID_SELL") {
 		return result
 	}
 	quantityKey := "quantity"
@@ -122,6 +194,16 @@ func decision(instance Instance, kind, summary, markPrice, referencePrice string
 		quantityKey = "quantityPerGrid"
 	}
 	quantity, _ := stringConfig(instance.Configuration, quantityKey)
+	if instance.Type == "AUTONOMOUS" {
+		allocation, allocationOK := numberConfig(instance.Configuration, "allocationUsdt")
+		positionPct, positionPctOK := numberConfig(instance.Configuration, "positionNotionalPct")
+		mark, markOK := decimalRat(markPrice)
+		if allocationOK && positionPctOK && markOK && allocation > 0 && positionPct > 0 && positionPct <= 1 && mark.Sign() > 0 {
+			allocationRat, _ := new(big.Rat).SetString(strconv.FormatFloat(allocation, 'f', 8, 64))
+			positionPctRat, _ := new(big.Rat).SetString(strconv.FormatFloat(positionPct, 'f', 8, 64))
+			quantity = new(big.Rat).Quo(new(big.Rat).Mul(allocationRat, positionPctRat), mark).FloatString(18)
+		}
+	}
 	leverage, _ := numberConfig(instance.Configuration, "leverage")
 	feeBps := DefaultPaperFeeBps
 	if configured, ok := numberConfig(instance.Configuration, "paperFeeBps"); ok && configured >= 0 {

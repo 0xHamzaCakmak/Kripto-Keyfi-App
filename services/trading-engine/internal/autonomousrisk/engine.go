@@ -22,6 +22,8 @@ type Intent struct {
 	Leverage                                                           int
 	RiskReducing, OpensNewPosition                                     bool
 	EntryEvidence                                                      entrycheck.Input
+	ExecutionMode                                                      string
+	ObservationApproved                                                bool
 }
 
 type Snapshot struct {
@@ -29,6 +31,7 @@ type Snapshot struct {
 	ProjectedTotalExposure, ProjectedSymbolExposure, ProjectedPositionSize string
 	OpenPositions, ConsecutiveLosses                                       int
 	LastFillAt                                                             *time.Time
+	ConsecutiveLossAt                                                      *time.Time
 	Now                                                                    time.Time
 }
 
@@ -108,7 +111,20 @@ func Evaluate(policy Policy, intent Intent, snapshot Snapshot) Decision {
 		return block("RISK_MAX_DRAWDOWN", "Autonomous drawdown limit reached.", metrics)
 	}
 	if policy.MaxConsecutiveLosses > 0 && snapshot.ConsecutiveLosses >= policy.MaxConsecutiveLosses {
-		return block("RISK_CONSECUTIVE_LOSS_LOCK", "Autonomous consecutive-loss lock is active.", metrics)
+		if snapshot.ConsecutiveLossAt == nil {
+			return block("RISK_CONSECUTIVE_LOSS_LOCK", "Autonomous consecutive-loss evidence is incomplete.", metrics)
+		}
+		observationUntil := snapshot.ConsecutiveLossAt.Add(24 * time.Hour)
+		metrics["observationMode"] = true
+		metrics["observationUntil"] = observationUntil.UTC().Format(time.RFC3339)
+		if intent.ExecutionMode != "PAPER" {
+			if snapshot.Now.Before(observationUntil) {
+				return block("RISK_OBSERVATION_MODE_ACTIVE", "Three consecutive losses require 24 hours in PAPER observation mode.", metrics)
+			}
+			if !intent.ObservationApproved {
+				return block("RISK_OBSERVATION_APPROVAL_REQUIRED", "Human or Teacher approval is required before leaving observation mode.", metrics)
+			}
+		}
 	}
 	if snapshot.LastFillAt != nil && policy.CooldownSeconds > 0 && snapshot.Now.Sub(*snapshot.LastFillAt) < time.Duration(policy.CooldownSeconds)*time.Second {
 		return reject("RISK_COOLDOWN_ACTIVE", "Autonomous trade cooldown is active.", metrics)
