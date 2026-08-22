@@ -93,19 +93,31 @@ export async function pauseAutonomousBot(userId: string, id: string, ipAddress?:
   return updateRuntimeState(userId, id, ['STARTING', 'RUNNING', 'RECONCILING', 'RISK_BLOCKED'], 'PAUSED', 'PAUSED', 'AI_PAPER_BOT_PAUSED', ipAddress);
 }
 
+export async function startAutonomousBot(userId: string, id: string, ipAddress?: string) {
+  const bot = await ownedSafeBot(userId, id);
+  if (bot.lifecycleStatus !== 'PAPER') throw new ApiError(409, 'Only PAPER lifecycle bots can start.', 'AUTONOMOUS_LIFECYCLE_NOT_RUNNABLE');
+  if (!['DRAFT', 'STOPPED', 'PAUSED'].includes(bot.state)) throw new ApiError(409, 'Autonomous bot runtime transition is invalid.', 'AUTONOMOUS_RUNTIME_TRANSITION_INVALID');
+  await assertAutonomousRuntimeReady(userId, bot.exchangeAccountId);
+  return persistBotUpdate(userId, bot, { state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Admin start; scheduler lease pending.' }, 'AI_PAPER_BOT_STARTED', ipAddress);
+}
+
 export async function resumeAutonomousBot(userId: string, id: string, ipAddress?: string) {
   const bot = await ownedSafeBot(userId, id);
   if (bot.state !== 'PAUSED') throw new ApiError(409, 'Only a paused autonomous bot can resume.', 'AUTONOMOUS_BOT_NOT_PAUSED');
   if (!['PAPER', 'CHALLENGER', 'CHAMPION'].includes(bot.lifecycleStatus)) throw new ApiError(409, 'Bot lifecycle is not runnable.', 'AUTONOMOUS_LIFECYCLE_NOT_RUNNABLE');
+  await assertAutonomousRuntimeReady(userId, bot.exchangeAccountId);
+  return persistBotUpdate(userId, bot, { state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Admin resume; scheduler lease pending.' }, 'AI_PAPER_BOT_RESUMED', ipAddress);
+}
+
+async function assertAutonomousRuntimeReady(userId: string, exchangeAccountId: string) {
   const [account, profile, control] = await Promise.all([
-    prisma.exchangeAccount.findFirst({ where: { id: bot.exchangeAccountId, userId }, select: { isActive: true, connectionStatus: true } }),
-    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId: bot.exchangeAccountId }, select: { enabled: true, accountKillSwitch: true } }),
+    prisma.exchangeAccount.findFirst({ where: { id: exchangeAccountId, userId, environment: { in: ['TESTNET', 'DEMO'] } }, select: { isActive: true, connectionStatus: true } }),
+    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId }, select: { enabled: true, accountKillSwitch: true } }),
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
   ]);
   if (!account?.isActive || account.connectionStatus !== 'CONNECTED' || !profile?.enabled || profile.accountKillSwitch || (control?.globalKillSwitch ?? true)) {
     throw new ApiError(409, 'Autonomous bot failed account or Risk Engine readiness checks.', 'AUTONOMOUS_RISK_GATE_CLOSED');
   }
-  return persistBotUpdate(userId, bot, { state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Admin resume; scheduler lease pending.' }, 'AI_PAPER_BOT_RESUMED', ipAddress);
 }
 
 export async function archiveCandidate(userId: string, id: string, ipAddress?: string) {

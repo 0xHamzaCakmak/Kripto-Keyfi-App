@@ -96,6 +96,11 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 
 ## Last Changes
 
+- Autonomous Strategy Registry runtime connected: `AUTONOMOUS + MOMENTUM` resolves to a PAPER/SHADOW-only momentum evaluator with dynamic stop-loss/take-profit and isolated-margin intent fields.
+- Autonomous start API added with lifecycle `PAPER`, TESTNET/DEMO account, enabled risk profile and global/account kill-switch readiness gates.
+- Idempotent `npm.cmd run bootstrap:ai-trading` creates one MOMENTUM strategy/version and Generation 1 population of 100 PAPER bots; repeat run creates/starts zero duplicates.
+- Runtime acceptance: 100/100 bots RUNNING with 0 ERROR/RISK_BLOCKED. After warm-up, a BUY intent passed immutable risk with `RISK_APPROVED` and produced the first PAPER fill; non-manual exchange order count remained zero.
+- Scheduler runtime defects found during acceptance were fixed: state-aware outbox deduplication keys and additive `AUTONOMOUS` support for `trading_bot_decisions.type`.
 - F-01 resolved: risk-increasing TypeScript exchange writes fail closed with `CENTRAL_RISK_ENGINE_REQUIRED`; GO executor is mandatory. TypeScript reduce-only emergency exits and cancellations remain available.
 - F-02 resolved: Arena ingress rejects events older than 2 minutes or future-skewed by more than 5 seconds before strategy/executor dispatch; immutable per-bot audit records include `STALE_MARKET_DATA` / `FUTURE_MARKET_DATA` evidence.
 - Connected `Binance Test` account was moved from `TYPESCRIPT` to `GO` through the guarded service cutover and remains `TESTNET`, `CONNECTED`, withdrawal-disabled.
@@ -150,6 +155,14 @@ Not: Backend testlerinde user-owned analytics test double'ına ait yakalanmış 
 - Backend simulation suite: 16 scenarios, PAPER/SHADOW only, no exchange/network dependency
 
 ## Migration
+
+### Autonomous decision compatibility — 2026-08-22
+
+- Migration: `20260822060000_allow_autonomous_bot_decisions`.
+- Additive only: `trading_bot_decisions.type` enum now accepts `AUTONOMOUS`; existing SCALPING/GRID rows are unchanged.
+- Local `prisma migrate deploy`: PASS; repository/local database now contains 46 applied migrations.
+- `prisma validate` and `prisma migrate status`: PASS; schema is up to date.
+- Production database: not changed.
 
 ### Local migration application — 2026-08-22
 
@@ -345,6 +358,19 @@ PROMPT dizisi tamamlandı. PAPER/SHADOW ve kontrollü TESTNET GO execution için
 - API key/permission: Değişmedi; withdrawal kapalı kaldı.
 - Safety: Production endpoint/account emirleri Go writer tarafından reddedilmeye devam eder; autonomous LIVE activation yoktur.
 - TODO: Başlangıç strategy/version ve PAPER/SHADOW autonomous bot bootstrap; ardından uzun süreli Arena çalışması. Production LIVE ayrı onay gerektirir.
+
+### PHASE_CHECKPOINT 5 — Autonomous PAPER Runtime Bootstrap
+
+- Tamamlanan kapsam: Strategy Registry MOMENTUM runtime, guarded autonomous start, idempotent 100-bot PAPER bootstrap ve scheduler runtime acceptance.
+- Runtime: 100/100 bot RUNNING; ilk tur 100/100 tamamlandı; warm-up sonrası karar/sinyal akışı devam ediyor, 0 ERROR/RISK_BLOCKED.
+- Execution safety: ilk BUY intent `RISK_APPROVED` ile onaylandı ve 0.003 ETH, 7.55416053 USDT notional PAPER fill üretti. Audit `immutable=true` ve `submittedToExchange=false`; non-manual exchange order sayısı 0.
+- Düzeltmeler: scheduler DB query strategy family join, dinamik stop/take protection, state-aware outbox dedup key, autonomous decision enum migration.
+- Test: PASS — backend 59 dosya/254 test + build/typecheck; Go `test ./...` + `vet ./...`; frontend lint/build; Prisma validate/status 46/46.
+- Migration: additive `20260822060000_allow_autonomous_bot_decisions`; local applied, production untouched.
+- Bootstrap idempotency: PASS — second run `population=100`, `created=0`, `started=0`.
+- Services: frontend 3000, backend 4000, trading engine 8081 health/readiness HTTP 200.
+- Safety: Binance account TESTNET/GO/CONNECTED; withdrawal disabled; autonomous production LIVE unavailable.
+- TODO: PAPER fill/risk intent gözlemi için sistemi çalışır bırakıp performans verisi biriktirmek; ardından scoring/Champion/Evolution döngüsünü gerçek persisted sonuçlarla doğrulamak.
 
 ## Prompt Checkpoints
 

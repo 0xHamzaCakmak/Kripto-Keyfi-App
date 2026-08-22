@@ -31,7 +31,7 @@ describe('Autonomous Trading Admin API', () => {
   it('covers the required read and safe write inventory without live execution', () => {
     const routes = readFileSync(new URL('../src/modules/trading/trading.routes.ts', import.meta.url), 'utf8');
     const service = readFileSync(new URL('../src/modules/ai-trading/autonomous-admin.service.ts', import.meta.url), 'utf8');
-    for (const route of ['/autonomous/overview', '/autonomous/arena-status', '/autonomous/generations', '/autonomous/live-eligibility', '/autonomous/bots/:id/promotion-review']) {
+    for (const route of ['/autonomous/overview', '/autonomous/arena-status', '/autonomous/generations', '/autonomous/live-eligibility', '/autonomous/bots/:id/start', '/autonomous/bots/:id/promotion-review']) {
       expect(routes).toContain(route);
     }
     expect(service).toContain("'APPROVED_PENDING_ACTIVATION'");

@@ -60,6 +60,31 @@ func TestGridHoldsOutsideConfiguredRange(t *testing.T) {
 	}
 }
 
+func TestAutonomousMomentumCreatesRiskProtectedSimulationOnlyIntent(t *testing.T) {
+	instance := autonomousMomentumInstance("PAPER")
+	decision, err := EvaluateStrategy(instance, "50150", "50000")
+	if err != nil || decision.Kind != "BUY" {
+		t.Fatalf("expected autonomous momentum buy: %#v %v", decision, err)
+	}
+	order := decision.HypotheticalOrder
+	if order["submittedToExchange"] != false || order["marginMode"] != "ISOLATED" || order["stopLoss"] == "" || order["takeProfit"] == "" {
+		t.Fatalf("autonomous intent escaped safety/protection boundary: %#v", order)
+	}
+}
+
+func TestAutonomousStrategyRejectsUnknownFamilyAndMissingProtection(t *testing.T) {
+	unknown := autonomousMomentumInstance("PAPER")
+	unknown.StrategyFamily = "CUSTOM"
+	if _, err := EvaluateStrategy(unknown, "50150", "50000"); err == nil {
+		t.Fatal("unknown autonomous family should fail closed")
+	}
+	missing := autonomousMomentumInstance("PAPER")
+	delete(missing.Configuration, "stopLossBps")
+	if _, err := EvaluateStrategy(missing, "50150", "50000"); err == nil {
+		t.Fatal("missing autonomous protection should fail closed")
+	}
+}
+
 func scalpingInstance(mode string) Instance {
 	return Instance{ID: "bot-1", Type: "SCALPING", Mode: mode, Symbol: "BTCUSDT", Configuration: map[string]any{
 		"side": "BOTH", "quantity": "0.001", "leverage": float64(2), "signalThresholdBps": float64(25),
@@ -69,5 +94,13 @@ func scalpingInstance(mode string) Instance {
 func gridInstance(mode string) Instance {
 	return Instance{ID: "bot-2", Type: "GRID", Mode: mode, Symbol: "BTCUSDT", Configuration: map[string]any{
 		"lowerPrice": "50000", "upperPrice": "80000", "gridLevels": float64(7), "quantityPerGrid": "0.001", "leverage": float64(2),
+	}}
+}
+
+func autonomousMomentumInstance(mode string) Instance {
+	return Instance{ID: "autonomous-1", Type: "AUTONOMOUS", StrategyFamily: "MOMENTUM", Mode: mode, Symbol: "BTCUSDT", Configuration: map[string]any{
+		"side": "BOTH", "quantity": "0.001", "leverage": float64(1), "signalThresholdBps": float64(25),
+		"marginMode": "ISOLATED", "stopLossBps": float64(50), "takeProfitBps": float64(100),
+		"paperFeeBps": float64(4), "paperSlippageBps": float64(2),
 	}}
 }

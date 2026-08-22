@@ -1,6 +1,11 @@
 package mysqlstore
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/bot"
+)
 
 func TestSignalAction(t *testing.T) {
 	t.Parallel()
@@ -25,5 +30,14 @@ func TestSignalConfidence(t *testing.T) {
 	}
 	if actual := signalConfidence("HOLD"); actual != "0.5000" {
 		t.Fatalf("hold confidence = %q", actual)
+	}
+}
+
+func TestBotStateDeduplicationKeyIncludesTargetState(t *testing.T) {
+	now := time.Date(2026, 8, 22, 6, 0, 0, 0, time.UTC)
+	reconciling := botStateDeduplicationKey("bot-1", bot.StateReconciling, now)
+	running := botStateDeduplicationKey("bot-1", bot.StateRunning, now)
+	if reconciling == running {
+		t.Fatalf("different transitions in one scheduler cycle must have distinct keys: %q", running)
 	}
 }

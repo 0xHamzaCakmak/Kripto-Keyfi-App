@@ -17,9 +17,36 @@ func EvaluateStrategy(instance Instance, markPrice, referencePrice string) (Deci
 		return evaluateScalping(instance, markPrice, referencePrice)
 	case "GRID":
 		return evaluateGrid(instance, markPrice, referencePrice)
+	case "AUTONOMOUS":
+		return evaluateAutonomousStrategy(instance, markPrice, referencePrice)
 	default:
 		return Decision{}, fmt.Errorf("unsupported bot strategy %q", instance.Type)
 	}
+}
+
+func evaluateAutonomousStrategy(instance Instance, markPrice, referencePrice string) (Decision, error) {
+	if strings.ToUpper(strings.TrimSpace(instance.StrategyFamily)) != "MOMENTUM" {
+		return Decision{}, fmt.Errorf("unsupported autonomous strategy family %q", instance.StrategyFamily)
+	}
+	result, err := evaluateScalping(instance, markPrice, referencePrice)
+	if err != nil || result.HypotheticalOrder == nil {
+		return result, err
+	}
+	marginMode, marginOK := stringConfig(instance.Configuration, "marginMode")
+	stopLossBps, stopOK := numberConfig(instance.Configuration, "stopLossBps")
+	takeProfitBps, takeOK := numberConfig(instance.Configuration, "takeProfitBps")
+	if !marginOK || strings.ToUpper(marginMode) != "ISOLATED" || !stopOK || !takeOK || stopLossBps <= 0 || takeProfitBps <= 0 {
+		return Decision{}, errors.New("autonomous momentum protection configuration is invalid")
+	}
+	stopLoss, takeProfit, err := protectionPrices(markPrice, result.HypotheticalOrder["side"].(string), stopLossBps, takeProfitBps)
+	if err != nil {
+		return Decision{}, err
+	}
+	result.HypotheticalOrder["marginMode"] = "ISOLATED"
+	result.HypotheticalOrder["stopLoss"] = stopLoss
+	result.HypotheticalOrder["takeProfit"] = takeProfit
+	result.HypotheticalOrder["strategyFamily"] = "MOMENTUM"
+	return result, nil
 }
 
 func evaluateScalping(instance Instance, markPrice, referencePrice string) (Decision, error) {
@@ -134,6 +161,33 @@ func gridIndex(price, lower, upper string, levels int) (int, bool, error) {
 		index = int64(levels - 1)
 	}
 	return int(index), true, nil
+}
+
+func protectionPrices(markPrice, side string, stopLossBps, takeProfitBps float64) (string, string, error) {
+	mark, ok := decimalRat(markPrice)
+	if !ok || mark.Sign() <= 0 {
+		return "", "", errors.New("mark price is invalid for autonomous protection")
+	}
+	stopRate, ok := new(big.Rat).SetString(fmt.Sprintf("%.8f", stopLossBps/10_000))
+	if !ok {
+		return "", "", errors.New("stop loss rate is invalid")
+	}
+	takeRate, ok := new(big.Rat).SetString(fmt.Sprintf("%.8f", takeProfitBps/10_000))
+	if !ok {
+		return "", "", errors.New("take profit rate is invalid")
+	}
+	one := big.NewRat(1, 1)
+	var stop, take *big.Rat
+	if strings.ToUpper(side) == "BUY" {
+		stop = new(big.Rat).Mul(mark, new(big.Rat).Sub(one, stopRate))
+		take = new(big.Rat).Mul(mark, new(big.Rat).Add(one, takeRate))
+	} else if strings.ToUpper(side) == "SELL" {
+		stop = new(big.Rat).Mul(mark, new(big.Rat).Add(one, stopRate))
+		take = new(big.Rat).Mul(mark, new(big.Rat).Sub(one, takeRate))
+	} else {
+		return "", "", errors.New("autonomous protection side is invalid")
+	}
+	return decimalString(stop), decimalString(take), nil
 }
 
 func decimalRat(value string) (*big.Rat, bool) {

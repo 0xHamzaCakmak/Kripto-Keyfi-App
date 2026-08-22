@@ -23,6 +23,7 @@
     "acceptance:paper-lifecycle": "tsx scripts/run-paper-lifecycle-acceptance.ts",
     "acceptance:bot-signals": "tsx scripts/verify-bot-signal-acceptance.ts",
     "acceptance:ai-observer-server": "tsx scripts/ai-observer-acceptance-server.ts",
+    "bootstrap:ai-trading": "tsx scripts/bootstrap-autonomous-paper.ts",
     "news:bootstrap": "tsx scripts/bootstrap-news.ts",
     "news:localize": "tsx scripts/localize-news.ts",
     "news:verify-groq": "tsx scripts/verify-groq-news.ts",

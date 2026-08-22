@@ -3,7 +3,7 @@ import type { z } from 'zod';
 import { success } from '../../utils/response.js';
 import {
   archiveCandidate, configureNonCriticalBotSettings, getArenaStatus, getAutonomousOverview,
-  listGenerations, listLiveEligibilityStatus, pauseAutonomousBot, resumeAutonomousBot, reviewPromotion, triggerPaperGeneration,
+  listGenerations, listLiveEligibilityStatus, pauseAutonomousBot, resumeAutonomousBot, reviewPromotion, startAutonomousBot, triggerPaperGeneration,
 } from './autonomous-admin.service.js';
 import type {
   autonomousGenerationQuerySchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema,
@@ -27,6 +27,7 @@ export async function createPaperBot(req: Request, res: Response) {
   return success(res, autonomousDTO('AUTONOMOUS_BOT', bot), 201);
 }
 export async function pausePaperBot(req: Request, res: Response) { return success(res, await pauseAutonomousBot(req.user!.id, req.params.id as string, req.ip)); }
+export async function startPaperBot(req: Request, res: Response) { return success(res, await startAutonomousBot(req.user!.id, req.params.id as string, req.ip)); }
 export async function resumePaperBot(req: Request, res: Response) { return success(res, await resumeAutonomousBot(req.user!.id, req.params.id as string, req.ip)); }
 export async function archive(req: Request, res: Response) { return success(res, await archiveCandidate(req.user!.id, req.params.id as string, req.ip)); }
 export async function promotion(req: Request, res: Response) {

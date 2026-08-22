@@ -47,7 +47,7 @@ import { evaluateLiveEligible } from '../ai-trading/live-eligibility.controller.
 import { runLiveEligibilityBodySchema } from '../ai-trading/live-eligibility.schema.js';
 import { autonomousAudit, systemHealth } from '../ai-trading/autonomous-observability.controller.js';
 import { autonomousAuditQuerySchema } from '../ai-trading/autonomous-observability.schema.js';
-import { archive, arenaStatus, autonomousOverview, createPaperBot, generations, liveEligibilityStatus, pausePaperBot, promotion, resumePaperBot, settings, triggerGeneration } from '../ai-trading/autonomous-admin.controller.js';
+import { archive, arenaStatus, autonomousOverview, createPaperBot, generations, liveEligibilityStatus, pausePaperBot, promotion, resumePaperBot, settings, startPaperBot, triggerGeneration } from '../ai-trading/autonomous-admin.controller.js';
 import { autonomousBotParamsSchema, autonomousGenerationQuerySchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema, promotionReviewSchema, triggerPaperGenerationSchema } from '../ai-trading/autonomous-admin.schema.js';
 
 export const tradingRouter = Router();
@@ -61,6 +61,7 @@ tradingRouter.get('/autonomous/generations', validateRequest({ query: autonomous
 tradingRouter.post('/autonomous/generations', validateRequest({ body: triggerPaperGenerationSchema }), asyncHandler(triggerGeneration));
 tradingRouter.get('/autonomous/live-eligibility', asyncHandler(liveEligibilityStatus));
 tradingRouter.post('/autonomous/bots', validateRequest({ body: createAutonomousPaperBotSchema }), asyncHandler(createPaperBot));
+tradingRouter.post('/autonomous/bots/:id/start', validateRequest({ params: autonomousBotParamsSchema }), asyncHandler(startPaperBot));
 tradingRouter.post('/autonomous/bots/:id/pause', validateRequest({ params: autonomousBotParamsSchema }), asyncHandler(pausePaperBot));
 tradingRouter.post('/autonomous/bots/:id/resume', validateRequest({ params: autonomousBotParamsSchema }), asyncHandler(resumePaperBot));
 tradingRouter.post('/autonomous/bots/:id/archive', validateRequest({ params: autonomousBotParamsSchema }), asyncHandler(archive));

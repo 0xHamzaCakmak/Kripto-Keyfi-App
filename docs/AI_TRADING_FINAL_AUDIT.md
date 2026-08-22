@@ -18,7 +18,7 @@ After PROMPT 38, the user explicitly approved F-01/F-02 hardening and controlled
 | --- | --- | --- |
 | Existing manual/grid trade regression | PASS | Backend manual adapter and grid-plan tests pass. Full backend and Go suites pass. Existing routes and execution contracts remain present. |
 | PAPER/LIVE separation | PASS | Autonomous modes are PAPER/SHADOW only; API contract and UI reject any contract claiming live is enabled. Paper fills and Shadow actions persist separately and both declare no exchange submission. |
-| 100-bot Arena | PASS (automated) | Go Arena test fans one shared market fetch out to 100 bots, verifies 100 paper dispatches, bot-scoped state, pause/resume, duplicate protection and failure isolation. Node simulation also runs 100 PAPER bots concurrently without exchange execution. No production soak test was performed. |
+| 100-bot Arena | PASS (automated + local runtime acceptance) | Go Arena tests verify shared fan-out, bot-scoped state, duplicate protection and failure isolation. Post-audit local acceptance bootstrapped 100 PAPER MOMENTUM bots; all reached RUNNING with zero errors. The first BUY passed immutable risk and created a PAPER fill while non-manual exchange orders remained zero. No long-running production soak test was performed. |
 | Risk-adjusted score | PASS | Score combines return, profit factor, Sharpe, Sortino, expectancy and consistency with drawdown, turnover, liquidation, instability and cost penalties. Tests rank stable behavior above higher raw profit with unacceptable drawdown. |
 | Champion gate | PASS | Defaults require 200 trades, 7 paper days, profit factor 1.2, max drawdown 20%, score 60 and three regimes. Selection is staged PAPER → CHALLENGER → CHAMPION and never promotes directly to LIVE/LIVE_ELIGIBLE. |
 | Teacher is recommendation-only | PASS | Outputs contain `applyAutomatically: false`/`recommendationApplied: false`; service has no bot, strategy, risk or execution mutation dependency. |
@@ -78,14 +78,14 @@ Resolution evidence: Arena ingress now enforces a default 2-minute maximum age a
 
 Severity: **Informational**.
 
-- The 100-bot target is verified by deterministic functional tests, not a long-running production soak/load test.
+- The 100-bot target is verified by deterministic functional tests and a short local runtime acceptance (100 RUNNING, ongoing persisted decisions/signals, first risk-approved PAPER fill, zero errors/exchange writes), not a long-running production soak/load test.
 - External production exchange acceptance was not run. Controlled Binance TESTNET acceptance was run: a 0.01 ETHUSDT market open and reduce-only close both filled with no remaining ETH position.
 - Go race-detector evidence is unavailable on the current Windows toolchain with CGO disabled; normal concurrency tests and `go vet` are available.
 - The frontend Performance page intentionally uses the latest 200 Trade Memory rows as a disclosed sample, not an authoritative full-history accounting ledger.
 
 ## Migration and Data Safety
 
-- All 45 repository migrations are applied to the local `127.0.0.1` development database.
+- All 46 repository migrations are applied to the local `127.0.0.1` development database. Migration 46 additively permits `AUTONOMOUS` decision rows without changing existing records.
 - The 13 newly applied pending migrations were inspected before deployment and contain no DROP, TRUNCATE or data-deletion operation.
 - Production migrations were not executed.
 - No production data, API key, secret, exchange permission or withdrawal permission was changed.

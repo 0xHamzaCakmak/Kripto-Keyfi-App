@@ -21,13 +21,17 @@ func (s *AccountStore) AcquireNext(ctx context.Context, owner string, now, lease
 		return nil, fmt.Errorf("begin bot lease: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	const query = `SELECT id, userId, exchangeAccountId, name, type, mode, symbol, state, desiredState, intervalSeconds, configuration, schedulerOwner, leaseExpiresAt
-FROM trading_bots
-WHERE desiredState = 'RUNNING'
+	const query = `SELECT b.id, b.userId, b.exchangeAccountId, b.name, b.type, b.mode, b.symbol,
+b.state, b.desiredState, b.intervalSeconds, b.configuration, b.schedulerOwner, b.leaseExpiresAt,
+COALESCE(s.family, '')
+FROM trading_bots b
+LEFT JOIN trading_strategy_versions sv ON sv.id = b.strategyVersionId
+LEFT JOIN trading_strategies s ON s.id = sv.strategyId
+WHERE b.desiredState = 'RUNNING'
   AND state IN ('STARTING', 'RUNNING', 'RISK_BLOCKED', 'RECONCILING', 'ERROR')
   AND (leaseExpiresAt IS NULL OR leaseExpiresAt < ? OR schedulerOwner = ?)
   AND (lastDecisionAt IS NULL OR lastDecisionAt <= DATE_SUB(?, INTERVAL intervalSeconds SECOND))
-ORDER BY COALESCE(lastDecisionAt, createdAt), id
+ORDER BY COALESCE(lastDecisionAt, b.createdAt), b.id
 LIMIT 1 FOR UPDATE SKIP LOCKED`
 	var instance bot.Instance
 	var configuration []byte
@@ -36,7 +40,7 @@ LIMIT 1 FOR UPDATE SKIP LOCKED`
 	err = tx.QueryRowContext(ctx, query, now, owner, now).Scan(
 		&instance.ID, &instance.UserID, &instance.ExchangeAccountID, &instance.Name, &instance.Type,
 		&instance.Mode, &instance.Symbol, &instance.State, &instance.DesiredState, &instance.IntervalSeconds, &configuration,
-		&previousOwner, &previousLease,
+		&previousOwner, &previousLease, &instance.StrategyFamily,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		if err := tx.Commit(); err != nil {
@@ -143,11 +147,15 @@ WHERE id = ? AND schedulerOwner = ? AND state = ?`,
 (userId, exchangeAccountId, provider, topic, eventType, aggregateType, aggregateId, deduplicationKey, payload, occurredAt, createdAt)
 SELECT b.userId, b.exchangeAccountId, a.provider, 'trading.bot', 'BOT_STATE_CHANGED', 'TRADING_BOT', b.id, ?, ?, ?, UTC_TIMESTAMP(3)
 FROM trading_bots b JOIN exchange_accounts a ON a.id = b.exchangeAccountId WHERE b.id = ?`,
-		fmt.Sprintf("go:bot:%s:state:%d", instance.ID, now.UnixNano()), payload, now, instance.ID)
+		botStateDeduplicationKey(instance.ID, target, now), payload, now, instance.ID)
 	if err != nil {
 		return fmt.Errorf("append bot state event: %w", err)
 	}
 	return nil
+}
+
+func botStateDeduplicationKey(botID string, state bot.State, occurredAt time.Time) string {
+	return fmt.Sprintf("go:bot:%s:state:%s:%d", botID, state, occurredAt.UnixNano())
 }
 
 func (s *AccountStore) CompleteCycle(ctx context.Context, instance bot.Instance, owner string, decision bot.Decision, now, leaseUntil time.Time) error {

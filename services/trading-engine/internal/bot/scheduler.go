@@ -9,6 +9,7 @@ import (
 
 type Instance struct {
 	ID, UserID, ExchangeAccountID, Name, Type, Mode, Symbol string
+	StrategyFamily                                          string
 	State                                                   State
 	DesiredState                                            string
 	IntervalSeconds                                         int
