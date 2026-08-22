@@ -454,3 +454,173 @@ PROMPT dizisi tamamlandı. PAPER/SHADOW ve kontrollü TESTNET GO execution için
 ## Source Note
 
 Requested prompt filenames were absent. Repository contains `docs/AI_TRADING_IMPLEMENTATION_PROMPTS_UPDATED.md`; it is used as the authoritative prompt sequence.
+
+### PHASE_CHECKPOINT 6 — Controlled Autonomous Binance TESTNET Canary
+
+- Tamamlanan kapsam: Kullanıcı onaylı F-01/F-02 sonrası kontrollü autonomous Binance TESTNET execution. Prompt dizisi hâlâ PROMPT 0-38 tamamlanmış durumdadır; bu çalışma post-prompt activation/hardening kapsamıdır.
+- Runtime: `AI Momentum G1 #001` (`cmt3scaih0007iruk86ii9kxp`) DEMO/TESTNET execution modunda RUNNING. Lifecycle PAPER olarak korunur; bu mod production LIVE anlamına gelmez.
+- Exchange acceptance: PASS — ETHUSDT 0.01, 1x ISOLATED short market entry Binance TESTNET'te FILLED (`16768461733`). Reduce-only STOP_MARKET Binance algo endpoint'inde OPEN (`1000000176721543`, trigger `2529.81`). Exchange snapshot pozisyon ve koruyucu emri birlikte doğruladı.
+- Safety: Tek aktif TESTNET canary, no-pyramiding/no-reversal, zorunlu merkezi Go Risk Engine, stop preflight, stop başarısızlığında reduce-only emergency close. Production LIVE feature/endpoint kullanılamaz ve varsayılan kapalıdır.
+- Binance API uyumu: 2026 USD-M conditional order akışı `/fapi/v1/algoOrder`, `/fapi/v1/openAlgoOrders` ve conditional cancel desteğine geçirildi. Normal manual/grid order endpoint'i değiştirilmedi.
+- Operasyon: Açık algo stop'u önce iptal eden güvenli close/pause script'i ve salt-okunur canary status script'i eklendi.
+- Test: PASS — backend 59 dosya/255 test + build; Go `test ./...` + `vet ./...`; frontend lint + production build; Prisma validate/status.
+- Migration: Additive `20260822070000_allow_system_orders_without_manual_preview`; yalnız `trading_orders.previewId` nullable yapıldı, veri kaybı yok. Yerel veritabanında uygulandı; 47/47 migration güncel.
+- Recovery evidence: Eski order endpoint'iyle reddedilen koruyucu stop denemelerinde pozisyonlar reduce-only emergency market close ile flat duruma getirildi; client ID ve tick-size sorunları düzeltildi. Güncel algo akışı başarıyla doğrulandı.
+- API key/permission: Değişmedi; yalnız bağlı Binance TESTNET hesabı kullanılır, withdrawal/transfer yetkisi kullanılmaz.
+- Runtime process: Derlenmiş engine gizli arka plan process'i olarak terminal oturumundan bağımsız çalışıyor; frontend/backend/engine sırasıyla 3000/4000/8081 portlarında dinliyor.
+- TODO: Makine yeniden başlatıldığında otomatik açılış için Windows service veya container supervisor tanımlamak ve canary performansını gözlemek. Production LIVE ayrı açık onay ve ayrı gate gerektirir.
+
+### PHASE_CHECKPOINT 7 — 100-Bot PAPER Learning + 15-Bot TESTNET Fleet
+
+- Tamamlanan kapsam: Her biri 100 USDT sanal sermayeli 100 PAPER bot; kalıcı paper trade yaşam döngüsü; giriş/çıkış fee ve slippage muhasebesi; stop-loss/take-profit; bot bazlı bağımsız risk ve equity; otomatik metric/score yenileme; 100 botluk survivor/mutation/crossover evrim döngüsü.
+- PAPER runtime kanıtı (2026-08-22): 100 PAPER bot, 233 fill, 54 açık ve 43 kapanmış paper trade, 100 botta persisted score; son 5 dakikada 344 karar (68.8 karar/dakika).
+- TESTNET kapsam: En iyi PAPER adaylarından klonlanan 15 DEMO bot, 15 farklı Binance Futures sembolü, bot başına 100 USDT allocation ve %10 hedef notional. Entry ile birlikte reduce-only STOP_MARKET ve TAKE_PROFIT_MARKET; stale koruma temizliği, no-pyramiding ve merkezi Risk Engine zorunluluğu eklendi.
+- Evrim: 20 değişmeden survivor + 60 mutation + 20 crossover = 100 yeni PAPER bot. CHAMPION/LIVE_ELIGIBLE/LIVE botlar immutable/protected; minimum trade gate varsayılan 200 ve zamanlanmış worker varsayılan aktiftir.
+- Safety: `productionLive=false`; production gerçek para emri yolu kapalı. Manual trade, Grid Bot ve mevcut exchange order yolu değiştirilmedi. TESTNET dışında autonomous execution reddedilir. Withdrawal/transfer yetkisi kullanılmaz.
+- Migration: Additive `20260822090000_add_take_profit_market_order_type`; `TAKE_PROFIT_MARKET` enum değeri eklendi, kolon/tablo silinmedi ve veri kaybı yok. Yerel DB'de 48/48 migration güncel.
+- Test: PASS — backend TypeScript build; frontend typecheck/lint ve production build; Go `test ./...`; Prisma migration status. Backend Vitest bu oturum sandbox'ında esbuild'in workspace üst dizinini okuyamaması nedeniyle başlatılamadı; kod/test failure değildir.
+- Runtime blocker: Port 8081'deki eski PAPER engine process'i yeni family fallback binary'sinden önce başlatıldığı için 30 bot `unsupported autonomous strategy family` hatasına düşüyor. Yeni binary derlendi ve test edildi, fakat mevcut process'i durdurma işlemi OS tarafından `Access denied` ile reddedildi. Regression giderilmeden DEMO filosu exchange execution'a alınmadı.
+- Secret blocker: DB'deki Binance TESTNET credentials encrypted olarak korunuyor; engine restart/cutover için aynı `TRADING_CREDENTIALS_MASTER_KEY` ve backend ile eşleşen `TRADING_ENGINE_TOKEN` kalıcı secret olarak sağlanmalı. Secret tahmin edilmedi veya process memory'den alınmadı.
+- Exchange state: Önceki ETHUSDT TESTNET canary pozisyonunun native reduce-only STOP_MARKET emri exchange tarafında koruma olarak bırakıldı; bu checkpoint yeni TESTNET emir akışını başlatmadı.
+- Açık TODO: Yetkili process restart; kalıcı secret/env kurulumu; yeni engine ve backend worker restart; 100/100 PAPER RUNNING ve 0 ERROR acceptance; ardından 15 TESTNET botta entry+SL+TP ve reconciliation acceptance; VPS için systemd/Docker restart policy ve health monitoring.
+
+### PHASE_CHECKPOINT 8 — PAPER Runtime Recovery Acceptance
+
+- Yönetici yetkisiyle eski engine PID 2592 durduruldu ve test edilmiş güncel binary PID 8740 olarak port 8081'de başlatıldı.
+- Runtime modu PAPER-safe: `mode=shadow`, bot scheduler açık, 4 worker, 250 ms poll; private shadow read, realtime ve autonomous TESTNET execution kapalı.
+- Acceptance: Tam `100/100 PAPER RUNNING`, `0 ERROR`, `0 missingStrategies`, 100 botta score. Ölçüm anında 1.641 karar/5 dakika (`328.2 karar/dakika`), 236 fill, 53 açık ve 45 kapanmış paper trade.
+- Bootstrap idempotency düzeltmesi: TESTNET'e taşınarak yeniden adlandırılan #001 bot için mevcut `#001 PAPER` replacement artık doğrudan bulunuyor; tekrar çalıştırma fazladan bot üretmiyor.
+- Veri koruma: Bootstrap hatasıyla oluşan 101. botun fill/trade sayısı sıfır olduğu doğrulandı. Kayıt silinmedi; SHADOW/STOPPED/ARCHIVED yapılarak audit edilebilir biçimde korundu.
+- Regression test: PASS — backend TypeScript build ve tam Go `test ./...`. Önceki frontend lint/production build ve Prisma 48/48 migration acceptance geçerlidir.
+- Kalan TESTNET blocker: Ciphertext veritabanında mevcut fakat onu çözen `TRADING_CREDENTIALS_MASTER_KEY` dosya, process-parent environment, User veya Machine environment'da kalıcı değil. Çalışan backend eski key'i belleğinde taşıyor olabilir; in-app browser mevcut olmadığı için oturumlu “Bağlantıyı test et” akışı otomatik çalıştırılamadı.
+- Sonraki güvenli karar: Ya önceki 64-hex master key kalıcı secret olarak geri konmalı ya da yeni master key üretilip aynı Binance TESTNET API key/secret mevcut hesap üzerinde yeniden şifrelenmelidir. İkinci seçenek credential rotation olduğundan kullanıcı seçimi ve API secret'ın admin formuna yeniden girilmesini gerektirir.
+
+### PHASE_CHECKPOINT 9 — 15-Bot Binance TESTNET Runtime Acceptance
+
+- Credential rotation tamamlandı: mevcut ExchangeAccount silinmeden yeni master key ile API Key/Secret doğrulandı ve yeniden şifrelendi. Audit action `EXCHANGE_CREDENTIALS_ROTATED`; manual/grid/bot foreign key bağlantıları korundu.
+- Admin UI/API: `PATCH /exchange-accounts/:id/credentials` ve “API bilgilerini yenile” akışı eklendi. Yeni credential önce Binance TESTNET üzerinde doğrulanır, sonra transaction içinde şifreli kayıt güncellenir; plaintext saklanmaz veya response'a dönmez.
+- Runtime: Backend PID 5232 port 4000; güncel trading-engine PID 12876 port 8081. Engine `mode=cutover`, `shadow_read=enabled`, `executor=enabled`, `status=ready`, `productionLive=false`.
+- Filo acceptance: `15/15 DEMO RUNNING`, `100/100 PAPER RUNNING`, `0 ERROR`, `0 missingStrategies`. Ölçüm anında 1.241 karar/5 dakika (`248.2 karar/dakika`) ve PAPER tarafında 274 fill bulunuyor.
+- Exchange evidence: Binance TESTNET market girişleri FILLED; native reduce-only STOP_MARKET ve TAKE_PROFIT_MARKET emirleri OPEN olarak doğrulandı. Eski ETHUSDT short, take-profit seviyesi zaten geçildiği için reduce-only market exit ile FILLED kapandı ve stale stop temizlendi.
+- Fail-safe evidence: Bir TESTNET stop submission reddinde reduce-only emergency close FILLED oldu; korumasız pozisyon bırakılmadı. Engine logunda takip eden soak aralığında yeni execution error yok.
+- Düzeltme: Mevcut pozisyonda hesaplanan SL/TP seviyesi mark price tarafından zaten aşılmışsa geçmiş trigger emri göndermek yerine reduce-only market exit yapılır ve bot-owned stale protectives iptal edilir. Boundary ve execution testleri eklendi.
+- Test: PASS — Go full `test ./...` ve `vet ./...`; backend build; frontend lint ve production build; engine startup reconciliation ve runtime health acceptance.
+- Konfigürasyon notu: Yerel `backend/.env` içinde master key ve internal token için iki tanım tespit edildi. Çalışan servisler backend ile aynı olan son tanımları kullanıyor. Kalıcı temizlikte her değişken için yalnızca son/yeni tanım bırakılmalıdır; secret değerleri dokümana veya Git'e yazılmamalıdır.
+- Açık TODO: VPS systemd/Docker secret/env kurulumu, tekil env tanımları, restart policy, health monitor ve TESTNET order/PnL reconciliation soak. Production gerçek para LIVE ayrı gate olarak kapalıdır.
+
+### PHASE_CHECKPOINT 10 — Binance Algo Order Reconciliation Recovery
+
+- Tamamlanan kapsam: Binance USDⓈ-M Futures koşullu STOP/TAKE_PROFIT emirlerinin periyodik uzlaştırma sorgusu yeni Algo Order API ile uyumlu hale getirildi.
+- Kök neden: Koruyucu emirler `/fapi/v1/algoOrder` ile oluşturulmasına rağmen client ID uzlaştırması yalnızca normal `/fapi/v1/order` uç noktasını sorguluyordu. Binance reddi hesabı `DEGRADED` yapıyor ve Risk Engine bütün autonomous botları güvenli biçimde `RISK_BLOCKED` durumuna alıyordu.
+- Değişiklik: Normal emir lookup başarısız olduğunda salt-okunur `GET /fapi/v1/algoOrder?clientAlgoId=...` fallback'i eklendi. Normal manual/grid emir akışı ve yazma endpoint'leri değiştirilmedi.
+- Test: PASS — yeni algo reconciliation regression testi dahil tam Go `test ./...` ve `vet ./...`.
+- Runtime acceptance: Güncel engine PID 9788 ile yeniden başlatıldı; startup reconciliation tamamlandı. Hesap `CONNECTED`; `100/100 PAPER RUNNING`, `15/15 DEMO RUNNING`, `0 ERROR`, `0 RISK_BLOCKED`. Ölçümde son 5 dakikada 122 PAPER karar (`24.4/dk`), 341 fill, 52 açık ve 98 kapanmış PAPER trade vardı.
+- Migration: Yok.
+- Safety: `productionLive=false`; yalnızca Binance TESTNET autonomous execution açık. Merkezi Risk Engine, no-pyramiding, zorunlu reduce-only stop/take ve emergency-close korumaları değişmedi.
+- Açık TODO: VPS supervisor/restart policy ve health alert kurulumu; DEMO bot bazlı allocation/equity ile Spot/Futures ayrımını tek ekranda gösteren operasyon görünümü henüz yoktur.
+
+### PHASE_CHECKPOINT 11 — Full Futures Universe + 5x–20x TESTNET Fleet
+
+- Tamamlanan kapsam: Autonomous PAPER ve Binance TESTNET Futures filosu 5x–20x kaldıraç bandına geçirildi. Strategy parameter schema, bootstrap/deploy scriptleri, Go intent guard ve transaction-time execution guard aynı bandı zorunlu tutuyor. Bot başına başlangıç/allocation 100 USDT ve işlem başına hedef notional %10 olarak sabit tutuluyor.
+- Grafik analizi: Autonomous kararlar artık her sembol için Binance Futures'tan son 50 adet 1 dakikalık mum kapanışını okuyor; EMA9/EMA21 momentum ve mark-price doğrulaması olmadan LONG/SHORT sinyali üretmiyor. Grafik verisi alınamazsa fail-closed HOLD davranışı uygulanıyor.
+- Tüm piyasa kapsamı: Binance TESTNET'te 20x destekleyen 505 USDT-M perpetual sembol risk profilinin `allowedSymbols` listesine alındı. 100 PAPER ve boş 15 DEMO bot, açık pozisyonları bozmadan 5 dakikada bir bu evren üzerinde deterministik rotasyon yapıyor; yalnız popüler coin listesiyle sınırlı değil.
+- Sürekli çalışma: Universe ve Evolution worker'lar varsayılan aktif. MySQL connection-scoped named-lock sızıntısı kaldırıldı; tek backend instance içinde single-flight kilidi aynı turun üst üste binmesini engelliyor. Go scheduler lease'i uzaktaki çoklu piyasa okumalarını kapsayacak şekilde 30 saniyeye çıkarıldı.
+- Emir yoğunluğu: Uygulama seviyesindeki düşük canary/cooldown sınırı kaldırıldı; profil `1000 emir/dakika`, `100000 emir/gün`, `cooldown=0`. Bu “sınırsız ve kontrolsüz” execution değildir: Binance hard limitleri, 15 açık pozisyon sınırı, tek sembolde tek pozisyon/no-pyramiding ve merkezi Risk Engine zorunlu kalır.
+- Runtime acceptance (2026-08-22): Backend PID 9912 (`:4000`), Go engine PID 9404 (`:8081`); `100/100 PAPER RUNNING`, `15/15 DEMO RUNNING`, `0 ERROR`, `0 RISK_BLOCKED`. Son ölçümde 362 karar/5 dakika (`72.4/dk`), 507 PAPER fill, 60 açık ve 177 kapanmış PAPER trade vardı. Son 100 kararın 100'ünde 50 mumluk chart metriği; 40 farklı sembol ve BUY/SELL/HOLD kararları doğrulandı. İkinci otomatik 5 dakikalık evren turu da `ROTATED` tamamlandı (36 PAPER + 5 boş DEMO sembolü değişti); eski kalıcı `LOCKED` sorunu tekrarlanmadı.
+- Binance TESTNET acceptance: Ölçümde 10 açık USDⓈ-M pozisyon (8 LONG, 2 SHORT), tamamı 5x–20x bandında. Her güncel pozisyon için reduce-only STOP_MARKET ve TAKE_PROFIT_MARKET koruması Go birleşik regular+Algo snapshot'ında doğrulandı. Production gerçek para LIVE kapalı (`productionLive=false`).
+- Risk/iddia sınırı: Sistem “maksimum kârı” garanti etmez. Strateji parametreleri gerçekleşen PAPER performansından seçilim/mutation/crossover ile optimize edilir; yeni nesil üretimi için 100 botun her birinde varsayılan minimum 200 kapanmış trade kanıtı gerekir. Generation 1 şu anda RUNNING; bot başına kapanmış trade aralığı 0–6 olduğundan evrim worker'ı henüz kanıt topluyor. Risk Engine bypass edilmedi.
+- Test: PASS — backend typecheck/build; tam backend regression 60 dosya/258 test; tam Go `test ./...` ve `vet ./...`; runtime reconciliation, chart metrics, fleet state, leverage ve native koruma emri acceptance.
+- Migration: Yok.
+- API key/permission: Değişmedi; yalnız kayıtlı Binance TESTNET credential kullanıldı. Withdrawal/transfer yetkisi kullanılmadı.
+- Açık TODO: Hostinger VPS üzerinde tek backend instance + tek engine için systemd/Docker restart policy, secret injection ve health alert kurulumu. Bot bazlı TESTNET equity/PnL ile Spot/Futures ayrımını aynı UI ekranında gösteren operasyon görünümü ayrıca geliştirilebilir.
+
+### PHASE_CHECKPOINT 12 — Bot Bazlı Binance TESTNET PnL ve Gerçek Fill Geçmişi
+
+- Tamamlanan kapsam: Bot Arena'ya 15 DEMO/TESTNET bot için açık pozisyon, yön, kaldıraç, gerçekleşmiş net PnL, açık PnL, ROI, equity, fill sayısı ve kazanan/kaybeden kapanış özeti eklendi.
+- Bot detayı: Arena satırının tamamı tıklanabilir. Detay çekmecesi aktif Binance TESTNET pozisyonunda entry/mark/notional/margin ile native stop-loss ve take-profit trigger seviyelerini gösteriyor.
+- Gerçek işlem geçmişi: Yeni read-only Binance USDⓈ-M `/fapi/v1/userTrades` reader'ı eklendi. Binance trade/order ID'leri yalnız Go autonomous SYSTEM emirleriyle ve botun SHA-256 client-order prefix'iyle eşleştiriliyor. Detay tablosu yalnız exchange tarafından gerçekleşmiş fill'leri gösteriyor; açık conditional emirler geçmişe karıştırılmıyor.
+- PnL hesabı: Gerçekleşmiş PnL Binance `realizedPnl` alanından, USDT komisyonu Binance `commission` alanından geliyor; net gerçekleşmiş PnL ikisinin farkı. Toplam bot PnL'si net gerçekleşmiş + açık pozisyon unrealized PnL olarak gösteriliyor.
+- Conditional emir açıklaması: MARKET giriş emri hemen fill olur. STOP_MARKET ve TAKE_PROFIT_MARKET koruma emirlerinin Binance “Open Orders / Conditional” bölümünde trigger'a kadar OPEN kalması beklenen davranıştır; tetiklenince market kapanışına dönüşür. Bu emirler kaldırılmadı ve pozisyonlar korumasız bırakılmadı.
+- Eski emir temizliği: Universe worker, açık pozisyonu kalmayan sembollerdeki yalnız `ka...` bot-owned reduce-only STOP/TAKE conditional emirlerini Go executor üzerinden iptal ediyor. İlk acceptance turunda 22 stale koruma emri kaldırıldı; manual/Grid emirlerine dokunulmadı.
+- Güvenli sembol rotasyonu: TESTNET bot rotasyonu iki aşamalı pause → 15 saniye settle → pozisyonu yeniden kontrol et → rotate/resume akışına geçirildi. Böylece engine ile universe worker aynı anda eski sembolde entry açıp botu başka sembole taşıyamıyor. Yarış sırasında oluştuğu tespit edilen sahipsiz ENAUSDT TESTNET pozisyonu merkezi Risk Engine yoluyla reduce-only MARKET emriyle FILLED kapatıldı.
+- Runtime acceptance (2026-08-22): 15/15 TESTNET botun tamamında gerçek Binance fill eşleşti; ilk ölçümde toplam 670 fill. Son güvenlik kabulünde `15/15 DEMO RUNNING`, 8 açık pozisyon, 0 orphan pozisyon, tam 16 bot-owned conditional emir, 8/8 pozisyonda SL+TP ve 0 stale sembol doğrulandı. Örnek en yüksek net gerçekleşmiş botta 39 gerçek fill ve `0.65385285 USDT` komisyon sonrası net PnL doğrulandı. `productionLive=false`.
+- Test: PASS — backend typecheck/build; son tam backend regression 60 dosya/261 test; frontend TypeScript lint ve production build. Local in-app browser bağlı olmadığı için oturumlu click-through görsel testi yapılamadı; API gerçek veri acceptance ve UI production compilation geçti.
+- Migration: Yok.
+- Regression/safety: Manual trade, Grid Bot ve mevcut exchange execution davranışı değiştirilmedi. Yeni Binance çağrısı salt-okunur trade history çağrısıdır; API key/permission veya withdrawal/transfer değişikliği yoktur.
+- Açık TODO: VPS deployment sonrasında aynı ekranın production URL üzerinde görsel smoke testi ve uzun dönem fill geçmişi için cursor/backfill persistence değerlendirilebilir.
+
+### PHASE_CHECKPOINT 13 — Arena Partial-Failure Recovery
+
+- Kök neden: Arena'nın bot, skor, PAPER özet, champion ve TESTNET operasyon istekleri tek bir `Promise.all` içinde yükleniyordu. Salt-okunur Go snapshot isteğinin geçici `422` hatası beş veri grubunun tamamını ekranda sıfır gösteriyordu.
+- Değişiklik: TESTNET operasyon verisi opsiyonel/izole yüklenir; bu istek geçici olarak başarısız olsa bile PAPER botları, skorlar, trade özetleri ve champion kanıtları Arena'da gösterilir. Son başarılı TESTNET veri ekrandan silinmez ve kullanıcıya kısmi veri uyarısı verilir.
+- Backend dayanıklılığı: Aynı kullanıcı için eşzamanlı TESTNET operasyon yenilemeleri single-flight ile birleştirildi. Salt-okunur Go snapshot çağrısı geçici hata halinde bir kez 250 ms sonra tekrarlanır.
+- Test: PASS — frontend TypeScript lint ve production build; backend typecheck/build; tam backend regression 60 dosya/261 test. Runtime health: backend database connected, Go engine live ve ready (`mode=cutover`).
+- Migration: Yok.
+- Regression/safety: Emir oluşturma, manual trade, Grid Bot, Risk Engine veya production LIVE davranışı değişmedi. Yapılan engine çağrıları salt-okunur snapshot sorgularıdır; `productionLive=false` korunur.
+- Açık TODO: Oturumlu tarayıcıda Arena yenileme smoke testi ve VPS deployment sonrası servis supervisor/health alert kurulumu.
+
+### PHASE_CHECKPOINT 14 — Bot Allocation Pyramiding + TESTNET Soak
+
+- Tamamlanan kapsam: 100 PAPER ve 15 Binance TESTNET botunun tamamında `pyramidingEnabled=true`. Aynı yönde yeni EMA/momentum sinyali geldiğinde bot aynı sembolde yeni MARKET girişleri ekleyebilir; ters yön sinyali mevcut pozisyona ekleme veya otomatik reversal üretmez.
+- Sermaye sınırı: Bot başına `allocationUsdt=100` toplam açık notional üst sınırıdır. Hedef giriş dilimi %10 (yaklaşık 10 USDT); borsa min-notional/step-size kuralları uygulanır ve kalan kota 100 USDT'yi aşmayacak şekilde kırpılır. Bu değer 100 USDT margin değil, kaldıraç uygulanmış toplam açık pozisyon notional kotasıdır.
+- PAPER muhasebesi: Aynı yön fill'leri kalıcı fill/trade kayıtlarına yazılır; ağırlıklı ortalama giriş, toplam quantity, fee, slippage, equity ve pozisyon ledger'ı güncellenir. Her botun açık pozisyon büyüklüğü autonomous Risk Engine içinde kendi 100 USDT allocation'ıyla sınırlandırılır.
+- TESTNET güvenliği: Pyramiding girişi merkezi Go Risk Engine yolundan geçer. Açık isolated pozisyonun mevcut kaldıracı korunur; açık koruma emirleri varken gereksiz margin/leverage reconfiguration yapılmaz. Fill sonrasında eski STOP/TAKE iptal edilip ağırlıklı giriş ve tam yeni quantity için bir reduce-only STOP_MARKET + bir TAKE_PROFIT_MARKET oluşturulur. Koruma doğrulanamazsa ek miktar rollback edilir; stop kurulamazsa tam pozisyon emergency reduce-only MARKET ile kapatılır.
+- Binance reconciliation hardening: Yeni emir yazımıyla periyodik reconciliation arasındaki yarış giderildi. In-flight emirler 30 saniyelik settlement penceresinden önce sorgulanmaz; Binance Demo'nun geçici `-2013` cevabı retryable eventual-consistency olarak sınıflandırılır. Settlement sonrasında hem regular hem Algo history'de bulunmayan idempotent client order local FAILED yapılır ve tek bir eski emir yüzünden tüm hesap `DEGRADED` edilmez.
+- Yoğunluk hardening: Universe worker ile dört Go scheduler worker'ın eşzamanlı DB yazımlarında görülen MySQL `1213/1205` transaction çakışmaları yalnız bu transaction'larda üç denemeli kısa backoff ile tekrar edilir. Fill sırasında SL/TP seviyesi aşılmışsa Binance `-2021` trigger reddini beklemek yerine güncel tam pozisyon mevcut güvenli close/cleanup akışına alınır; sonraki koruma turu da eksik/mismatched korumayı fail-closed onarır.
+- Arena görünümü: Bot detayına giriş fill sayısı, toplam fill, kapanış fill'i, komisyon ve aktif pozisyonda kullanılan kota/notional oranı eklendi. Açıklama aynı yön ekleme, 100 USDT üst sınırı ve korumaların yeniden boyutlandırılmasını belirtir.
+- Runtime acceptance (2026-08-22): AIAUSDT, AIOTUSDT, AEVOUSDT ve CELOUSDT dahil birden fazla gerçek Binance TESTNET pyramiding MARKET fill'i ve `same-direction TESTNET pyramid fill plus resized full-position protection submitted` audit kanıtı oluştu. Nihai soak kontrolünde 12 açık pozisyonun tamamı 100 USDT altında (maksimum 99.8783); 12/12 pozisyon tam quantity ile eşleşen tam iki bot-owned koruma emrine (STOP + TAKE) sahip, ihlal/orphan yok. İki periyodik reconciliation/universe turunda yeni deadlock, account degradation veya autonomous execution error oluşmadı. Hesap `CONNECTED`, `0 ERROR`, `0 RISK_BLOCKED`, `productionLive=false`; 14 DEMO RUNNING ve bir boş DEMO güvenli rotasyon için PAUSED idi. Universe worker boş botları güvenli iki-aşamalı rotasyon sırasında geçici PAUSED/STARTING tutabilir.
+- Veri/öğrenme gerçeği: Kararlar, PAPER fill/trade/pozisyonlar, metrics/scores, regime, Teacher/Researcher/Memory/Evolution kanıtları MySQL'de kalıcıdır. Aktif emir sinyali şu anda Binance 1m mum/mark verisi ve kalıcı performans seçiminden beslenir. Haber, YouTube/KOL, sosyal ve whale verileri sistemde ayrı kaynak/modüller olarak bulunabilir; henüz autonomous order kararına tam feature-fusion olarak bağlanmamıştır. “Kendini geliştirme” her tick'te online model ağırlığı eğitmek değil, kanıt eşiği sonrası score/survivor/mutation/crossover tabanlı nesil seçimidir.
+- AITOS referansı: Portfolio Spot/Futures ayrımı, bot kartları, son değişiklikler/audit akışı ve AI pulse yaklaşımı sonraki UI/observability iterasyonu için referans alındı. Mevcut Arena/Champions/Evolution/Teacher/Researcher/Memory/Risk mimarisi korunacak; doküman dışı yeni execution mimarisi uydurulmadı.
+- Test: PASS — Go tam `go test ./...` ve `go vet ./...`; backend 60 dosya/261 test, typecheck ve production build; frontend typecheck/lint ve production build. Runtime startup/periodic reconciliation, gerçek pyramiding fill, allocation ve tam koruma acceptance geçti.
+- Migration: Yok.
+- Regression/safety: Manual trade, Grid Bot ve production exchange davranışı değiştirilmedi. API key/permission veya withdrawal/transfer değişikliği yok. Production gerçek para LIVE yolu kapalı; yalnızca onaylı Binance TESTNET autonomous execution açık. Risk Engine bypass edilmedi.
+- Açık TODO: Haber/KOL/sosyal/whale feature-fusion için mimarideki kanıt, kalite, gecikme ve fail-closed kurallarına uygun ayrı çalışma; AITOS benzeri birleşik Portfolio/AI Pulse UI; VPS systemd/Docker supervisor, secret injection, restart policy ve health alert kurulumu.
+
+### PHASE_CHECKPOINT 15 — Bot Bazlı Manuel Sermaye + 200 USDT Otomatik Kota
+
+- Tamamlanan kapsam: Arena bot detayına bot başına manuel sermaye/kota kontrolü eklendi. Yönetici kotayı doğrudan ayarlayabilir veya mevcut tutara bakiye ekleyebilir; bot başına izin verilen aralık 10–200 USDT ve çalışan autonomous botta sermaye azaltma kapalıdır.
+- PAPER/TESTNET anlamı: PAPER tutarı simülasyon başlangıç sermayesi ve açık notional kotasıdır. DEMO/TESTNET tutarı Binance'taki ortak demo cüzdanından ayrı bir alt cüzdan oluşturmaz; botun ortak hesap üzerinde kullanabileceği uygulama kotasıdır. Binance Demo hesabına gerçek test bakiyesi ekleme işlemi bu API'nin dışında kalır.
+- Çoklu giriş: Mevcut `pyramidingEnabled=true` akışı korunur. Aynı yönde yeni sinyal geldikçe MARKET ek giriş yapılabilir; toplam açık notional botun güncel 10–200 USDT kotasını aşamaz ve her fill sonrasında tam pozisyon için SL/TP yeniden boyutlandırılır.
+- Otomatik yükseltme: En az 200 tamamlanmış trade metriği olan, güncel equity'si başlangıç sermayesinin üzerinde bulunan ve kotası 200 USDT'nin altında kalan bot, universe döngüsünde bir kez 200 USDT kotasına yükseltilir. İlk runtime turunda kanıt eşiğine uyan bot olmadığı için `autoScaledCapital=0`; manuel yükseltme hemen kullanılabilir.
+- Risk Engine: TESTNET bot kotalarının toplamı büyüdüğünde ortak `maxAccountOpenNotional`, mevcut değerin altına düşürülmeden en az filo toplamına; sembol limiti de en az en büyük bot kotasına yükseltilir. Emirler yine merkezi Risk Engine, 15 açık pozisyon, isolated margin, 5x–20x kaldıraç ve zorunlu SL/TP kontrollerinden geçer; bypass eklenmedi.
+- Kalıcılık/idempotency: `startingPaperBalance` ile JSON `allocationUsdt` birlikte audit kaydıyla güncellenir. Universe worker, PAPER bootstrap ve TESTNET deployment scriptleri manuel kotayı tekrar 100'e sıfırlamaz.
+- Trade Memory düzeltmesi: Ekrandaki `200` değerinin işlem durdurma limiti olmadığı açıklandı. Yeni salt-okunur stats endpoint'i filtreye uyan tüm kapanmış PAPER işlemlerinin toplam sayı/PnL/cost/win bilgisini verir; tablo performans için yalnız en yeni 200 kaydı taşır.
+- API/UI: `PATCH /api/admin/trading/autonomous/bots/:id/capital`, `GET /api/admin/trading/trade-memory/stats`; Arena'da “Kotayı ayarla” ve “Bakiye ekle” kontrolleri. Tüm sermaye değişiklikleri `AI_BOT_CAPITAL_SET` veya `AI_BOT_CAPITAL_ADDED` audit olayı üretir ve response güvenlik sözleşmesi `liveTradingEnabled=false` kalır.
+- Test: PASS — hedeflenen 3 dosya/15 test; tam backend regression 60 dosya/263 test; backend typecheck ve production build; frontend typecheck/lint ve production build. Manual trading adapter, Binance Demo adapter, Grid Plan, execution safety ve autonomous Risk Engine regresyonları geçti.
+- Runtime acceptance: Backend yeni build ile PID 19460 olarak `:4000` üzerinde çalışıyor; `/api/health` database connected döndü. Yeni iki korumalı rota çalışan süreçte kayıtlı ve yetkisiz smoke isteğine beklenen `401` döndü. Go Trading Engine PID 10496 kesintisiz kaldı; başlangıç universe turu 100 PAPER + 15 DEMO bot gördü. Bağlı tarayıcı olmadığı için oturumlu görsel click-through yapılamadı.
+- Migration: Yok. Mevcut kolonlar kullanıldı; production veri kaybı veya schema değişikliği yok.
+- Regression/safety: Manual trade, Grid Bot ve exchange credential/permission davranışı değiştirilmedi. API key/secret, withdrawal/transfer yetkisi ve production gerçek para LIVE yolu değiştirilmedi; `productionLive=false`.
+- Açık TODO: Kullanıcının Arena'da seçtiği bot üzerinde ilk manuel 100→200 kota değişikliğinin oturumlu UI smoke testi; VPS supervisor/restart policy ve health alert kurulumu.
+
+### PHASE_CHECKPOINT 16 — Arena/Evolution Veri Görünürlüğü ve Leaderboard Performansı
+
+- Kök neden: `bot_metrics` tablosu 107.248 satıra ulaştığında correlated latest-score sorgusu her Arena/Evolution yenilemesinde yaklaşık 147–175 saniye sürüyordu. Frontend 15 saniyelik timeout nedeniyle bot ve generation ana verilerini de sıfır gösteriyordu; kayıtlar silinmemişti.
+- Backend düzeltmesi: Latest metric sorgusu bot başına `MAX(id)` ile tek grouped scan + primary-key join kullanacak şekilde değiştirildi. Gerçek veritabanı kabulünde aynı 100 satırlık leaderboard 147+ saniyeden 354 ms'ye düştü.
+- Frontend dayanıklılığı: Arena bot/summary/champion verileri, TESTNET snapshot ve leaderboard'dan bağımsız yüklenir. Evolution generation/run/mutation/crossover verileri de leaderboard'u beklemez. Opsiyonel skor veya TESTNET isteği gecikirse ana bot/generation listesi görünür kalır.
+- Evolution açıklaması: “PAPER generation aç” işleminin alım-satım motorunu başlatmadığı açıklandı. Aktif G1 `RUNNING/EVALUATING` iken yeni generation düğmesi devre dışı ve mevcut generation numarasını gösterir.
+- PAPER çalışma kabulü: G1 `RUNNING`, hedef 100, ilişkili bot 101 (arşivlenmiş replacement dahil). Ölçümde 100 PAPER bottan 99 RUNNING/1 STARTING; son 5 dakikada 239 PAPER karar ve 11 yeni PAPER fill; 22 açık PAPER trade. PAPER, Binance piyasa fiyatı/mumları üzerinde veritabanında simülasyon yapar ve exchange emri göndermez.
+- Runtime: Optimize backend PID 14396 ile `:4000` üzerinde; Go Trading Engine PID 10496 kesintisiz. TESTNET botlar universe iki-aşamalı rotasyon nedeniyle anlık RUNNING/STARTING/PAUSED dağılımında olabilir.
+- Test: PASS — ilgili 3 dosya/13 test, ek bot-score testi, backend typecheck/build, frontend typecheck/lint ve production build.
+- Migration: Yok. API key/permission, manual trade, Grid Bot, withdrawal/transfer ve production LIVE davranışı değişmedi; `productionLive=false`, Risk Engine zorunlu.
+
+### PHASE_CHECKPOINT 17 — Otomatik Teacher / Researcher Kanıt Döngüsü
+
+- Kök neden: Teacher/Researcher servisleri, API'leri, tabloları ve read-only UI ekranları tamamlanmıştı fakat `server.ts` içinde bunları zamanlayan worker yoktu. Runtime kabulünden önce veritabanında 0 Teacher evaluation, 0 Research hypothesis ve 0 run audit bulundu.
+- İlk analiz: Mevcut 377 kapanmış MOMENTUM PAPER trade üzerinde rule-based Teacher 117 hedef analiz edip 118 evaluation yazdı. Researcher 1 strategy-family dataset analiz edip 3 DRAFT candidate-only hipotez oluşturdu. `recommendationApplied=false`, `candidateCreated=false`, `liveChanged=false`.
+- Worker: `AI_TRADING_LEARNING_ENABLED=true`; her 15 dakikada kanıt kontrolü. Yalnız son başarılı/baseline checkpoint'ten sonra en az 100 yeni kapanmış PAPER trade oluştuğunda Teacher, ardından Researcher çalışır. Başlangıç baseline'ı 378 trade'de oluşturuldu; restart aynı veriyi tekrar analiz etmez.
+- Runtime: Backend PID 3000 üzerinde worker aktif; Go Trading Engine PID 10496 kesintisiz. UI yenilendiğinde Teacher'da 118 kayıt, Researcher'da 3 hipotez görünmelidir.
+- Test: PASS — Teacher, Researcher, AI adapter, learning worker ve execution safety 5 dosya/17 test; tam backend regression 61 dosya/264 test; backend typecheck ve production build.
+- Migration: Yok. Worker yalnız PAPER/kanıt tablolarını okur ve öneri/hipotez/audit yazar. Emir göndermez, strategy kodunu veya merkezi risk limitini değiştirmez; manual/Grid, API key/permission, withdrawal/transfer ve production LIVE davranışı değişmedi.
+- Skill araştırması: skills.sh üzerindeki `backtesting-frameworks` ve `backtest-expert` geliştirme metodolojisi desteği olarak uygun bulundu. Bunlar runtime bot eklentisi değildir; backtest/walk-forward/overfitting kontrollerini geliştirirken Codex'e rehberlik eder. Harici skill otomatik kurulmadı.
+
+### PHASE_CHECKPOINT 18 — Trading Playbook v1.0 Karar ve Risk Entegrasyonu
+
+- Kaynak: `TRADING_PLAYBOOK.md` proje köküne eklendi; belge talimatları kullanıcı talebinden ayrı, hedef kural kaynağı olarak ele alındı.
+- Bölüm 4: Altı maddeli giriş checklist'i fail-closed doğrulama katmanı olarak eklendi. Rejim, üst zaman dilimi, en az 2/3 teyit, risk/ödül, açık pozisyon limiti ve funding/OI uyumu tamamlanmadan autonomous giriş onaylanmaz.
+- Bölüm 5: Miktar bot sermayesinin sabit `%0.5` risk bütçesi ve gerçek stop mesafesinden hesaplanır; yapılandırma yalnız `%0.5–1` aralığını kabul eder ve martingale girdisi kullanmaz. Bot bazlı günlük kayıp durdurma korunur. Üç ardışık kayıpta PAPER öğrenmeye devam eder; TESTNET 24 saat gözlem ve ardından insan/Teacher onayı olmadan yeniden giriş yapamaz.
+- Bölüm 1–3: Binance Futures için 1m/5m/15m/1h/4h mumları, 1H–4H EMA(50/200), ADX, ATR genişlemesi, üç katmanlı yön oyu, funding ve OI teyidi sinyal katmanına eklendi. Eksik veri fail-closed; OI artışı yoksa giriş miktarı yarıya iner; düşük rejim güveninde kaldıraç düşürülür.
+- Bölüm 6: Yalnız PAPER yaşam döngüsünde ilk hedefte varsayılan `%50` kısmi TP, stop'u maliyete taşıma, kalan miktarda trailing stop ve TREND → RANGE/UNCERTAIN rejim değişimi kapanışı eklendi. TESTNET/live executor değiştirilmedi.
+- Commitler: `80a7aa2` (Bölüm 4), `e37ba91` (Bölüm 5), `e47ce5a` (Bölüm 1–3), `d676ba1` (Bölüm 6).
+- Test: PASS — tam Go `go test ./...` ve `go build ./cmd/trading-engine`; manual execution, Grid, Binance, Bybit, reconciliation, risk, autonomous execution ve PAPER paketleri dahil tüm regression testleri geçti.
+- Migration: Yok. Candidate/Challenger/Champion/Live Eligible yaşam döngüsü, API key/permission, withdrawal/transfer ve production LIVE yolu değiştirilmedi.
+- Açık TODO/uygulanmayanlar: Bölüm 3 liquidation kümeleri için mevcut reader'da güvenilir veri kaynağı yok; giriş checklist'ine sahte veri eklenmedi. Bölüm 7 korelasyon ve ekonomik olay filtresi ile Bölüm 8 otomatik playbook dosyası değiştirme/A-B sürümleme bu talebin a–d kapsamı dışında bırakıldı.
