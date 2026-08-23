@@ -11,6 +11,7 @@ import {
   createFactoryBot,
   createParameterVariant,
   getFactoryBot,
+  getFactoryBotPaperPerformance,
   listFactoryBots,
   transitionFactoryBot,
 } from './bot-factory.service.js';
@@ -21,6 +22,10 @@ export async function factoryBots(req: Request, res: Response) {
 
 export async function factoryBot(req: Request, res: Response) {
   return success(res, await getFactoryBot(req.user!.id, req.params.id as string));
+}
+
+export async function factoryBotPaperPerformance(req: Request, res: Response) {
+  return success(res, await getFactoryBotPaperPerformance(req.user!.id, req.params.id as string));
 }
 
 export async function create(req: Request, res: Response) {

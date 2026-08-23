@@ -15,8 +15,14 @@ const botFactorySelect = {
   lifecycleStatus: true, factoryCreationMethod: true, strategyVersionId: true,
   generationId: true, parentBotId: true, riskProfileId: true, exchangeAccountId: true,
   startingPaperBalance: true, symbols: true, timeframe: true, configuration: true,
+  stateReason: true, lastErrorCode: true, lastErrorMessage: true, heartbeatAt: true, lastDecisionAt: true,
   createdAt: true, updatedAt: true, version: true,
   strategyVersion: { select: { version: true, strategy: { select: { id: true, name: true, family: true } } } },
+  paperPosition: { select: {
+    tradingBotId: true, symbol: true, netQuantity: true, avgEntryPrice: true, realizedPnl: true,
+    unrealizedPnl: true, totalFees: true, lastMarkPrice: true, openedAt: true, lastFilledAt: true, updatedAt: true,
+  } },
+  _count: { select: { paperFills: true, paperTrades: true } },
 } satisfies Prisma.TradingBotSelect;
 
 type FactoryCreateData = {
@@ -69,6 +75,28 @@ export async function listFactoryBots(userId: string) {
 
 export async function getFactoryBot(userId: string, id: string) {
   return ownedFactoryBot(userId, id);
+}
+
+export async function getFactoryBotPaperPerformance(userId: string, id: string) {
+  await ownedFactoryBot(userId, id);
+  const [position, fills] = await Promise.all([
+    prisma.tradingBotPaperPosition.findUnique({ where: { tradingBotId: id } }),
+    prisma.tradingBotPaperFill.findMany({ where: { tradingBotId: id }, orderBy: { id: 'desc' }, take: 100 }),
+  ]);
+  return {
+    position: position ? {
+      ...position,
+      netQuantity: position.netQuantity.toString(), avgEntryPrice: position.avgEntryPrice.toString(),
+      realizedPnl: position.realizedPnl.toString(), unrealizedPnl: position.unrealizedPnl.toString(),
+      totalFees: position.totalFees.toString(), lastMarkPrice: position.lastMarkPrice.toString(),
+      netPnl: position.realizedPnl.sub(position.totalFees).add(position.unrealizedPnl).toString(),
+    } : null,
+    fills: fills.map((fill) => ({
+      ...fill, id: fill.id.toString(), decisionId: fill.decisionId.toString(), quantity: fill.quantity.toString(),
+      markPrice: fill.markPrice.toString(), fillPrice: fill.fillPrice.toString(), notional: fill.notional.toString(),
+      fee: fill.fee.toString(), realizedPnl: fill.realizedPnl.toString(), slippageBps: fill.slippageBps.toString(), feeBps: fill.feeBps.toString(),
+    })),
+  };
 }
 
 export async function createFactoryBot(userId: string, input: CreateFactoryBotInput, ipAddress?: string) {

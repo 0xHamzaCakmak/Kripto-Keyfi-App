@@ -38,7 +38,9 @@ foreach ($key in $required) {
 $env:TRADING_ENGINE_MODE = 'cutover'
 $env:TRADING_ENGINE_SHADOW_READ_ENABLED = 'true'
 $env:TRADING_ENGINE_REALTIME_ENABLED = 'false'
-$env:TRADING_ENGINE_BOT_SCHEDULER_ENABLED = if ($EnableAutonomousTestnet) { 'true' } else { 'false' }
+# PAPER/SHADOW execution is local simulation and must keep running even when
+# Binance TESTNET order execution is intentionally disabled.
+$env:TRADING_ENGINE_BOT_SCHEDULER_ENABLED = 'true'
 $env:TRADING_ENGINE_AUTONOMOUS_TESTNET_ENABLED = if ($EnableAutonomousTestnet) { 'true' } else { 'false' }
 $env:TRADING_ENGINE_LIQUIDATION_STREAM_ENABLED = if ($EnableAutonomousTestnet) { 'true' } else { 'false' }
 $env:TRADING_ENGINE_ADDR = ':8081'
@@ -61,6 +63,7 @@ for ($attempt = 0; $attempt -lt 20; $attempt++) {
         pid = $process.Id
         status = $health.status
         mode = $health.mode
+        paperScheduler = $true
         autonomousTestnet = $EnableAutonomousTestnet.IsPresent
         stdoutLog = $StdoutLog
         stderrLog = $StderrLog

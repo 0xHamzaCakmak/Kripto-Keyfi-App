@@ -85,4 +85,20 @@ describe('bot factory contracts', () => {
     expect(service).not.toContain('submitOrder');
     expect(service).not.toContain('exchangeAdapter');
   });
+
+  it('exposes the autonomous PAPER ledger without an exchange execution path', () => {
+    const service = readFileSync(
+      new URL('../src/modules/ai-trading/bot-factory.service.ts', import.meta.url),
+      'utf8',
+    );
+    const routes = readFileSync(
+      new URL('../src/modules/trading/trading.routes.ts', import.meta.url),
+      'utf8',
+    );
+    expect(service).toContain('getFactoryBotPaperPerformance');
+    expect(service).toContain('tradingBotPaperPosition.findUnique');
+    expect(service).toContain('tradingBotPaperFill.findMany');
+    expect(routes).toContain("/bot-factory/bots/:id/paper-performance");
+    expect(service).not.toContain('submitOrder');
+  });
 });

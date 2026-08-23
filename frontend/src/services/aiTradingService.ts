@@ -50,11 +50,29 @@ export type AutonomousBot = {
   symbols: unknown;
   timeframe: string | null;
   configuration: unknown;
+  stateReason: string | null;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  heartbeatAt: string | null;
+  lastDecisionAt: string | null;
   createdAt: string;
   updatedAt: string;
   version: number;
   strategyVersion: { version: number; strategy: { id: string; name: string; family: string } } | null;
+  paperPosition: PaperPosition | null;
+  _count: { paperFills: number; paperTrades: number };
 };
+
+export type PaperPosition = {
+  tradingBotId: string; symbol: string; netQuantity: string; avgEntryPrice: string; realizedPnl: string;
+  unrealizedPnl: string; totalFees: string; lastMarkPrice: string; netPnl?: string;
+  openedAt: string | null; lastFilledAt: string | null; updatedAt: string;
+};
+export type PaperFill = {
+  id: string; decisionId: string; side: 'BUY' | 'SELL'; quantity: string; markPrice: string; fillPrice: string;
+  notional: string; fee: string; realizedPnl: string; slippageBps: string; feeBps: string; occurredAt: string;
+};
+export type PaperPerformance = { position: PaperPosition | null; fills: PaperFill[] };
 
 export type TestnetPosition = {
   positionKey: string; symbol: string; side: 'LONG' | 'SHORT'; quantity: string; entryPrice: string; markPrice: string;
@@ -260,6 +278,7 @@ export const aiTradingApi = {
   overview: () => getAutonomousData<AutonomousOverview>('/admin/trading/autonomous/overview'),
   arenaStatus: () => getAutonomousData<ArenaStatus>('/admin/trading/autonomous/arena-status'),
   bots: () => getData<AutonomousBot[]>('/admin/trading/bot-factory/bots'),
+  paperPerformance: (botId: string) => getData<PaperPerformance>(`/admin/trading/bot-factory/bots/${encodeURIComponent(botId)}/paper-performance`),
   leaderboard: (limit = 100) => getData<LeaderboardRow[]>('/admin/trading/leaderboard', { limit }),
   regimeLeaderboard: (regime: MarketRegime, limit = 100) => getData<Array<LeaderboardRow & { regime: MarketRegime }>>(`/admin/trading/regimes/${regime}/leaderboard`, { limit }),
   champions: () => getData<ChampionCandidate[]>('/admin/trading/champions'),
