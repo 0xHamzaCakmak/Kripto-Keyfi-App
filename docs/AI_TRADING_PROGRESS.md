@@ -667,3 +667,42 @@ Requested prompt filenames were absent. Repository contains `docs/AI_TRADING_IMP
 - Başarılı bot akışı: Champion ve walk-forward kanıt kapıları runbook'a kaydedildi. Mevcut 15 TESTNET bot çalışır; yeni Champion'ı açık pozisyon güvenliğiyle zayıf DEMO botunun yerine otomatik alan fleet-rebalance henüz yoktur ve açık TODO olarak bırakıldı. Mevcut geçiş yönetici onaylı TESTNET canary'dir.
 - Test: `git diff --check` PASS. Windows ortamında `sh`/Nginx bulunmadığı için Linux `sh -n` ve `nginx -t` kontrolleri VPS kurulum adımında çalıştırılacaktır.
 - Migration: Yok. Production gerçek-para LIVE, API permission ve withdrawal/transfer davranışı değişmedi.
+
+### PHASE_CHECKPOINT 23 — Güvenli Birleşik deploy.sh (2026-08-23)
+
+- Proje köküne KriptoKeyfi'ye özel `deploy.sh` eklendi. Başka projenin deploy akışı kullanılmadı; gerçek dizinler `backend`, `frontend`, `services/trading-engine`, PM2 adları `kriptokeyfi-api` ve `kriptokeyfi-trading-engine` olarak tanımlandı.
+- Deploy sırası: git fast-forward, bağımlılıklar, dotenv doğrulama, Prisma generate, backend test/typecheck/build, frontend lint/build, tam Go test/build, MySQL yedeği, `prisma migrate deploy`, TESTNET bakım pause, frontend/Nginx, backend/engine PM2 restart, readiness/reconciliation, yalnız bakımda durdurulan TESTNET botlarını resume, fleet status ve `pm2 save`.
+- Go binary önce `trading-engine.deploy` olarak üretilir; test/build geçmeden çalışan binary değiştirilmez. Engine readiness başarısızsa önceki binary geri yüklenir ve TESTNET filosu otomatik devam ettirilmez.
+- Kalıcılık: Bootstrap, seed, reset, `db push --force-reset`, production LIVE aktivasyonu ve master-key üretimi deploy dışında bırakıldı. Aynı DB ve master key ile PAPER/TESTNET botları geçmişlerinden devam eder.
+- Test: Git Bash `bash -n deploy.sh` PASS; `git diff --check` PASS. Gerçek PM2/Nginx/mysqldump smoke testi ilk VPS çalıştırmasında yapılacaktır.
+- Migration: Bu değişiklik migration eklemedi.
+
+### PHASE_CHECKPOINT 24 — Production Env Şablonu ve Autonomous Health Kanıt Düzeltmesi (2026-08-23)
+
+- Env denetimi: Yerel `backend/.env` development değerleri (`PORT=4000`, localhost frontend, insecure cookie) taşıdığı ve kritik Go scheduler/cutover değişkenlerini içermediği için VPS'ye doğrudan kopyalanmaya uygun bulunmadı. Secret içermeyen, 89 anahtarlı ve backend/Go Engine ayarlarını gruplandıran `backend/.env.production.example` oluşturuldu. Gerçek secret'lar yalnız Git tarafından ignore edilen `.env.production.local`/VPS `.env` içinde tutulacak.
+- Runtime kök nedeni: VPS health kanıtında 100 RUNNING bot, son 24 saatte 63.118 karar ve yaklaşık 88 karar/dakika bulunmasına rağmen `marketData.latestObservedAt=null` olduğu için sistem yanlış biçimde `DEGRADED` raporlanıyordu. Exchange, AI provider, PnL, generation ve emergency-stop hatası yoktu.
+- Düzeltme: Autonomous health artık en güncel rejim snapshot'ı ile en güncel autonomous karar kanıtından taze olanı kullanır. Her autonomous karar Go Engine'in mark price ve 1m/5m/15m/1h/4h market context yüklemesinden sonra kalıcılaştığı için fallback kaynağı açıkça `AUTONOMOUS_DECISION` olarak raporlanır. Karar akışı da durursa 5 dakikalık fail-closed `DEGRADED` davranışı korunur.
+- Test: `backend/tests/autonomous-observability.test.ts` 4/4 PASS; backend typecheck PASS; frontend typecheck/lint PASS; `git diff --check` PASS (yalnız Windows LF/CRLF uyarıları).
+- Migration: Yok. Strateji, sinyal, Risk Engine, PAPER fill, TESTNET executor, manual/Grid veya production LIVE davranışı değiştirilmedi.
+- Açık TODO: `market_regime_snapshots` tablosunu gerçek rejim kanıtıyla doldurup trade-memory kayıtlarına snapshot kimliği bağlamak; 63k+ HOLD kararının momentum/mean-reversion eşik dağılımını ölçerek PAPER A/B sinyal kohortlarını tasarlamak.
+
+### PHASE_CHECKPOINT 25 — Local Go Engine Başlatma Güvenliği (2026-08-23)
+
+- Kök neden: Local backend `TRADING_ENGINE_URL=http://127.0.0.1:8081` kullanmasına rağmen 8081 üzerinde Go Trading Engine çalışmıyordu. Bu nedenle Manual Testnet ve TESTNET detay/snapshot kullanan ekranlar `GO_EXECUTOR_UNAVAILABLE` gösteriyordu. Doğrudan sağlık ve Bearer-token durum kontrolleri engine başlatıldıktan sonra başarılı oldu.
+- Ayrım: Local engine eksikliği local yönetim ekranlarını etkiler; VPS engine bağımsız olarak ready ve yaklaşık 85–95 karar/dakika ürettiği için PAPER fill sayısının sıfır olmasının nedeni değildir. VPS karar kanıtında directional kararların tamamı HOLD kalmaktadır.
+- Güvenli local başlatma: `scripts/start-local-trading-engine.ps1` varsayılanı, cutover/manual TESTNET ve shadow-read desteğini korurken autonomous scheduler, autonomous TESTNET ve liquidation stream'i kapalı tutacak şekilde değiştirildi. Böylece VPS ile aynı Binance Demo hesabında ikinci autonomous filo yanlışlıkla başlamaz. Autonomous local TESTNET yalnız açık `-EnableAutonomousTestnet` parametresiyle açılabilir.
+- Operasyon: Script artık `.runtime` log dizinini hazırlar, 8081 port çakışmasını reddeder, engine readiness için 10 saniye bekler ve PID/mod/log yollarını raporlar.
+- Test: PowerShell parser kontrolü PASS. Ağ-kısıtlı geçici shadow süreç kapatıldı; engine normal ağ erişimiyle PID `15716` üzerinde `cutover/ready`, executor enabled ve autonomous TESTNET disabled olarak başlatıldı. Startup reconciliation uyarısız tamamlandı. Binance Demo snapshot PASS: hesap `CONNECTED/GO`, 7 balance kaydı, 527 futures sembolü, 0 açık emir ve 0 pozisyon döndü.
+- Migration: Yok. Production LIVE açılmadı; Risk Engine, manual/Grid kodu, API key/permission ve withdrawal/transfer davranışı değişmedi.
+
+### PHASE_CHECKPOINT 26 — PAPER Sinyal Deneyi ve VPS Runtime Dayanıklılığı (2026-08-23)
+
+- PAPER sinyal deneyi: `PAPER_SIGNAL_SENSITIVITY_V1` yalnız autonomous PAPER botlarına eklendi. Botlar deterministik olarak `CONTROL`, `BALANCED`, `RESPONSIVE` ve `EXPLORATORY` kohortlarına ayrılır; momentum ile RSI/Bollinger eşikleri kohorta göre ölçülü biçimde değişir. Bilinmeyen deney varyantı fail-closed davranır. Binance TESTNET/DEMO ve production LIVE sinyal eşikleri değişmedi.
+- Kanıt: Deney kimliği/varyantı karar metriklerine, hypothetical order'a ve kapanmış PAPER trade `marketContext` kaydına yazılır. Yeni evaluator kronolojik `%70 train / %30 out-of-sample` raporu üretir; en az `200` OOS kapanış, pozitif expectancy, profit factor `>1` ve max drawdown `<=%15` olmadan uygunluk vermez. Otomatik TESTNET/Champion/LIVE terfisi yapmaz.
+- DB yükü: PAPER performans/skor yeniden hesaplaması her HOLD kararında çalışmak yerine bot başına en fazla 15 dakikada bir çalışır; gerçek PAPER fill veya exit oluştuğunda hemen yenilenir. Mevcut güvenli MySQL transaction retry mekanizması korundu; yeni migration veya tablo eklenmedi.
+- Liquidation stream: Binance public force-order websocket'e 4 dakikalık ping keepalive, pong/read deadline yenilemesi ve kontrollü kapanış eklendi. Böylece VPS/NAT idle timeout kaynaklı periyodik bağlantı kesintileri azaltıldı; reconnect davranışı korundu.
+- Production ağ yüzeyi: Go Engine production bind adresi `127.0.0.1:8081` yapıldı. Backend `TRADING_ENGINE_URL=http://127.0.0.1:8081` üzerinden erişir; 8081 dış ağa açılmaz. Production örnek ve ignore edilen local env dosyaları 89/89 aynı anahtarı taşır, eksik/fazla/tekrar eden anahtar yoktur.
+- Deploy: `deploy.sh` Git Bash `bash -n` doğrulamasından geçti. Betik Go testlerinden önce production trading env değişkenlerini temizleyerek config testlerini güvenli varsayılanlarla çalıştırır; backend dev bağımlılıklarını test/typecheck/build için kurar ve yeni loopback bind değerini doğrular. Yalnız pending migration dosyaları taranır; DROP/TRUNCATE/DELETE veya breaking ALTER algılanırsa `migrate deploy` çalışmadan yönetici onayı için durur.
+- Test: PASS — tam Go `go test ./...` ve production binary build; backend 61 dosya/265 test, typecheck ve build; frontend lint ve production build; repository secret scan; `git diff --check`.
+- Migration: Yok. Manual trade, Grid Bot, exchange credential/permission, withdrawal/transfer, Candidate/Challenger/Champion/Live Eligible ve production gerçek-para LIVE davranışı değiştirilmedi. Risk Engine bypass edilmedi.
+- Açık TODO: PAPER kohortlarının en az 200 OOS kapanış kanıtını toplamak; sonuçları `npm run evaluate:ai-signal-experiment` ile değerlendirmek; yalnız kanıtı pozitif botlar için ayrı yönetici onaylı TESTNET canary planlamak.

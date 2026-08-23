@@ -218,7 +218,7 @@ export type AutonomousHealth = {
   metrics: {
     activeBots: number;
     arena: { decisionsLast5m: number; throughputPerMinute: number };
-    marketData: { latestObservedAt: string | null; lagMs: number | null };
+    marketData: { latestObservedAt: string | null; lagMs: number | null; source: 'REGIME_SNAPSHOT' | 'AUTONOMOUS_DECISION' | 'NONE' };
     strategyExecution: { averagePersistenceLatencyMs: number | null };
     paperOrders: { total: number; last24h: number };
     riskRejectsLast24h: number;

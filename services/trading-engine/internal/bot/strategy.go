@@ -278,19 +278,26 @@ func evaluateChartMeanReversion(instance Instance, markPrice string, closes []do
 		variance += math.Pow(value-mean, 2)
 	}
 	deviation := math.Sqrt(variance / float64(len(window)))
-	lower, upper := mean-2*deviation, mean+2*deviation
+	experiment, err := resolveSignalExperiment(instance)
+	if err != nil {
+		return Decision{}, err
+	}
+	lower, upper := mean-experiment.BollingerDeviation*deviation, mean+experiment.BollingerDeviation*deviation
 	rsiValue := rsi(values, 14)
 	current := values[len(values)-1]
 	side, _ := stringConfig(instance.Configuration, "side")
 	side = strings.ToUpper(side)
 	kind, summary := "HOLD", "RSI ve Bollinger birlikte aşırı sapma teyidi üretmedi."
-	if current <= lower && rsiValue <= 35 && (side == "BUY" || side == "BOTH") {
+	if current <= lower && rsiValue <= experiment.RSILow && (side == "BUY" || side == "BOTH") {
 		kind, summary = "BUY", "Alt Bollinger bandı ve düşük RSI RANGE dönüş sinyali üretti."
-	} else if current >= upper && rsiValue >= 65 && (side == "SELL" || side == "BOTH") {
+	} else if current >= upper && rsiValue >= experiment.RSIHigh && (side == "SELL" || side == "BOTH") {
 		kind, summary = "SELL", "Üst Bollinger bandı ve yüksek RSI RANGE dönüş sinyali üretti."
 	}
-	metrics := map[string]any{"rsi14": roundFloat(rsiValue, 4), "bollingerMean": roundFloat(mean, 8), "bollingerLower": roundFloat(lower, 8), "bollingerUpper": roundFloat(upper, 8), "selectedSubStrategy": "RANGE_MEAN_REVERSION"}
-	return decision(instance, kind, summary, markPrice, strconv.FormatFloat(values[len(values)-2], 'f', -1, 64), metrics), nil
+	metrics := map[string]any{"rsi14": roundFloat(rsiValue, 4), "bollingerMean": roundFloat(mean, 8), "bollingerLower": roundFloat(lower, 8), "bollingerUpper": roundFloat(upper, 8), "selectedSubStrategy": "RANGE_MEAN_REVERSION",
+		"signalExperimentId": experiment.ID, "signalExperimentVariant": experiment.Variant, "bollingerDeviation": experiment.BollingerDeviation, "rsiLow": experiment.RSILow, "rsiHigh": experiment.RSIHigh}
+	result := decision(instance, kind, summary, markPrice, strconv.FormatFloat(values[len(values)-2], 'f', -1, 64), metrics)
+	attachSignalExperiment(result.HypotheticalOrder, experiment)
+	return result, nil
 }
 
 func evaluatePlaybookConfluence(instance Instance, markPrice string, closes []domain.Decimal) (Decision, error) {
@@ -339,10 +346,15 @@ func rsi(values []float64, period int) float64 {
 }
 
 func evaluateChartMomentum(instance Instance, markPrice string, closes []domain.Decimal) (Decision, error) {
-	threshold, ok := numberConfig(instance.Configuration, "signalThresholdBps")
-	if !ok || threshold <= 0 || len(closes) < 21 {
+	configuredThreshold, ok := numberConfig(instance.Configuration, "signalThresholdBps")
+	if !ok || configuredThreshold <= 0 || len(closes) < 21 {
 		return Decision{}, errors.New("autonomous chart momentum configuration is invalid")
 	}
+	experiment, err := resolveSignalExperiment(instance)
+	if err != nil {
+		return Decision{}, err
+	}
+	threshold := math.Max(5, configuredThreshold*experiment.MomentumMultiplier)
 	values := make([]float64, 0, len(closes))
 	for _, closeText := range closes {
 		closeRat, valid := decimalRat(string(closeText))
@@ -368,8 +380,59 @@ func evaluateChartMomentum(instance Instance, markPrice string, closes []domain.
 	} else if momentumBps <= -threshold && markFloat <= fast && (side == "SELL" || side == "BOTH") {
 		kind, summary = "SELL", "1m grafik EMA momentumu ve fiyat teyidi SHORT sinyali üretti."
 	}
-	metrics := map[string]any{"chartTimeframe": "1m", "chartSamples": len(values), "emaFast": roundFloat(fast, 8), "emaSlow": roundFloat(slow, 8), "chartMomentumBps": roundFloat(momentumBps, 4), "thresholdBps": threshold}
-	return decision(instance, kind, summary, markPrice, strconv.FormatFloat(values[len(values)-2], 'f', -1, 64), metrics), nil
+	metrics := map[string]any{"chartTimeframe": "1m", "chartSamples": len(values), "emaFast": roundFloat(fast, 8), "emaSlow": roundFloat(slow, 8), "chartMomentumBps": roundFloat(momentumBps, 4),
+		"configuredThresholdBps": configuredThreshold, "thresholdBps": roundFloat(threshold, 4), "signalExperimentId": experiment.ID, "signalExperimentVariant": experiment.Variant}
+	result := decision(instance, kind, summary, markPrice, strconv.FormatFloat(values[len(values)-2], 'f', -1, 64), metrics)
+	attachSignalExperiment(result.HypotheticalOrder, experiment)
+	return result, nil
+}
+
+const paperSignalExperimentID = "PAPER_SIGNAL_SENSITIVITY_V1"
+
+type signalExperiment struct {
+	ID, Variant                            string
+	MomentumMultiplier, BollingerDeviation float64
+	RSILow, RSIHigh                        float64
+}
+
+func resolveSignalExperiment(instance Instance) (signalExperiment, error) {
+	variant := "CONTROL"
+	if instance.Mode == "PAPER" {
+		if configured, ok := stringConfig(instance.Configuration, "signalExperimentVariant"); ok {
+			variant = strings.ToUpper(strings.TrimSpace(configured))
+		} else {
+			variant = []string{"CONTROL", "BALANCED", "RESPONSIVE", "EXPLORATORY"}[stableSignalCohort(instance.ID)%4]
+		}
+	}
+	switch variant {
+	case "CONTROL":
+		return signalExperiment{ID: paperSignalExperimentID, Variant: variant, MomentumMultiplier: 1, BollingerDeviation: 2, RSILow: 35, RSIHigh: 65}, nil
+	case "BALANCED":
+		return signalExperiment{ID: paperSignalExperimentID, Variant: variant, MomentumMultiplier: 0.75, BollingerDeviation: 1.8, RSILow: 37, RSIHigh: 63}, nil
+	case "RESPONSIVE":
+		return signalExperiment{ID: paperSignalExperimentID, Variant: variant, MomentumMultiplier: 0.5, BollingerDeviation: 1.6, RSILow: 39, RSIHigh: 61}, nil
+	case "EXPLORATORY":
+		return signalExperiment{ID: paperSignalExperimentID, Variant: variant, MomentumMultiplier: 0.3, BollingerDeviation: 1.5, RSILow: 40, RSIHigh: 60}, nil
+	default:
+		return signalExperiment{}, fmt.Errorf("unsupported PAPER signal experiment variant %q", variant)
+	}
+}
+
+func stableSignalCohort(value string) uint32 {
+	hash := uint32(2166136261)
+	for index := 0; index < len(value); index++ {
+		hash ^= uint32(value[index])
+		hash *= 16777619
+	}
+	return hash
+}
+
+func attachSignalExperiment(order map[string]any, experiment signalExperiment) {
+	if order == nil {
+		return
+	}
+	order["signalExperimentId"] = experiment.ID
+	order["signalExperimentVariant"] = experiment.Variant
 }
 
 func ema(values []float64, period int) float64 {

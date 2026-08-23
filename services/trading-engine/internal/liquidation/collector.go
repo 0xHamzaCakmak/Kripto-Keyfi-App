@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,15 @@ import (
 
 const defaultURL = "wss://fstream.binance.com/ws/!forceOrder@arr"
 
+const (
+	defaultPingInterval    = 4 * time.Minute
+	defaultHeartbeatWindow = 10 * time.Minute
+)
+
+type websocketDialer interface {
+	DialContext(context.Context, string, http.Header) (*websocket.Conn, *http.Response, error)
+}
+
 type event struct {
 	Symbol   string
 	Side     string
@@ -25,11 +35,13 @@ type event struct {
 }
 
 type Collector struct {
-	url    string
-	logger *slog.Logger
-	mu     sync.RWMutex
-	events map[string][]event
-	now    func() time.Time
+	url                           string
+	logger                        *slog.Logger
+	mu                            sync.RWMutex
+	events                        map[string][]event
+	now                           func() time.Time
+	dialer                        websocketDialer
+	pingInterval, heartbeatWindow time.Duration
 }
 
 func New(url string, logger *slog.Logger) *Collector {
@@ -39,7 +51,8 @@ func New(url string, logger *slog.Logger) *Collector {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Collector{url: url, logger: logger, events: make(map[string][]event), now: time.Now}
+	return &Collector{url: url, logger: logger, events: make(map[string][]event), now: time.Now,
+		dialer: websocket.DefaultDialer, pingInterval: defaultPingInterval, heartbeatWindow: defaultHeartbeatWindow}
 }
 
 func (c *Collector) Run(ctx context.Context) {
@@ -60,7 +73,7 @@ func (c *Collector) Run(ctx context.Context) {
 }
 
 func (c *Collector) consume(ctx context.Context) error {
-	connection, response, err := websocket.DefaultDialer.DialContext(ctx, c.url, nil)
+	connection, response, err := c.dialer.DialContext(ctx, c.url, nil)
 	if response != nil && response.Body != nil {
 		_ = response.Body.Close()
 	}
@@ -69,20 +82,37 @@ func (c *Collector) consume(ctx context.Context) error {
 	}
 	defer connection.Close()
 	connection.SetReadLimit(1 << 20)
-	const heartbeatWindow = 10 * time.Minute
-	_ = connection.SetReadDeadline(time.Now().Add(heartbeatWindow))
-	connection.SetPongHandler(func(string) error { return connection.SetReadDeadline(time.Now().Add(heartbeatWindow)) })
-	for ctx.Err() == nil {
-		_, payload, readErr := connection.ReadMessage()
-		if readErr != nil {
-			return readErr
+	_ = connection.SetReadDeadline(time.Now().Add(c.heartbeatWindow))
+	connection.SetPongHandler(func(string) error { return connection.SetReadDeadline(time.Now().Add(c.heartbeatWindow)) })
+	readError := make(chan error, 1)
+	go func() {
+		for {
+			_, payload, readErr := connection.ReadMessage()
+			if readErr != nil {
+				readError <- readErr
+				return
+			}
+			_ = connection.SetReadDeadline(time.Now().Add(c.heartbeatWindow))
+			if parsed, parseErr := parse(payload); parseErr == nil {
+				c.add(parsed)
+			}
 		}
-		parsed, parseErr := parse(payload)
-		if parseErr == nil {
-			c.add(parsed)
+	}()
+	ping := time.NewTicker(c.pingInterval)
+	defer ping.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			_ = connection.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "shutdown"), time.Now().Add(time.Second))
+			return nil
+		case err := <-readError:
+			return err
+		case <-ping.C:
+			if err := connection.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+				return err
+			}
 		}
 	}
-	return ctx.Err()
 }
 
 func (c *Collector) add(value event) {

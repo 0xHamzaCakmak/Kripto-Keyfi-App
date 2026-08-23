@@ -10,7 +10,7 @@ type DecimalRow = { value: Prisma.Decimal | null };
 export type AutonomousHealthMetrics = {
   activeBots: number;
   arena: { decisionsLast5m: number; throughputPerMinute: number };
-  marketData: { latestObservedAt: Date | null; lagMs: number | null };
+  marketData: { latestObservedAt: Date | null; lagMs: number | null; source: 'REGIME_SNAPSHOT' | 'AUTONOMOUS_DECISION' | 'NONE' };
   strategyExecution: { averagePersistenceLatencyMs: number | null };
   paperOrders: { total: number; last24h: number };
   riskRejectsLast24h: number;
@@ -29,13 +29,16 @@ export async function getAutonomousSystemHealth(userId: string, now = new Date()
   const dayAgo = new Date(now.getTime() - DAY_MS);
   const autonomousBot = { userId, type: 'AUTONOMOUS' as const };
   const [
-    activeBots, decisionsLast5m, latestMarket, latencyRows, paperTradesTotal, paperTradesLast24h,
+    activeBots, decisionsLast5m, latestMarket, latestDecision, latencyRows, paperTradesTotal, paperTradesLast24h,
     riskRejectsLast24h, exchangeErrorsLast24h, aiProviderErrorsLast24h, generations,
     teacherRunsLast24h, researcherRunsLast24h, decisionsTotal, decisionsLast24h, pnlCalculationErrors, riskControl,
   ] = await Promise.all([
     prisma.tradingBot.count({ where: { ...autonomousBot, state: 'RUNNING', desiredState: 'RUNNING' } }),
     prisma.tradingBotDecision.count({ where: { userId, occurredAt: { gte: fiveMinutesAgo } } }),
     prisma.marketRegimeSnapshot.findFirst({ orderBy: [{ observedAt: 'desc' }, { id: 'desc' }], select: { observedAt: true } }),
+    prisma.tradingBotDecision.findFirst({
+      where: { userId, type: 'AUTONOMOUS' }, orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], select: { occurredAt: true },
+    }),
     prisma.$queryRaw<DecimalRow[]>(Prisma.sql`SELECT AVG(CAST(JSON_UNQUOTE(JSON_EXTRACT(metrics, '$.strategyExecutionLatencyMs')) AS DECIMAL(20,6))) AS value
       FROM trading_bot_decisions WHERE userId = ${userId} AND occurredAt >= ${fiveMinutesAgo}`),
     prisma.paperTrade.count({ where: { tradingBot: autonomousBot } }),
@@ -54,11 +57,11 @@ export async function getAutonomousSystemHealth(userId: string, now = new Date()
     prisma.tradingBot.count({ where: { ...autonomousBot, lastErrorCode: { startsWith: 'PNL_' } } }),
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
   ]);
-  const latestObservedAt = latestMarket?.observedAt ?? null;
+  const marketData = resolveAutonomousMarketDataEvidence(now, latestMarket?.observedAt ?? null, latestDecision?.occurredAt ?? null);
   const metrics: AutonomousHealthMetrics = {
     activeBots,
     arena: { decisionsLast5m, throughputPerMinute: decisionsLast5m / WINDOW_MINUTES },
-    marketData: { latestObservedAt, lagMs: latestObservedAt ? Math.max(0, now.getTime() - latestObservedAt.getTime()) : null },
+    marketData,
     strategyExecution: { averagePersistenceLatencyMs: latencyRows[0]?.value?.toNumber() ?? null },
     paperOrders: { total: paperTradesTotal, last24h: paperTradesLast24h },
     riskRejectsLast24h, exchangeErrorsLast24h, aiProviderErrorsLast24h,
@@ -69,6 +72,14 @@ export async function getAutonomousSystemHealth(userId: string, now = new Date()
     emergencyStop: riskControl?.globalKillSwitch ?? true,
   };
   return { status: assessAutonomousHealth(metrics), checkedAt: now, windowMinutes: WINDOW_MINUTES, metrics };
+}
+
+export function resolveAutonomousMarketDataEvidence(now: Date, regimeObservedAt: Date | null, decisionOccurredAt: Date | null): AutonomousHealthMetrics['marketData'] {
+  const regimeTime = regimeObservedAt?.getTime() ?? Number.NEGATIVE_INFINITY;
+  const decisionTime = decisionOccurredAt?.getTime() ?? Number.NEGATIVE_INFINITY;
+  const latestObservedAt = regimeTime >= decisionTime ? regimeObservedAt : decisionOccurredAt;
+  const source = latestObservedAt === null ? 'NONE' : regimeTime >= decisionTime ? 'REGIME_SNAPSHOT' : 'AUTONOMOUS_DECISION';
+  return { latestObservedAt, lagMs: latestObservedAt ? Math.max(0, now.getTime() - latestObservedAt.getTime()) : null, source };
 }
 
 export function assessAutonomousHealth(metrics: AutonomousHealthMetrics): 'HEALTHY' | 'DEGRADED' | 'EMERGENCY_STOPPED' {

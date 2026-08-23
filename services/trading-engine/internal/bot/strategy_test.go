@@ -107,6 +107,38 @@ func TestAutonomousUsesChartMomentumAndAllocationSizing(t *testing.T) {
 	}
 }
 
+func TestPaperSignalExperimentChangesOnlyPaperSensitivity(t *testing.T) {
+	closes := make([]domain.Decimal, 50)
+	for index := range closes {
+		closes[index] = domain.Decimal(decimalStringForTest(100 + float64(index)*0.02))
+	}
+	paper := autonomousMomentumInstance("PAPER")
+	paper.Configuration["signalThresholdBps"] = float64(25)
+	paper.Configuration["signalExperimentVariant"] = "EXPLORATORY"
+	paperDecision, err := EvaluateStrategyWithChart(paper, "100.98", "100", closes)
+	if err != nil || paperDecision.Metrics["signalExperimentVariant"] != "EXPLORATORY" || paperDecision.Metrics["thresholdBps"] != 7.5 {
+		t.Fatalf("PAPER signal experiment was not applied: %#v err=%v", paperDecision, err)
+	}
+	demo := paper
+	demo.Mode = "DEMO"
+	demoDecision, err := EvaluateStrategyWithChart(demo, "100.98", "100", closes)
+	if err != nil || demoDecision.Metrics["signalExperimentVariant"] != "CONTROL" || demoDecision.Metrics["thresholdBps"] != float64(25) {
+		t.Fatalf("TESTNET sensitivity changed by PAPER experiment: %#v err=%v", demoDecision, err)
+	}
+}
+
+func TestPaperSignalExperimentRejectsUnknownConfiguredVariant(t *testing.T) {
+	instance := autonomousMomentumInstance("PAPER")
+	instance.Configuration["signalExperimentVariant"] = "UNKNOWN"
+	closes := make([]domain.Decimal, 21)
+	for index := range closes {
+		closes[index] = domain.Decimal(decimalStringForTest(100 + float64(index)))
+	}
+	if _, err := EvaluateStrategyWithChart(instance, "120", "100", closes); err == nil {
+		t.Fatal("unknown PAPER signal experiment variant should fail closed")
+	}
+}
+
 func TestAutonomousMarketEntryCarriesCompletePlaybookEvidence(t *testing.T) {
 	instance := autonomousMomentumInstance("PAPER")
 	instance.Configuration["signalThresholdBps"] = float64(5)

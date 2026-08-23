@@ -1,7 +1,8 @@
 param(
   [string]$Binary = "",
   [string]$StdoutLog = "",
-  [string]$StderrLog = ""
+  [string]$StderrLog = "",
+  [switch]$EnableAutonomousTestnet
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,6 +10,10 @@ $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 if ([string]::IsNullOrWhiteSpace($Binary)) { $Binary = Join-Path $projectRoot 'services\trading-engine\trading-engine.next.exe' }
 if ([string]::IsNullOrWhiteSpace($StdoutLog)) { $StdoutLog = Join-Path $projectRoot '.runtime\trading-engine-adaptive.stdout.log' }
 if ([string]::IsNullOrWhiteSpace($StderrLog)) { $StderrLog = Join-Path $projectRoot '.runtime\trading-engine-adaptive.stderr.log' }
+$runtimeDirectory = Split-Path -Parent $StdoutLog
+if (-not (Test-Path -LiteralPath $runtimeDirectory)) {
+  New-Item -ItemType Directory -Path $runtimeDirectory -Force | Out-Null
+}
 $binaryPath = (Resolve-Path -LiteralPath $Binary).Path
 $engineDirectory = (Resolve-Path (Join-Path $projectRoot 'services\trading-engine')).Path
 $environmentFile = Join-Path $projectRoot 'backend\.env'
@@ -33,10 +38,38 @@ foreach ($key in $required) {
 $env:TRADING_ENGINE_MODE = 'cutover'
 $env:TRADING_ENGINE_SHADOW_READ_ENABLED = 'true'
 $env:TRADING_ENGINE_REALTIME_ENABLED = 'false'
-$env:TRADING_ENGINE_BOT_SCHEDULER_ENABLED = 'true'
-$env:TRADING_ENGINE_AUTONOMOUS_TESTNET_ENABLED = 'true'
-$env:TRADING_ENGINE_LIQUIDATION_STREAM_ENABLED = 'true'
+$env:TRADING_ENGINE_BOT_SCHEDULER_ENABLED = if ($EnableAutonomousTestnet) { 'true' } else { 'false' }
+$env:TRADING_ENGINE_AUTONOMOUS_TESTNET_ENABLED = if ($EnableAutonomousTestnet) { 'true' } else { 'false' }
+$env:TRADING_ENGINE_LIQUIDATION_STREAM_ENABLED = if ($EnableAutonomousTestnet) { 'true' } else { 'false' }
 $env:TRADING_ENGINE_ADDR = ':8081'
 
+$existingListener = netstat -ano | Select-String ':8081\s+.*LISTENING' | Select-Object -First 1
+if ($existingListener) {
+  throw 'Port 8081 is already in use. Stop the existing Trading Engine before starting another instance.'
+}
+
 $process = Start-Process -FilePath $binaryPath -WorkingDirectory $engineDirectory -RedirectStandardOutput $StdoutLog -RedirectStandardError $StderrLog -WindowStyle Hidden -PassThru
-Write-Output $process.Id
+for ($attempt = 0; $attempt -lt 20; $attempt++) {
+  Start-Sleep -Milliseconds 500
+  if ($process.HasExited) {
+    throw "Trading Engine exited during startup. Check $StderrLog"
+  }
+  try {
+    $health = Invoke-RestMethod -Uri 'http://127.0.0.1:8081/health/ready' -TimeoutSec 2
+    if ($health.status -eq 'ready') {
+      [pscustomobject]@{
+        pid = $process.Id
+        status = $health.status
+        mode = $health.mode
+        autonomousTestnet = $EnableAutonomousTestnet.IsPresent
+        stdoutLog = $StdoutLog
+        stderrLog = $StderrLog
+      }
+      exit 0
+    }
+  } catch {
+    # The service can need a few seconds for startup reconciliation.
+  }
+}
+
+throw "Trading Engine did not become ready within 10 seconds. Check $StderrLog"

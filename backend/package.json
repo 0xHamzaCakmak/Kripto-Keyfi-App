@@ -26,6 +26,7 @@
     "bootstrap:ai-trading": "tsx scripts/bootstrap-autonomous-paper.ts",
     "bootstrap:ai-strategy-arsenal": "tsx scripts/bootstrap-strategy-arsenal.ts",
     "evaluate:ai-walk-forward": "tsx scripts/evaluate-walk-forward.ts",
+    "evaluate:ai-signal-experiment": "tsx scripts/evaluate-paper-signal-experiment.ts",
     "activate:ai-testnet-canary": "tsx scripts/activate-autonomous-testnet-canary.ts",
     "close:ai-testnet-canary": "tsx scripts/close-autonomous-testnet-canary.ts",
     "status:ai-testnet-canary": "tsx scripts/status-autonomous-testnet-canary.ts",

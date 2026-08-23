@@ -46,7 +46,7 @@ Engine secret dosyası `/etc/kriptokeyfi/trading-engine.env`:
 
 ```dotenv
 TRADING_ENGINE_MODE=cutover
-TRADING_ENGINE_ADDR=:8081
+TRADING_ENGINE_ADDR=127.0.0.1:8081
 TRADING_ENGINE_SHADOW_READ_ENABLED=true
 TRADING_ENGINE_BOT_SCHEDULER_ENABLED=true
 TRADING_ENGINE_AUTONOMOUS_TESTNET_ENABLED=true
@@ -138,3 +138,21 @@ journalctl -u kriptokeyfi-backend -n 100 --no-pager
 ```
 
 Kod güncellemesinde önce TESTNET botlarını duraklatın, test/build çalıştırın, engine'i restart edin, `/health/ready` ve reconciliation başarılarını gördükten sonra botları sürdürün. `Restart=always` servisleri çökme ve VPS reboot sonrasında tekrar başlatır. Health timer her dakika kontrol yapar; walk-forward timer her gün 03:15'te rapor üretir.
+
+## 8. Tek komut güvenli deployment
+
+Proje kökündeki `deploy.sh` backend/frontend bağımlılıklarını, typecheck/test/build işlemlerini, Go test ve atomik binary değişimini, DB yedeğini, Prisma migration'larını, PM2 restartını ve health kontrollerini birlikte yürütür. TESTNET botu varsa yalnız deploy sırasında duraklatır; backend ve engine hazır olmadan devam ettirmez.
+
+```bash
+cd /root/Projects/kriptokeyfi
+chmod +x deploy.sh
+./deploy.sh
+```
+
+Sunucudaki kod Git üzerinden değil manuel güncellendiyse yalnız o çalıştırmada:
+
+```bash
+SKIP_GIT_UPDATE=true ./deploy.sh
+```
+
+Nginx başka bir dizini servis ediyorsa `WEB_ROOT=/var/www/kriptokeyfi` verilebilir. Varsayılan durumda Nginx'in doğrudan `frontend/dist` dizinini servis ettiği kabul edilir. `deploy.sh` bootstrap/seed/reset çalıştırmaz ve master key üretmez.

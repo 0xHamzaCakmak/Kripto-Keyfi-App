@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -49,8 +50,9 @@ type Store interface {
 }
 
 type CycleResult struct {
-	DecisionID   int64
-	RiskApproved bool
+	DecisionID            int64
+	RiskApproved          bool
+	PaperExecutionChanged bool
 }
 
 type TestnetExecutor interface {
@@ -70,24 +72,28 @@ type PerformanceRefresher interface {
 }
 
 type Scheduler struct {
-	store                   Store
-	runner                  Runner
-	observer                SignalObserver
-	testnetExecutor         TestnetExecutor
-	owner                   string
-	logger                  *slog.Logger
-	interval, leaseDuration time.Duration
-	now                     func() time.Time
+	store                      Store
+	runner                     Runner
+	observer                   SignalObserver
+	testnetExecutor            TestnetExecutor
+	owner                      string
+	logger                     *slog.Logger
+	interval, leaseDuration    time.Duration
+	performanceRefreshInterval time.Duration
+	lastPerformanceRefresh     map[string]time.Time
+	performanceRefreshMu       sync.Mutex
+	now                        func() time.Time
 }
 
 type Options struct {
-	Store                   Store
-	Runner                  Runner
-	Owner                   string
-	Logger                  *slog.Logger
-	Observer                SignalObserver
-	TestnetExecutor         TestnetExecutor
-	Interval, LeaseDuration time.Duration
+	Store                      Store
+	Runner                     Runner
+	Owner                      string
+	Logger                     *slog.Logger
+	Observer                   SignalObserver
+	TestnetExecutor            TestnetExecutor
+	Interval, LeaseDuration    time.Duration
+	PerformanceRefreshInterval time.Duration
 }
 
 func NewScheduler(options Options) *Scheduler {
@@ -104,11 +110,16 @@ func NewScheduler(options Options) *Scheduler {
 	if leaseDuration <= interval {
 		leaseDuration = 3 * interval
 	}
+	performanceRefreshInterval := options.PerformanceRefreshInterval
+	if performanceRefreshInterval <= 0 {
+		performanceRefreshInterval = 15 * time.Minute
+	}
 	logger := options.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Scheduler{store: options.Store, runner: options.Runner, observer: options.Observer, testnetExecutor: options.TestnetExecutor, owner: options.Owner, logger: logger, interval: interval, leaseDuration: leaseDuration, now: time.Now}
+	return &Scheduler{store: options.Store, runner: options.Runner, observer: options.Observer, testnetExecutor: options.TestnetExecutor, owner: options.Owner, logger: logger,
+		interval: interval, leaseDuration: leaseDuration, performanceRefreshInterval: performanceRefreshInterval, lastPerformanceRefresh: make(map[string]time.Time), now: time.Now}
 }
 
 func (s *Scheduler) Run(ctx context.Context) {
@@ -184,7 +195,7 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 		s.logger.Warn("bot cycle persistence failed", "bot_id", instance.ID, "error", err)
 		return
 	}
-	if instance.Mode == "PAPER" {
+	if instance.Mode == "PAPER" && s.performanceRefreshDue(instance.ID, now, cycle.PaperExecutionChanged) {
 		if refresher, ok := s.store.(PerformanceRefresher); ok {
 			if err := refresher.RefreshBotPerformance(ctx, instance.ID); err != nil {
 				s.logger.Warn("paper performance refresh failed", "bot_id", instance.ID, "error", err)
@@ -196,6 +207,19 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 			s.logger.Error("autonomous testnet execution failed", "bot_id", instance.ID, "decision_id", cycle.DecisionID, "error", err)
 		}
 	}
+}
+
+func (s *Scheduler) performanceRefreshDue(botID string, now time.Time, executionChanged bool) bool {
+	s.performanceRefreshMu.Lock()
+	defer s.performanceRefreshMu.Unlock()
+	last, exists := s.lastPerformanceRefresh[botID]
+	if !executionChanged && exists && now.Sub(last) < s.performanceRefreshInterval {
+		return false
+	}
+	// Record the attempt before calling the store so a transient DB failure does
+	// not turn every HOLD cycle into a new expensive full-history score rebuild.
+	s.lastPerformanceRefresh[botID] = now
+	return true
 }
 
 func (s *Scheduler) transition(ctx context.Context, instance *Instance, target State, reason string, now time.Time) bool {

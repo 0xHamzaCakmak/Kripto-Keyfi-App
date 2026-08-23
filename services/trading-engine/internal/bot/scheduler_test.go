@@ -10,10 +10,12 @@ import (
 )
 
 type schedulerStore struct {
-	instance *Instance
-	gate     Gate
-	states   []State
-	decision Decision
+	instance             *Instance
+	gate                 Gate
+	states               []State
+	decision             Decision
+	cycleResult          CycleResult
+	performanceRefreshes int
 }
 
 type fixedRunner struct{}
@@ -51,9 +53,16 @@ func (s *schedulerStore) UpdateState(_ context.Context, instance *Instance, _ st
 }
 func (s *schedulerStore) CompleteCycle(_ context.Context, _ Instance, _ string, decision Decision, _, _ time.Time) (CycleResult, error) {
 	s.decision = decision
+	if s.cycleResult.DecisionID != 0 {
+		return s.cycleResult, nil
+	}
 	return CycleResult{DecisionID: 1, RiskApproved: true}, nil
 }
 func (*schedulerStore) Release(context.Context, string, string) error { return nil }
+func (s *schedulerStore) RefreshBotPerformance(context.Context, string) error {
+	s.performanceRefreshes++
+	return nil
+}
 
 func TestSchedulerReconcilesBeforePaperCycle(t *testing.T) {
 	store := &schedulerStore{instance: &Instance{
@@ -106,5 +115,26 @@ func TestSchedulerKeepsRuleDecisionWhenAIObserverFails(t *testing.T) {
 	scheduler.runOnce(t.Context())
 	if store.decision.Kind != "BUY" || store.decision.AIObservation != nil {
 		t.Fatalf("observer failure changed rule decision: %#v", store.decision)
+	}
+}
+
+func TestSchedulerThrottlesPaperPerformanceRefreshButRefreshesAfterFill(t *testing.T) {
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	store := &schedulerStore{instance: &Instance{ID: "bot-performance", State: StateRunning, Mode: "PAPER"}, gate: Gate{Ready: true}}
+	scheduler := NewScheduler(Options{Store: store, Runner: fixedRunner{}, Owner: "test", Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), PerformanceRefreshInterval: time.Hour})
+	scheduler.now = func() time.Time { return now }
+	scheduler.runOnce(t.Context())
+	store.instance = &Instance{ID: "bot-performance", State: StateRunning, Mode: "PAPER"}
+	now = now.Add(time.Minute)
+	scheduler.runOnce(t.Context())
+	if store.performanceRefreshes != 1 {
+		t.Fatalf("HOLD/unchanged cycles rebuilt performance too often: %d", store.performanceRefreshes)
+	}
+	store.instance = &Instance{ID: "bot-performance", State: StateRunning, Mode: "PAPER"}
+	store.cycleResult = CycleResult{DecisionID: 2, RiskApproved: true, PaperExecutionChanged: true}
+	now = now.Add(time.Minute)
+	scheduler.runOnce(t.Context())
+	if store.performanceRefreshes != 2 {
+		t.Fatalf("paper fill did not trigger an immediate performance refresh: %d", store.performanceRefreshes)
 	}
 }

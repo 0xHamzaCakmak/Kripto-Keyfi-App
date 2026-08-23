@@ -306,7 +306,7 @@ FROM trading_bots b JOIN exchange_accounts a ON a.id = b.exchangeAccountId WHERE
 	if err := tx.Commit(); err != nil {
 		return bot.CycleResult{}, fmt.Errorf("commit bot cycle: %w", err)
 	}
-	return bot.CycleResult{DecisionID: decisionID, RiskApproved: riskApproved}, nil
+	return bot.CycleResult{DecisionID: decisionID, RiskApproved: riskApproved, PaperExecutionChanged: paperExecution != nil}, nil
 }
 
 func persistShadowCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, decision bot.Decision, decisionID int64, now time.Time) (map[string]any, error) {
@@ -640,12 +640,14 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 	playbookVersion, _ := decision.HypotheticalOrder["playbookVersion"].(string)
 	experimentID, _ := decision.HypotheticalOrder["experimentId"].(string)
 	experimentVariant, _ := decision.HypotheticalOrder["experimentVariant"].(string)
+	signalExperimentID, _ := decision.HypotheticalOrder["signalExperimentId"].(string)
+	signalExperimentVariant, _ := decision.HypotheticalOrder["signalExperimentVariant"].(string)
 	riskPlanVersion, _ := decision.HypotheticalOrder["riskPlanVersion"].(string)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO paper_trades
 (id, tradingBotId, strategyVersionId, symbol, side, status, entryPrice, quantity, leverage, fees, funding, slippageCost, realizedPnl, stopLoss, takeProfit, maxFavorableExcursion, maxAdverseExcursion, decisionSummary, marketContext, openedAt, createdAt, updatedAt)
-VALUES (?, ?, NULLIF(?, ''), ?, ?, 'OPEN', ?, ?, ?, ?, 0, ?, 0, NULLIF(?, ''), NULLIF(?, ''), 0, 0, ?, JSON_OBJECT('partialTakeProfitTaken', false, 'playbookVersion', ?, 'experimentId', ?, 'experimentVariant', ?, 'riskPlanVersion', ?), ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
+VALUES (?, ?, NULLIF(?, ''), ?, ?, 'OPEN', ?, ?, ?, ?, 0, ?, 0, NULLIF(?, ''), NULLIF(?, ''), 0, 0, ?, JSON_OBJECT('partialTakeProfitTaken', false, 'playbookVersion', ?, 'experimentId', ?, 'experimentVariant', ?, 'signalExperimentId', ?, 'signalExperimentVariant', ?, 'riskPlanVersion', ?), ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
 		tradeID, instance.ID, instance.StrategyVersionID, instance.Symbol, execution.Side, execution.FillPrice, execution.Quantity,
-		int(leverage), execution.Fee, entrySlippage, stopLoss, takeProfit, decision.Summary, playbookVersion, experimentID, experimentVariant, riskPlanVersion, now); err != nil {
+		int(leverage), execution.Fee, entrySlippage, stopLoss, takeProfit, decision.Summary, playbookVersion, experimentID, experimentVariant, signalExperimentID, signalExperimentVariant, riskPlanVersion, now); err != nil {
 		return nil, fmt.Errorf("open autonomous paper trade: %w", err)
 	}
 	if err = savePaperPosition(ctx, tx, instance, position, execution, decision.MarkPrice, now, exists); err != nil {

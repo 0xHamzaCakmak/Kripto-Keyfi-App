@@ -9,5 +9,6 @@ Group=kriptokeyfi
 WorkingDirectory=/opt/kriptokeyfi/backend
 EnvironmentFile=/etc/kriptokeyfi/backend.env
 ExecStart=/usr/bin/npm run evaluate:ai-walk-forward
+ExecStart=/usr/bin/npm run evaluate:ai-signal-experiment
 NoNewPrivileges=true
 PrivateTmp=true

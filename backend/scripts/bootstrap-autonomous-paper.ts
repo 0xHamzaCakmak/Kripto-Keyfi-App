@@ -9,6 +9,8 @@ const POPULATION = 100;
 
 const parameterSchema = { parameters: {
   signalThresholdBps: { type: 'number' as const, min: 5, max: 100, step: 5, default: 25 },
+  signalExperimentId: { type: 'enum' as const, values: ['PAPER_SIGNAL_SENSITIVITY_V1'], default: 'PAPER_SIGNAL_SENSITIVITY_V1' },
+  signalExperimentVariant: { type: 'enum' as const, values: ['CONTROL', 'BALANCED', 'RESPONSIVE', 'EXPLORATORY'], default: 'CONTROL' },
   side: { type: 'enum' as const, values: ['BUY', 'SELL', 'BOTH'], default: 'BOTH' },
   quantity: { type: 'string' as const, minLength: 1, maxLength: 40, default: '0.001' },
   leverage: { type: 'integer' as const, min: 5, max: 20, step: 1, default: 5 },
@@ -98,6 +100,7 @@ async function main() {
     const ordinal = String(index + 1).padStart(3, '0');
     const atrMultiplier = [1.25, 1.5, 1.75][index % 3]!;
     const experimentVariant = ['ATR_1_25', 'ATR_1_50', 'ATR_1_75'][index % 3]!;
+    const signalExperimentVariant = ['CONTROL', 'BALANCED', 'RESPONSIVE', 'EXPLORATORY'][index % 4]!;
     let name = `${BOT_PREFIX} #${ordinal}`;
     let bot = await prisma.tradingBot.findFirst({ where: { userId: account.userId, name, mode: 'PAPER' } });
     if (!bot) {
@@ -119,6 +122,8 @@ async function main() {
         exchangeAccountId: account.id,
         parameters: {
           signalThresholdBps: threshold,
+          signalExperimentId: 'PAPER_SIGNAL_SENSITIVITY_V1',
+          signalExperimentVariant,
           side: 'BOTH',
           quantity,
           leverage: 5 + (index % 16),
@@ -168,6 +173,8 @@ async function main() {
       || (currentConfiguration as Record<string, unknown>).positionNotionalPct !== 0.10
       || (currentConfiguration as Record<string, unknown>).fixedRiskPct !== 0.0075
       || (currentConfiguration as Record<string, unknown>).atrStopMultiplier !== atrMultiplier
+      || (currentConfiguration as Record<string, unknown>).signalExperimentId !== 'PAPER_SIGNAL_SENSITIVITY_V1'
+      || (currentConfiguration as Record<string, unknown>).signalExperimentVariant !== signalExperimentVariant
       || (currentConfiguration as Record<string, unknown>).newsFilterEnabled !== (index % 2 === 0)
       || (currentConfiguration as Record<string, unknown>).pyramidingEnabled !== true) {
       bot = await prisma.tradingBot.update({
@@ -177,7 +184,8 @@ async function main() {
             stopLossBps: 75, takeProfitBps: 125, fixedRiskPct: 0.0075, atrStopMultiplier: atrMultiplier,
             adaptiveStopMinBps: 75, adaptiveStopMaxBps: 300, riskRewardRatio: 1.5,
             maintenanceMarginBps: 50, liquidationReserveFraction: 0.2, newsFilterEnabled: index % 2 === 0,
-            playbookVersion: 'TRADING_PLAYBOOK_V1', experimentId: 'ATR_STOP_WALK_FORWARD_V1', experimentVariant },
+            playbookVersion: 'TRADING_PLAYBOOK_V1', experimentId: 'ATR_STOP_WALK_FORWARD_V1', experimentVariant,
+            signalExperimentId: 'PAPER_SIGNAL_SENSITIVITY_V1', signalExperimentVariant },
         },
       });
     }
