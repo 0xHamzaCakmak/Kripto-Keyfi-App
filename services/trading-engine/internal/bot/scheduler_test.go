@@ -15,12 +15,35 @@ type schedulerStore struct {
 	states               []State
 	decision             Decision
 	cycleResult          CycleResult
+	cycleErr             error
 	performanceRefreshes int
 }
 
 type fixedRunner struct{}
 
 type fixedObserver struct{ err error }
+
+type selectiveRunner struct{ failedBotID string }
+
+func (r selectiveRunner) Tick(_ context.Context, instance Instance) (Decision, error) {
+	if instance.ID == r.failedBotID {
+		return Decision{}, errors.New("isolated bot failure")
+	}
+	return fixedRunner{}.Tick(context.Background(), instance)
+}
+
+type failingTestnetExecutor struct {
+	recordedDecisionID int64
+}
+
+func (*failingTestnetExecutor) Execute(context.Context, Instance, Decision, int64, time.Time) error {
+	return errors.New("testnet unavailable")
+}
+
+func (e *failingTestnetExecutor) RecordFailure(_ context.Context, decisionID int64, _ error) error {
+	e.recordedDecisionID = decisionID
+	return nil
+}
 
 func TestSchedulerDefaultLeaseCoversRemoteMarketReads(t *testing.T) {
 	scheduler := NewScheduler(Options{Interval: 250 * time.Millisecond})
@@ -53,6 +76,9 @@ func (s *schedulerStore) UpdateState(_ context.Context, instance *Instance, _ st
 }
 func (s *schedulerStore) CompleteCycle(_ context.Context, _ Instance, _ string, decision Decision, _, _ time.Time) (CycleResult, error) {
 	s.decision = decision
+	if s.cycleErr != nil {
+		return CycleResult{}, s.cycleErr
+	}
 	if s.cycleResult.DecisionID != 0 {
 		return s.cycleResult, nil
 	}
@@ -136,5 +162,35 @@ func TestSchedulerThrottlesPaperPerformanceRefreshButRefreshesAfterFill(t *testi
 	scheduler.runOnce(t.Context())
 	if store.performanceRefreshes != 2 {
 		t.Fatalf("paper fill did not trigger an immediate performance refresh: %d", store.performanceRefreshes)
+	}
+}
+
+func TestSchedulerPersistsTestnetExecutionFailure(t *testing.T) {
+	executor := &failingTestnetExecutor{}
+	store := &schedulerStore{instance: &Instance{ID: "bot-testnet", Type: "AUTONOMOUS", Mode: "DEMO", State: StateRunning}, gate: Gate{Ready: true}, cycleResult: CycleResult{DecisionID: 42, RiskApproved: true}}
+	scheduler := NewScheduler(Options{Store: store, Runner: fixedRunner{}, TestnetExecutor: executor, Owner: "test", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	scheduler.runOnce(t.Context())
+	if executor.recordedDecisionID != 42 {
+		t.Fatalf("TESTNET execution failure was not persisted: %d", executor.recordedDecisionID)
+	}
+}
+
+func TestSchedulerContinuesWithAnotherBotAfterRunnerFailure(t *testing.T) {
+	store := &schedulerStore{instance: &Instance{ID: "broken-bot", Mode: "PAPER", State: StateRunning}, gate: Gate{Ready: true}}
+	scheduler := NewScheduler(Options{Store: store, Runner: selectiveRunner{failedBotID: "broken-bot"}, Owner: "test", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	scheduler.runOnce(t.Context())
+	store.instance = &Instance{ID: "healthy-bot", Mode: "PAPER", State: StateRunning}
+	scheduler.runOnce(t.Context())
+	if store.decision.Kind != "BUY" {
+		t.Fatalf("healthy bot did not run after another bot failed: %#v", store.decision)
+	}
+}
+
+func TestSchedulerBacksOffBotAfterCyclePersistenceFailure(t *testing.T) {
+	store := &schedulerStore{instance: &Instance{ID: "bad-ledger", Mode: "PAPER", State: StateRunning}, gate: Gate{Ready: true}, cycleErr: errors.New("invalid paper ledger")}
+	scheduler := NewScheduler(Options{Store: store, Runner: fixedRunner{}, Owner: "test", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	scheduler.runOnce(t.Context())
+	if len(store.states) != 1 || store.states[0] != StateError {
+		t.Fatalf("persistence failure was not moved to retry backoff: %#v", store.states)
 	}
 }

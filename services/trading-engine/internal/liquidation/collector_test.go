@@ -72,3 +72,12 @@ func TestCollectorSendsHeartbeatBeforeReadDeadline(t *testing.T) {
 		t.Fatal("collector did not stop after context cancellation")
 	}
 }
+
+func TestReconnectBackoffResetsAfterStableConnection(t *testing.T) {
+	if got := nextReconnectBackoff(16*time.Second, stableConnectionWindow); got != time.Second {
+		t.Fatalf("stable stream did not reset reconnect backoff: %s", got)
+	}
+	if got := nextReconnectBackoff(16*time.Second, time.Second); got != 30*time.Second {
+		t.Fatalf("unstable stream backoff was not capped: %s", got)
+	}
+}

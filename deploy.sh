@@ -17,8 +17,13 @@ ENGINE_PM2_NAME="${ENGINE_PM2_NAME:-kriptokeyfi-trading-engine}"
 BACKEND_PORT="${BACKEND_PORT:-}"
 BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-}"
 ENGINE_HEALTH_URL="${ENGINE_HEALTH_URL:-http://127.0.0.1:8081/health/ready}"
+ENGINE_STATUS_URL="${ENGINE_STATUS_URL:-http://127.0.0.1:8081/internal/v1/status}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/kriptokeyfi}"
 MAINTENANCE_RESUME_MINUTES="${MAINTENANCE_RESUME_MINUTES:-180}"
+ENABLE_PM2_STARTUP="${ENABLE_PM2_STARTUP:-true}"
+PM2_RUNTIME_USER="${PM2_RUNTIME_USER:-$(id -un)}"
+PM2_RUNTIME_HOME="${PM2_RUNTIME_HOME:-${HOME:-}}"
+PM2_SYSTEMD_UNIT="${PM2_SYSTEMD_UNIT:-pm2-${PM2_RUNTIME_USER}}"
 
 BACKEND_DIR="$PROJECT_DIR/backend"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
@@ -134,7 +139,7 @@ NODE
   export PORT="$BACKEND_PORT"
   BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-http://127.0.0.1:${BACKEND_PORT}/api/health}"
 
-  local required=(DATABASE_URL JWT_ACCESS_SECRET JWT_REFRESH_SECRET TRADING_ENGINE_TOKEN TRADING_CREDENTIALS_MASTER_KEY)
+  local required=(DATABASE_URL JWT_ACCESS_SECRET JWT_REFRESH_SECRET TRADING_ENGINE_URL TRADING_ENGINE_TOKEN TRADING_CREDENTIALS_MASTER_KEY)
   local variable
   for variable in "${required[@]}"; do
     if [ -z "${!variable:-}" ]; then
@@ -152,6 +157,7 @@ NODE
   fi
 
   local expected_flags=(
+    "TRADING_ENGINE_URL=http://127.0.0.1:8081"
     "TRADING_ENGINE_MODE=cutover"
     "TRADING_ENGINE_ADDR=127.0.0.1:8081"
     "TRADING_ENGINE_SHADOW_READ_ENABLED=true"
@@ -305,7 +311,10 @@ restart_backend() {
   else
     pm2 start "$BACKEND_DIR/dist/server.js" \
       --name "$BACKEND_PM2_NAME" \
-      --cwd "$BACKEND_DIR"
+      --cwd "$BACKEND_DIR" \
+      --restart-delay 5000 \
+      --kill-timeout 20000 \
+      --time
   fi
 }
 
@@ -325,7 +334,10 @@ install_and_restart_engine() {
     pm2 start "$ENGINE_BINARY" \
       --name "$ENGINE_PM2_NAME" \
       --interpreter none \
-      --cwd "$ENGINE_DIR"
+      --cwd "$ENGINE_DIR" \
+      --restart-delay 5000 \
+      --kill-timeout 20000 \
+      --time
   fi
 }
 
@@ -363,6 +375,26 @@ wait_for_backend() {
   return 1
 }
 
+wait_for_engine_contract() {
+  local attempt body
+  for attempt in $(seq 1 30); do
+    if body="$(curl -fsS --max-time 5 -H "Authorization: Bearer ${TRADING_ENGINE_TOKEN}" "$ENGINE_STATUS_URL" 2>/dev/null)" && \
+      node -e '
+        try {
+          const value = JSON.parse(process.argv[1]);
+          if (value.status !== "ready" || value.mode !== "cutover" || value.executor !== "enabled" || value.shadow_read !== "enabled") process.exit(1);
+        } catch { process.exit(1); }
+      ' "$body"; then
+      log "Node -> Go tokenli runtime sozlesmesi hazir: $ENGINE_STATUS_URL"
+      return 0
+    fi
+    sleep 2
+  done
+  printf 'Trading Engine tokenli status/execution sozlesmesi dogrulanamadi: %s\n' "$ENGINE_STATUS_URL" >&2
+  pm2 logs "$ENGINE_PM2_NAME" --lines 100 --nostream || true
+  return 1
+}
+
 health_checks() {
   step "11/13 Backend ve Engine health/reconciliation kontrol ediliyor"
   wait_for_backend
@@ -374,6 +406,7 @@ health_checks() {
     fi
     return 1
   fi
+  wait_for_engine_contract
 }
 
 resume_testnet_fleet() {
@@ -388,6 +421,33 @@ resume_testnet_fleet() {
 finalize() {
   step "13/13 Deploy sonucu dogrulaniyor"
   pm2 save
+  if [ "$ENABLE_PM2_STARTUP" = "true" ]; then
+    if [ "$(id -u)" -ne 0 ]; then
+      printf 'PM2 reboot entegrasyonunu kurmak icin deploy root olarak calistirilmalidir.\n' >&2
+      return 1
+    fi
+    if [ -z "$PM2_RUNTIME_HOME" ] || [ ! -d "$PM2_RUNTIME_HOME" ]; then
+      printf 'PM2 runtime home gecersiz: %s\n' "${PM2_RUNTIME_HOME:-<missing>}" >&2
+      return 1
+    fi
+    if ! systemctl cat "$PM2_SYSTEMD_UNIT" >/dev/null 2>&1; then
+      pm2 startup systemd -u "$PM2_RUNTIME_USER" --hp "$PM2_RUNTIME_HOME"
+    fi
+    systemctl enable "$PM2_SYSTEMD_UNIT"
+    systemctl is-enabled --quiet "$PM2_SYSTEMD_UNIT"
+    log "PM2 reboot entegrasyonu etkin: $PM2_SYSTEMD_UNIT"
+  fi
+  node -e '
+    const names = new Set(process.argv.slice(1));
+    const apps = JSON.parse(require("child_process").execFileSync("pm2", ["jlist"], { encoding: "utf8" }));
+    for (const name of names) {
+      const app = apps.find((candidate) => candidate.name === name);
+      if (!app || app.pm2_env?.status !== "online" || app.pm2_env?.autorestart === false) {
+        console.error(`PM2 process production-safe degil: ${name}`);
+        process.exit(1);
+      }
+    }
+  ' "$BACKEND_PM2_NAME" "$ENGINE_PM2_NAME"
   npm --prefix "$BACKEND_DIR" run status:ai-fleet
   pm2 status
   log "Deploy tamamlandi. PAPER/TESTNET DB durumundan devam eder; production LIVE kapali kalir."
@@ -400,6 +460,7 @@ main() {
   require_command go
   require_command pm2
   require_command curl
+  if [ "$ENABLE_PM2_STARTUP" = "true" ]; then require_command systemctl; fi
   acquire_lock
   update_code
   install_dependencies

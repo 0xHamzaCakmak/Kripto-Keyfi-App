@@ -32,7 +32,9 @@ WHERE b.desiredState = 'RUNNING'
   AND state IN ('STARTING', 'RUNNING', 'RISK_BLOCKED', 'RECONCILING', 'ERROR')
   AND (leaseExpiresAt IS NULL OR leaseExpiresAt < ? OR schedulerOwner = ?)
   AND (lastDecisionAt IS NULL OR lastDecisionAt <= DATE_SUB(?, INTERVAL intervalSeconds SECOND))
-ORDER BY CASE WHEN b.mode = 'DEMO' THEN 0 ELSE 1 END, COALESCE(lastDecisionAt, b.createdAt), b.id
+-- Oldest-due ordering is intentionally mode-neutral. Permanent DEMO priority
+-- can starve PAPER bots whenever TESTNET cycles consume all workers.
+ORDER BY COALESCE(lastDecisionAt, b.createdAt), b.id
 LIMIT 1 FOR UPDATE SKIP LOCKED`
 	var instance bot.Instance
 	var configuration []byte

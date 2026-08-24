@@ -64,31 +64,16 @@ sudo chmod 640 /etc/kriptokeyfi/backend.env /etc/kriptokeyfi/trading-engine.env
 
 ## 4. Build, migration ve servis kurulumu
 
-Migration öncesinde MySQL yedeği alın. Ardından yalnız repodaki incelenmiş migration'ları uygulayın.
+Production process manager PM2'dir. Backend ve Go Engine için ayrıca doğrudan
+`kriptokeyfi-*.service` kurmayın; aynı uygulamanın iki kopyası port ve scheduler
+lease çakışması oluşturur. Build, yedek, migration, atomik Go binary kurulumu,
+health kontrolü ve PM2 reboot entegrasyonu proje kökündeki `deploy.sh` tarafından
+tek akışta yapılır.
 
 ```bash
-cd /opt/kriptokeyfi/backend
-npm ci
-npx prisma generate
-npx prisma migrate deploy
-npm run build
-npm run bootstrap:ai-trading
-npm run bootstrap:ai-strategy-arsenal
-
-cd /opt/kriptokeyfi/frontend
-npm ci
-npm run build
-
-cd /opt/kriptokeyfi/services/trading-engine
-go test ./...
-go build -o trading-engine ./cmd/trading-engine
-
-sudo install -m 0644 /opt/kriptokeyfi/deploy/systemd/*.service /etc/systemd/system/
-sudo install -m 0644 /opt/kriptokeyfi/deploy/systemd/*.timer /etc/systemd/system/
-sudo chmod +x /opt/kriptokeyfi/deploy/health-check.sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now kriptokeyfi-trading-engine kriptokeyfi-backend
-sudo systemctl enable --now kriptokeyfi-health.timer kriptokeyfi-walk-forward.timer
+cd /opt/kriptokeyfi
+chmod +x deploy.sh
+sudo ./deploy.sh
 ```
 
 ## 5. Nginx ve HTTPS
@@ -129,15 +114,15 @@ Mevcut 15 botluk TESTNET filosu çalışır durumdadır. `deploy:ai-testnet-flee
 ## 7. Günlük kontrol ve güvenli güncelleme
 
 ```bash
-systemctl is-active kriptokeyfi-backend kriptokeyfi-trading-engine
-systemctl list-timers 'kriptokeyfi-*'
+pm2 status
+systemctl is-enabled pm2-root
 curl --fail http://127.0.0.1:4000/api/health
 curl --fail http://127.0.0.1:8081/health/ready
-journalctl -u kriptokeyfi-trading-engine -n 100 --no-pager
-journalctl -u kriptokeyfi-backend -n 100 --no-pager
+pm2 logs kriptokeyfi-trading-engine --lines 100 --nostream
+pm2 logs kriptokeyfi-api --lines 100 --nostream
 ```
 
-Kod güncellemesinde önce TESTNET botlarını duraklatın, test/build çalıştırın, engine'i restart edin, `/health/ready` ve reconciliation başarılarını gördükten sonra botları sürdürün. `Restart=always` servisleri çökme ve VPS reboot sonrasında tekrar başlatır. Health timer her dakika kontrol yapar; walk-forward timer her gün 03:15'te rapor üretir.
+`deploy.sh` TESTNET filosunu bakım için duraklatır, servisler hazır ve tokenlı Node → Go sözleşmesi doğrulanınca yalnız bakımda durdurulan botları sürdürür. PM2 process crash sonrasında otomatik restart yapar; `pm2-root` systemd entegrasyonu da VPS reboot sonrasında kayıtlı process listesini geri yükler.
 
 ## 8. Tek komut güvenli deployment
 
@@ -146,13 +131,13 @@ Proje kökündeki `deploy.sh` backend/frontend bağımlılıklarını, typecheck
 ```bash
 cd /root/Projects/kriptokeyfi
 chmod +x deploy.sh
-./deploy.sh
+sudo ./deploy.sh
 ```
 
 Sunucudaki kod Git üzerinden değil manuel güncellendiyse yalnız o çalıştırmada:
 
 ```bash
-SKIP_GIT_UPDATE=true ./deploy.sh
+sudo env SKIP_GIT_UPDATE=true ./deploy.sh
 ```
 
 Nginx başka bir dizini servis ediyorsa `WEB_ROOT=/var/www/kriptokeyfi` verilebilir. Varsayılan durumda Nginx'in doğrudan `frontend/dist` dizinini servis ettiği kabul edilir. `deploy.sh` bootstrap/seed/reset çalıştırmaz ve master key üretmez.

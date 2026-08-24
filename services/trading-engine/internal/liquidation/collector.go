@@ -21,6 +21,7 @@ const defaultURL = "wss://fstream.binance.com/ws/!forceOrder@arr"
 const (
 	defaultPingInterval    = 4 * time.Minute
 	defaultHeartbeatWindow = 10 * time.Minute
+	stableConnectionWindow = 30 * time.Second
 )
 
 type websocketDialer interface {
@@ -58,18 +59,31 @@ func New(url string, logger *slog.Logger) *Collector {
 func (c *Collector) Run(ctx context.Context) {
 	backoff := time.Second
 	for ctx.Err() == nil {
+		connectedAt := time.Now()
 		if err := c.consume(ctx); err != nil && ctx.Err() == nil {
 			c.logger.Warn("Binance liquidation stream disconnected", "error", err)
 		}
-		timer := time.NewTimer(backoff)
+		connectedFor := time.Since(connectedAt)
+		delay := backoff
+		if connectedFor >= stableConnectionWindow {
+			delay = time.Second
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
 			return
 		case <-timer.C:
 		}
-		backoff = time.Duration(math.Min(float64(30*time.Second), float64(backoff*2)))
+		backoff = nextReconnectBackoff(backoff, connectedFor)
 	}
+}
+
+func nextReconnectBackoff(current, connectedFor time.Duration) time.Duration {
+	if connectedFor >= stableConnectionWindow {
+		return time.Second
+	}
+	return time.Duration(math.Min(float64(30*time.Second), float64(current*2)))
 }
 
 func (c *Collector) consume(ctx context.Context) error {

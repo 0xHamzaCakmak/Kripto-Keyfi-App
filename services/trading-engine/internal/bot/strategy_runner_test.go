@@ -35,6 +35,17 @@ func (r fixedPriceReader) GetMarkPrice(context.Context, string) (domain.Decimal,
 	return r.price, nil
 }
 
+type blockingPriceReader struct {
+	entered chan<- string
+	release <-chan struct{}
+}
+
+func (r blockingPriceReader) GetMarkPrice(_ context.Context, symbol string) (domain.Decimal, error) {
+	r.entered <- symbol
+	<-r.release
+	return "100", nil
+}
+
 type unavailableDerivativesReader struct{ fixedPriceReader }
 
 func (r unavailableDerivativesReader) GetRecentCandles(_ context.Context, _ string, interval string, _ int) ([]domain.MarketCandle, error) {
@@ -102,6 +113,36 @@ func TestStrategyRunnerFansOutOnePriceAcrossPaperPopulation(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("expected one shared market read, got %d", calls)
+	}
+}
+
+func TestStrategyRunnerFetchesDifferentSymbolsConcurrently(t *testing.T) {
+	entered := make(chan string, 2)
+	release := make(chan struct{})
+	runner := NewStrategyRunnerWithFactory(&strategyRunnerStore{}, func(MarketAccount) (PriceReader, error) {
+		return blockingPriceReader{entered: entered, release: release}, nil
+	})
+	account := MarketAccount{Provider: domain.ProviderBinance, Environment: domain.EnvironmentTestnet}
+	done := make(chan error, 2)
+	for _, symbol := range []string{"BTCUSDT", "ETHUSDT"} {
+		go func() {
+			_, err := runner.getMarkPrice(t.Context(), runner.paperFactory, account, "PAPER", symbol)
+			done <- err
+		}()
+	}
+	for range 2 {
+		select {
+		case <-entered:
+		case <-time.After(500 * time.Millisecond):
+			close(release)
+			t.Fatal("different-symbol market fetches were serialized by the cache lock")
+		}
+	}
+	close(release)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

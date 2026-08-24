@@ -59,6 +59,10 @@ type TestnetExecutor interface {
 	Execute(context.Context, Instance, Decision, int64, time.Time) error
 }
 
+type TestnetExecutionFailureRecorder interface {
+	RecordFailure(context.Context, int64, error) error
+}
+
 type Runner interface {
 	Tick(context.Context, Instance) (Decision, error)
 }
@@ -193,6 +197,10 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	cycle, err := s.store.CompleteCycle(ctx, *instance, s.owner, decision, now, now.Add(s.leaseDuration))
 	if err != nil {
 		s.logger.Warn("bot cycle persistence failed", "bot_id", instance.ID, "error", err)
+		// A deterministic persistence/ledger error must not be reacquired every
+		// poll tick by the same owner. ERROR writes lastDecisionAt, applying the
+		// bot interval as a retry backoff while other bots keep their workers.
+		s.transition(ctx, instance, StateError, "Karar/işlem kaydı tamamlanamadı; güvenli yeniden deneme bekleniyor.", now)
 		return
 	}
 	if instance.Mode == "PAPER" && s.performanceRefreshDue(instance.ID, now, cycle.PaperExecutionChanged) {
@@ -205,6 +213,11 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	if instance.Mode == "DEMO" && cycle.RiskApproved && decision.HypotheticalOrder != nil {
 		if err := s.testnetExecutor.Execute(ctx, *instance, decision, cycle.DecisionID, now); err != nil {
 			s.logger.Error("autonomous testnet execution failed", "bot_id", instance.ID, "decision_id", cycle.DecisionID, "error", err)
+			if recorder, ok := s.testnetExecutor.(TestnetExecutionFailureRecorder); ok {
+				if recordErr := recorder.RecordFailure(ctx, cycle.DecisionID, err); recordErr != nil {
+					s.logger.Error("autonomous testnet execution failure persistence failed", "bot_id", instance.ID, "decision_id", cycle.DecisionID, "error", recordErr)
+				}
+			}
 		}
 	}
 }

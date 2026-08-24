@@ -19,7 +19,8 @@ func (s *fakeStore) CreateAutonomousOrder(_ context.Context, _ bot.Instance, ord
 	s.orders = append(s.orders, order)
 	return nil
 }
-func (s *fakeStore) MarkAutonomousExecution(context.Context, int64, bool, string) error { return nil }
+func (s *fakeStore) MarkAutonomousExecution(context.Context, int64, bool, string) error  { return nil }
+func (s *fakeStore) MarkAutonomousExecutionFailure(context.Context, int64, string) error { return nil }
 
 type fakeExecution struct {
 	positions           []domain.Position

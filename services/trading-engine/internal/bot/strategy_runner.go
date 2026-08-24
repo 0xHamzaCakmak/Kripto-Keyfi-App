@@ -43,7 +43,9 @@ type StrategyStore interface {
 type StrategyRunner struct {
 	store                       StrategyStore
 	paperFactory, shadowFactory PriceReaderFactory
-	cacheMu                     sync.Mutex
+	cacheMu                     sync.RWMutex
+	keyLocksMu                  sync.Mutex
+	keyLocks                    map[string]*sync.Mutex
 	priceCache                  map[string]cachedPrice
 	chartCache                  map[string]cachedChart
 	candleCache                 map[string]cachedCandles
@@ -79,7 +81,7 @@ func NewStrategyRunner(store StrategyStore, client *http.Client, paperEndpoints,
 	return &StrategyRunner{store: store,
 		paperFactory:  endpointPriceReaderFactory(client, paperEndpoints),
 		shadowFactory: endpointPriceReaderFactory(client, shadowEndpoints),
-		priceCache:    make(map[string]cachedPrice), chartCache: make(map[string]cachedChart), candleCache: make(map[string]cachedCandles), derivativesCache: make(map[string]cachedDerivatives), cacheTTL: 5 * time.Second, now: time.Now,
+		priceCache:    make(map[string]cachedPrice), chartCache: make(map[string]cachedChart), candleCache: make(map[string]cachedCandles), derivativesCache: make(map[string]cachedDerivatives), keyLocks: make(map[string]*sync.Mutex), cacheTTL: 5 * time.Second, now: time.Now,
 	}
 }
 
@@ -97,7 +99,21 @@ func endpointPriceReaderFactory(client *http.Client, endpoints exchange.Endpoint
 }
 
 func NewStrategyRunnerWithFactory(store StrategyStore, factory PriceReaderFactory) *StrategyRunner {
-	return &StrategyRunner{store: store, paperFactory: factory, shadowFactory: factory, priceCache: make(map[string]cachedPrice), chartCache: make(map[string]cachedChart), candleCache: make(map[string]cachedCandles), derivativesCache: make(map[string]cachedDerivatives), cacheTTL: 5 * time.Second, now: time.Now}
+	return &StrategyRunner{store: store, paperFactory: factory, shadowFactory: factory, priceCache: make(map[string]cachedPrice), chartCache: make(map[string]cachedChart), candleCache: make(map[string]cachedCandles), derivativesCache: make(map[string]cachedDerivatives), keyLocks: make(map[string]*sync.Mutex), cacheTTL: 5 * time.Second, now: time.Now}
+}
+
+func (r *StrategyRunner) lockFor(key string) *sync.Mutex {
+	r.keyLocksMu.Lock()
+	defer r.keyLocksMu.Unlock()
+	if r.keyLocks == nil {
+		r.keyLocks = make(map[string]*sync.Mutex)
+	}
+	if lock := r.keyLocks[key]; lock != nil {
+		return lock
+	}
+	lock := &sync.Mutex{}
+	r.keyLocks[key] = lock
+	return lock
 }
 
 func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision, error) {
@@ -157,16 +173,24 @@ func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision,
 }
 
 func (r *StrategyRunner) getRecentCandles(ctx context.Context, factory PriceReaderFactory, account MarketAccount, mode, symbol, interval string, limit int) ([]domain.MarketCandle, error) {
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
-	if r.candleCache == nil {
-		r.candleCache = make(map[string]cachedCandles)
-	}
 	key := mode + ":" + string(account.Provider) + ":" + string(account.Environment) + ":" + symbol + ":candles:" + interval
 	now := r.now()
+	r.cacheMu.RLock()
 	if cached, ok := r.candleCache[key]; ok && now.Sub(cached.at) < r.cacheTTL {
+		r.cacheMu.RUnlock()
 		return append([]domain.MarketCandle(nil), cached.values...), nil
 	}
+	r.cacheMu.RUnlock()
+	keyLock := r.lockFor(key)
+	keyLock.Lock()
+	defer keyLock.Unlock()
+	now = r.now()
+	r.cacheMu.RLock()
+	if cached, ok := r.candleCache[key]; ok && now.Sub(cached.at) < r.cacheTTL {
+		r.cacheMu.RUnlock()
+		return append([]domain.MarketCandle(nil), cached.values...), nil
+	}
+	r.cacheMu.RUnlock()
 	reader, err := factory(account)
 	if err != nil {
 		return nil, err
@@ -179,21 +203,34 @@ func (r *StrategyRunner) getRecentCandles(ctx context.Context, factory PriceRead
 	if err != nil {
 		return nil, err
 	}
+	r.cacheMu.Lock()
+	if r.candleCache == nil {
+		r.candleCache = make(map[string]cachedCandles)
+	}
 	r.candleCache[key] = cachedCandles{values: append([]domain.MarketCandle(nil), values...), at: now}
+	r.cacheMu.Unlock()
 	return values, nil
 }
 
 func (r *StrategyRunner) getDerivativesContext(ctx context.Context, factory PriceReaderFactory, account MarketAccount, mode, symbol string) (domain.DerivativesContext, error) {
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
-	if r.derivativesCache == nil {
-		r.derivativesCache = make(map[string]cachedDerivatives)
-	}
 	key := mode + ":" + string(account.Provider) + ":" + string(account.Environment) + ":" + symbol + ":derivatives"
 	now := r.now()
+	r.cacheMu.RLock()
 	if cached, ok := r.derivativesCache[key]; ok && now.Sub(cached.at) < r.cacheTTL {
+		r.cacheMu.RUnlock()
 		return cached.value, nil
 	}
+	r.cacheMu.RUnlock()
+	keyLock := r.lockFor(key)
+	keyLock.Lock()
+	defer keyLock.Unlock()
+	now = r.now()
+	r.cacheMu.RLock()
+	if cached, ok := r.derivativesCache[key]; ok && now.Sub(cached.at) < r.cacheTTL {
+		r.cacheMu.RUnlock()
+		return cached.value, nil
+	}
+	r.cacheMu.RUnlock()
 	reader, err := factory(account)
 	if err != nil {
 		return domain.DerivativesContext{}, err
@@ -206,16 +243,16 @@ func (r *StrategyRunner) getDerivativesContext(ctx context.Context, factory Pric
 	if err != nil {
 		return domain.DerivativesContext{}, err
 	}
+	r.cacheMu.Lock()
+	if r.derivativesCache == nil {
+		r.derivativesCache = make(map[string]cachedDerivatives)
+	}
 	r.derivativesCache[key] = cachedDerivatives{value: value, at: now}
+	r.cacheMu.Unlock()
 	return value, nil
 }
 
 func (r *StrategyRunner) getRecentCloses(ctx context.Context, factory PriceReaderFactory, account MarketAccount, mode, symbol, interval string, limit int) ([]domain.Decimal, error) {
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
-	if r.chartCache == nil {
-		r.chartCache = make(map[string]cachedChart)
-	}
 	if r.cacheTTL <= 0 {
 		r.cacheTTL = 5 * time.Second
 	}
@@ -224,9 +261,22 @@ func (r *StrategyRunner) getRecentCloses(ctx context.Context, factory PriceReade
 	}
 	key := mode + ":" + string(account.Provider) + ":" + string(account.Environment) + ":" + symbol + ":" + interval
 	now := r.now()
+	r.cacheMu.RLock()
 	if cached, ok := r.chartCache[key]; ok && now.Sub(cached.at) < r.cacheTTL {
+		r.cacheMu.RUnlock()
 		return append([]domain.Decimal(nil), cached.values...), nil
 	}
+	r.cacheMu.RUnlock()
+	keyLock := r.lockFor(key)
+	keyLock.Lock()
+	defer keyLock.Unlock()
+	now = r.now()
+	r.cacheMu.RLock()
+	if cached, ok := r.chartCache[key]; ok && now.Sub(cached.at) < r.cacheTTL {
+		r.cacheMu.RUnlock()
+		return append([]domain.Decimal(nil), cached.values...), nil
+	}
+	r.cacheMu.RUnlock()
 	reader, err := factory(account)
 	if err != nil {
 		return nil, err
@@ -239,16 +289,16 @@ func (r *StrategyRunner) getRecentCloses(ctx context.Context, factory PriceReade
 	if err != nil {
 		return nil, err
 	}
+	r.cacheMu.Lock()
+	if r.chartCache == nil {
+		r.chartCache = make(map[string]cachedChart)
+	}
 	r.chartCache[key] = cachedChart{values: append([]domain.Decimal(nil), values...), at: now}
+	r.cacheMu.Unlock()
 	return values, nil
 }
 
 func (r *StrategyRunner) getMarkPrice(ctx context.Context, factory PriceReaderFactory, account MarketAccount, mode, symbol string) (domain.Decimal, error) {
-	r.cacheMu.Lock()
-	defer r.cacheMu.Unlock()
-	if r.priceCache == nil {
-		r.priceCache = make(map[string]cachedPrice)
-	}
 	if r.cacheTTL <= 0 {
 		r.cacheTTL = 5 * time.Second
 	}
@@ -257,9 +307,22 @@ func (r *StrategyRunner) getMarkPrice(ctx context.Context, factory PriceReaderFa
 	}
 	key := mode + ":" + string(account.Provider) + ":" + string(account.Environment) + ":" + symbol
 	now := r.now()
+	r.cacheMu.RLock()
 	if cached, ok := r.priceCache[key]; ok && now.Sub(cached.at) < r.cacheTTL {
+		r.cacheMu.RUnlock()
 		return cached.value, nil
 	}
+	r.cacheMu.RUnlock()
+	keyLock := r.lockFor(key)
+	keyLock.Lock()
+	defer keyLock.Unlock()
+	now = r.now()
+	r.cacheMu.RLock()
+	if cached, ok := r.priceCache[key]; ok && now.Sub(cached.at) < r.cacheTTL {
+		r.cacheMu.RUnlock()
+		return cached.value, nil
+	}
+	r.cacheMu.RUnlock()
 	reader, err := factory(account)
 	if err != nil {
 		return "", err
@@ -268,6 +331,11 @@ func (r *StrategyRunner) getMarkPrice(ctx context.Context, factory PriceReaderFa
 	if err != nil {
 		return "", err
 	}
+	r.cacheMu.Lock()
+	if r.priceCache == nil {
+		r.priceCache = make(map[string]cachedPrice)
+	}
 	r.priceCache[key] = cachedPrice{value: markPrice, at: now}
+	r.cacheMu.Unlock()
 	return markPrice, nil
 }

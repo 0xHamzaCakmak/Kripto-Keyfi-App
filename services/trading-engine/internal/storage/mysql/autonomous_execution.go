@@ -24,7 +24,11 @@ type AutonomousOrderInput struct {
 }
 
 func (s *AccountStore) MarkAutonomousExecution(ctx context.Context, decisionID int64, submitted bool, detail string) error {
-	safety, err := json.Marshal(map[string]any{"mode": "DEMO", "riskGatePassed": true, "autonomousRiskApproved": true, "orderExecutionAllowed": true, "submittedToExchange": submitted, "environment": "TESTNET", "productionLive": false, "detail": detail})
+	status := "NO_SUBMISSION"
+	if submitted {
+		status = "SUBMITTED"
+	}
+	safety, err := json.Marshal(map[string]any{"mode": "DEMO", "riskGatePassed": true, "autonomousRiskApproved": true, "orderExecutionAllowed": true, "submittedToExchange": submitted, "environment": "TESTNET", "productionLive": false, "executionStatus": status, "detail": detail})
 	if err != nil {
 		return err
 	}
@@ -38,6 +42,26 @@ func (s *AccountStore) MarkAutonomousExecution(ctx context.Context, decisionID i
 		}
 	}
 	return err
+}
+
+// MarkAutonomousExecutionFailure augments the decision safety record without
+// changing submittedToExchange. This is important when an entry reached the
+// exchange but a later protective-order step failed.
+func (s *AccountStore) MarkAutonomousExecutionFailure(ctx context.Context, decisionID int64, detail string) error {
+	for attempt := 1; attempt <= mysqlTransactionAttempts; attempt++ {
+		_, err := s.database.ExecContext(ctx, `UPDATE trading_bot_signals
+SET safetyChecks = JSON_SET(COALESCE(safetyChecks, JSON_OBJECT()),
+  '$.mode', 'DEMO', '$.orderExecutionAllowed', true, '$.environment', 'TESTNET',
+  '$.productionLive', false, '$.executionStatus', 'FAILED', '$.executionError', ?)
+WHERE decisionId = ? AND source = 'RULE_ENGINE'`, detail, decisionID)
+		if err == nil || !isRetryableMySQLTransactionError(err) || attempt == mysqlTransactionAttempts {
+			return err
+		}
+		if err := waitMySQLTransactionRetry(ctx, attempt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CreateAutonomousOrder is deliberately restricted to an explicitly activated

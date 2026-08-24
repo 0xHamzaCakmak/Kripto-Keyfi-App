@@ -20,6 +20,7 @@ import (
 type Store interface {
 	CreateAutonomousOrder(context.Context, bot.Instance, mysqlstore.AutonomousOrderInput, time.Time) error
 	MarkAutonomousExecution(context.Context, int64, bool, string) error
+	MarkAutonomousExecutionFailure(context.Context, int64, string) error
 }
 
 type ExecutionService interface {
@@ -38,6 +39,17 @@ type Executor struct {
 
 func New(store Store, service *execution.Service) *Executor {
 	return &Executor{store: store, execution: service}
+}
+
+// RecordFailure persists a scheduler-visible execution outcome. Without this,
+// a rejected TESTNET submission only existed in process logs and the UI looked
+// like the decision silently stopped before execution.
+func (e *Executor) RecordFailure(ctx context.Context, decisionID int64, cause error) error {
+	detail := "unknown TESTNET execution failure"
+	if cause != nil {
+		detail = cause.Error()
+	}
+	return e.store.MarkAutonomousExecutionFailure(ctx, decisionID, detail)
 }
 
 func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision bot.Decision, decisionID int64, now time.Time) error {
@@ -88,21 +100,21 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 			return e.ensurePositionProtection(ctx, instance, decisionID, *current, openOrders, reference, now)
 		}
 		if instance.Configuration["pyramidingEnabled"] != true || !samePositionDirection(*current, side) {
-			return nil
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "existing TESTNET position is already protected; no additional entry allowed")
 		}
 		if !allocationOK || allocation <= 0 {
-			return nil
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "existing TESTNET position is already protected; pyramiding allocation is unavailable")
 		}
 		remaining, remainingErr := remainingAllocation(allocation, *current, sizingMark)
 		if remainingErr != nil {
 			return remainingErr
 		}
 		if remaining <= 0 {
-			return nil
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "existing TESTNET position reached its approved allocation")
 		}
 		quantityText, err = alignApprovedQuantity(quantityText, remaining, sizingRule, sizingMark)
 		if errors.Is(err, errAllocationExhausted) {
-			return nil
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "remaining TESTNET allocation is below the exchange minimum quantity")
 		}
 		if err != nil {
 			return err
