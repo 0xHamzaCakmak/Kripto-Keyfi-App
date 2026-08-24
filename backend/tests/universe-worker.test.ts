@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { automaticCapitalScaleTarget, botAllocationUsdt, fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, PAPER_TRAINING_MAX_OPEN_POSITIONS, PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT, PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, PAPER_TRAINING_STOP_LOSS_BPS, PAPER_TRAINING_TAKE_PROFIT_BPS, paperTrainingConfiguration, rotationPending, schedulerLeaseActive, staleAutonomousProtection, TESTNET_ROTATION_SETTLE_MS, universeCandidate } from '../src/modules/ai-trading/universe.worker.js';
 import { CORE_TRADING_UNIVERSE } from '../src/modules/ai-trading/trading-universe.service.js';
-import { tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../src/modules/ai-trading/trading-universe.schema.js';
+import { addTradingUniverseAssetSchema, searchTradingUniverseSchema, tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../src/modules/ai-trading/trading-universe.schema.js';
 
 describe('autonomous Futures universe', () => {
   it('rotates a cohort deterministically across the full symbol list', () => {
@@ -22,6 +22,9 @@ describe('autonomous Futures universe', () => {
     expect(symbols.every((symbol) => assignments.filter((item) => item === symbol).length === 5)).toBe(true);
     expect(tradingUniverseAssetParamsSchema.parse({ symbol: 'btcusdt' }).symbol).toBe('BTCUSDT');
     expect(updateTradingUniverseAssetSchema.parse({ enabled: false })).toEqual({ enabled: false });
+    expect(addTradingUniverseAssetSchema.parse({ symbol: 'linkusdt' }).symbol).toBe('LINKUSDT');
+    expect(searchTradingUniverseSchema.parse({ q: ' ton ', limit: '10' })).toEqual({ q: 'TON', limit: 10 });
+    expect(addTradingUniverseAssetSchema.safeParse({ symbol: 'TON' }).success).toBe(false);
   });
 
   it('spreads fleet leverage from 5x through 20x', () => {

@@ -11,7 +11,7 @@ export type StrategyRouterEvidence = {
   lifecycleStatus: AutonomousTradingStatus; state: TradingBotState; desiredState: string;
   lastErrorCode: string | null; heartbeatAt: Date | null; regimeScore: number | null;
   metricAt: Date | null; riskProfileEnabled: boolean; accountKillSwitch: boolean;
-  globalKillSwitch: boolean; accountActive: boolean; accountConnected: boolean;
+  globalKillSwitch: boolean; accountActive: boolean; accountConnected: boolean; universeEnabled: boolean;
 };
 
 export type RoutedBot = {
@@ -47,7 +47,7 @@ export async function routeStrategies(userId: string, input: RouteStrategyInput,
     orderBy: [{ observedAt: 'desc' }, { id: 'desc' }], select: { id: true, regime: true, confidence: true, observedAt: true },
   });
   const regime = regimeSnapshot?.regime ?? 'UNKNOWN';
-  const [globalRisk, bots, coinPerformance] = await Promise.all([
+  const [globalRisk, bots, coinPerformance, universeAsset] = await Promise.all([
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
     prisma.tradingBot.findMany({
       where: {
@@ -66,6 +66,7 @@ export async function routeStrategies(userId: string, input: RouteStrategyInput,
       },
       orderBy: { id: 'asc' },
     }), getCoinPerformance(userId, { symbol: input.symbol, regime, limit: 500 }),
+    prisma.tradingUniverseAsset.findUnique({ where: { userId_symbol: { userId, symbol: input.symbol } }, select: { enabled: true } }),
   ]);
   const coinPerformanceByBot = new Map(coinPerformance.map((row) => [row.tradingBotId, row]));
   const evidence: StrategyRouterEvidence[] = bots.map((bot) => ({
@@ -76,7 +77,7 @@ export async function routeStrategies(userId: string, input: RouteStrategyInput,
     metricAt: coinPerformanceByBot.get(bot.id)?.latestTradeAt ?? bot.metrics[0]?.snapshotAt ?? null,
     riskProfileEnabled: bot.riskProfile?.enabled === true, accountKillSwitch: bot.riskProfile?.accountKillSwitch ?? true,
     globalKillSwitch: globalRisk?.globalKillSwitch ?? true, accountActive: bot.exchangeAccount.isActive,
-    accountConnected: bot.exchangeAccount.connectionStatus === 'CONNECTED',
+    accountConnected: bot.exchangeAccount.connectionStatus === 'CONNECTED', universeEnabled: universeAsset?.enabled === true,
   }));
   const decision = selectStrategyPool(evidence, regime, input, now);
   const audit = await prisma.tradingAuditLog.create({ data: {
@@ -105,6 +106,7 @@ function evaluateBot(item: StrategyRouterEvidence, regime: MarketRegime, input: 
   if (item.accountKillSwitch) failedGates.push('ACCOUNT_KILL_SWITCH');
   if (!item.accountActive) failedGates.push('ACCOUNT_DISABLED');
   if (!item.accountConnected) failedGates.push('ACCOUNT_NOT_CONNECTED');
+  if (!item.universeEnabled) failedGates.push('SYMBOL_OUTSIDE_TRADING_UNIVERSE');
   if (UNHEALTHY_STATES.has(item.state)) failedGates.push('BOT_STATE_UNHEALTHY');
   if (item.lastErrorCode) failedGates.push('RECENT_BOT_ERROR');
   if (item.regimeScore === null) failedGates.push('REGIME_SCORE_MISSING');

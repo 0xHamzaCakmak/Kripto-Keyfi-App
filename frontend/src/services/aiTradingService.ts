@@ -35,11 +35,19 @@ export type ArenaStatus = {
 export type TradingUniverseAsset = {
   id: string; symbol: string; baseAsset: string; displayName: string; enabled: boolean; sortOrder: number;
   marketCap: string | null; volume24h: string | null; marketRank: number | null; volumeChange24h: string | null;
-  intelligenceSource: string | null; intelligenceUpdatedAt: string | null;
+  intelligenceSource: string | null; intelligenceUpdatedAt: string | null; exchangeAvailable: boolean | null;
 };
 export type TradingUniverse = {
   assets: TradingUniverseAsset[];
   intelligence: { providers: string[]; globalContext: Record<string, unknown>; refreshedAt: string };
+  exchange: { accountId: string | null; name: string | null; environment: string | null; accountType: string | null; catalogStatus: 'FRESH' | 'UNAVAILABLE' };
+};
+export type TradingUniverseCandidate = {
+  symbol: string; baseAsset: string; quoteAsset: string; maxLeverage: number; minNotional: string; listed: boolean; enabled: boolean;
+};
+export type TradingUniverseSearch = {
+  account: { id: string; name: string; environment: string; accountType: string };
+  results: TradingUniverseCandidate[];
 };
 
 export type AutonomousBot = {
@@ -244,8 +252,8 @@ export type TeacherEvaluation = {
   recommendedAction: unknown;
   analyzer: string;
   createdAt: string;
-  tradingBot?: { name: string; symbol: string; symbols: unknown } | null;
-  strategy?: { name: string; family: string } | null;
+  tradingBot?: { name?: string | null; symbol?: string | null; symbols?: unknown } | null;
+  strategy?: { name?: string | null; family?: string | null } | null;
 };
 
 export type ResearchHypothesis = {
@@ -319,6 +327,9 @@ export const aiTradingApi = {
   overview: () => getAutonomousData<AutonomousOverview>('/admin/trading/autonomous/overview'),
   arenaStatus: () => getAutonomousData<ArenaStatus>('/admin/trading/autonomous/arena-status'),
   tradingUniverse: () => getData<TradingUniverse>('/admin/trading/autonomous/trading-universe'),
+  searchTradingUniverse: (q: string, limit = 20) => getData<TradingUniverseSearch>('/admin/trading/autonomous/trading-universe/search', { q, limit }),
+  addTradingUniverseAsset: (symbol: string) =>
+    api.post<ResponseEnvelope<TradingUniverseAsset>>('/admin/trading/autonomous/trading-universe', { symbol }).then((response) => response.data.data),
   setTradingUniverseAsset: (symbol: string, enabled: boolean) =>
     api.patch<ResponseEnvelope<TradingUniverseAsset>>(`/admin/trading/autonomous/trading-universe/${encodeURIComponent(symbol)}`, { enabled }).then((response) => response.data.data),
   bots: () => getData<AutonomousBot[]>('/admin/trading/bot-factory/bots'),

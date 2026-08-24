@@ -2,6 +2,9 @@ import { Prisma } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
+import { adapterFor } from '../trading/exchange-account.service.js';
+import type { ExchangeSymbol } from '../trading/exchanges/exchange-adapter.js';
+import type { SearchTradingUniverseQuery } from './trading-universe.schema.js';
 
 export const CORE_TRADING_UNIVERSE = [
   ['bitcoin', 'Bitcoin', 'BTC'], ['ethereum', 'Ethereum', 'ETH'], ['binancecoin', 'BNB', 'BNB'],
@@ -15,6 +18,7 @@ export const CORE_TRADING_UNIVERSE = [
 
 type ExternalQuote = { marketCap?: number | undefined; volume24h?: number | undefined; rank?: number | undefined; volumeChange24h?: number | undefined; sources: string[] };
 let intelligenceCache: { expiresAt: number; quotes: Map<string, ExternalQuote>; globalContext: Record<string, unknown> } | null = null;
+const exchangeCatalogCache = new Map<string, { expiresAt: number; symbols: ExchangeSymbol[] }>();
 
 export async function ensureCoreTradingUniverse(userId: string) {
   await prisma.$transaction(CORE_TRADING_UNIVERSE.map(([, displayName, baseAsset], sortOrder) =>
@@ -36,15 +40,26 @@ export async function getEnabledTradingSymbols(userId: string) {
 
 export async function getTradingUniverse(userId: string) {
   await ensureCoreTradingUniverse(userId);
-  const intelligence = await refreshExternalIntelligence(userId);
+  const [intelligence, catalog] = await Promise.all([refreshExternalIntelligence(userId), loadExchangeCatalog(userId, false)]);
   const assets = await prisma.tradingUniverseAsset.findMany({ where: { userId }, orderBy: { sortOrder: 'asc' } });
-  return { assets: assets.map((asset) => ({ ...asset, marketCap: asset.marketCap?.toString() ?? null, volume24h: asset.volume24h?.toString() ?? null, volumeChange24h: asset.volumeChange24h?.toString() ?? null })), intelligence };
+  const available = catalog ? new Set(catalog.symbols.map((item) => item.symbol)) : null;
+  return {
+    assets: assets.map((asset) => ({ ...asset,
+      marketCap: asset.marketCap?.toString() ?? null, volume24h: asset.volume24h?.toString() ?? null,
+      volumeChange24h: asset.volumeChange24h?.toString() ?? null,
+      exchangeAvailable: available ? available.has(asset.symbol) : null,
+    })),
+    intelligence,
+    exchange: catalog ? { accountId: catalog.account.id, name: catalog.account.name, environment: catalog.account.environment, accountType: catalog.account.accountType, catalogStatus: 'FRESH' as const }
+      : { accountId: null, name: null, environment: null, accountType: null, catalogStatus: 'UNAVAILABLE' as const },
+  };
 }
 
 export async function updateTradingUniverseAsset(userId: string, symbol: string, enabled: boolean, ipAddress?: string) {
   await ensureCoreTradingUniverse(userId);
   const existing = await prisma.tradingUniverseAsset.findUnique({ where: { userId_symbol: { userId, symbol } } });
   if (!existing) throw new ApiError(404, 'Core Trading Universe asset not found.', 'TRADING_UNIVERSE_ASSET_NOT_FOUND');
+  if (enabled) await requireExchangeSymbol(userId, symbol);
   const asset = await prisma.$transaction(async (tx) => {
     const updated = await tx.tradingUniverseAsset.update({ where: { id: existing.id }, data: { enabled } });
     await tx.tradingAuditLog.create({ data: {
@@ -55,7 +70,75 @@ export async function updateTradingUniverseAsset(userId: string, symbol: string,
     } });
     return updated;
   });
-  return { ...asset, marketCap: asset.marketCap?.toString() ?? null, volume24h: asset.volume24h?.toString() ?? null, volumeChange24h: asset.volumeChange24h?.toString() ?? null };
+  return { ...asset, marketCap: asset.marketCap?.toString() ?? null, volume24h: asset.volume24h?.toString() ?? null, volumeChange24h: asset.volumeChange24h?.toString() ?? null, exchangeAvailable: enabled ? true : null };
+}
+
+export async function searchTradingUniverse(userId: string, query: SearchTradingUniverseQuery) {
+  const catalog = await loadExchangeCatalog(userId, true);
+  const needle = query.q.replace(/[^A-Z0-9]/g, '');
+  const matches = catalog.symbols.filter((item) => !needle || item.symbol.includes(needle) || item.baseAsset.includes(needle)).slice(0, query.limit);
+  const configured = await prisma.tradingUniverseAsset.findMany({
+    where: { userId, symbol: { in: matches.map((item) => item.symbol) } }, select: { symbol: true, enabled: true },
+  });
+  const configuredBySymbol = new Map(configured.map((item) => [item.symbol, item.enabled]));
+  return {
+    account: { id: catalog.account.id, name: catalog.account.name, environment: catalog.account.environment, accountType: catalog.account.accountType },
+    results: matches.map((item) => ({
+      symbol: item.symbol, baseAsset: item.baseAsset, quoteAsset: item.quoteAsset, maxLeverage: item.maxLeverage,
+      minNotional: item.minNotional, listed: configuredBySymbol.has(item.symbol), enabled: configuredBySymbol.get(item.symbol) === true,
+    })),
+  };
+}
+
+export async function addTradingUniverseAsset(userId: string, symbol: string, ipAddress?: string) {
+  await ensureCoreTradingUniverse(userId);
+  const exchangeSymbol = await requireExchangeSymbol(userId, symbol);
+  const aggregate = await prisma.tradingUniverseAsset.aggregate({ where: { userId }, _max: { sortOrder: true } });
+  const asset = await prisma.$transaction(async (tx) => {
+    const saved = await tx.tradingUniverseAsset.upsert({
+      where: { userId_symbol: { userId, symbol } },
+      create: { userId, symbol, baseAsset: exchangeSymbol.baseAsset, displayName: exchangeSymbol.baseAsset, enabled: true, sortOrder: (aggregate._max.sortOrder ?? -1) + 1 },
+      update: { baseAsset: exchangeSymbol.baseAsset, enabled: true },
+    });
+    await tx.tradingAuditLog.create({ data: {
+      userId, action: 'AI_TRADING_UNIVERSE_ASSET_ADDED', entityType: 'TRADING_UNIVERSE_ASSET', entityId: saved.id,
+      metadata: { symbol, exchangeValidated: true, exchangeMarket: 'USD_M_FUTURES', enabled: true, productionLive: false },
+      ...(ipAddress ? { ipAddress } : {}),
+    } });
+    return saved;
+  });
+  return { ...asset, marketCap: asset.marketCap?.toString() ?? null, volume24h: asset.volume24h?.toString() ?? null, volumeChange24h: asset.volumeChange24h?.toString() ?? null, exchangeAvailable: true };
+}
+
+type ExchangeCatalog = { account: { id: string; name: string; environment: string; accountType: string }; symbols: ExchangeSymbol[] };
+
+async function requireExchangeSymbol(userId: string, symbol: string) {
+  const catalog = await loadExchangeCatalog(userId, true);
+  const match = catalog.symbols.find((item) => item.symbol === symbol);
+  if (!match) throw new ApiError(422, `${symbol}, bağlı Binance USDⓈ-M Futures ortamında işlem gören bir perpetual sembol değil.`, 'TRADING_UNIVERSE_SYMBOL_NOT_AVAILABLE');
+  return match;
+}
+
+async function loadExchangeCatalog(userId: string, required: true): Promise<ExchangeCatalog>;
+async function loadExchangeCatalog(userId: string, required: false): Promise<ExchangeCatalog | null>;
+async function loadExchangeCatalog(userId: string, required: boolean): Promise<ExchangeCatalog | null> {
+  const accountWhere = { userId, provider: 'BINANCE' as const, accountType: 'USDT_M' as const, isActive: true };
+  const account = await prisma.exchangeAccount.findFirst({ where: { ...accountWhere, connectionStatus: 'CONNECTED' }, orderBy: { createdAt: 'asc' } })
+    ?? await prisma.exchangeAccount.findFirst({ where: accountWhere, orderBy: { createdAt: 'asc' } });
+  if (!account) {
+    if (required) throw new ApiError(409, 'Aktif Binance USDⓈ-M Futures hesabı bulunamadı.', 'TRADING_UNIVERSE_EXCHANGE_ACCOUNT_REQUIRED');
+    return null;
+  }
+  const cached = exchangeCatalogCache.get(account.id);
+  if (cached && cached.expiresAt > Date.now()) return { account, symbols: cached.symbols };
+  try {
+    const symbols = (await adapterFor(account).getSymbols()).filter((item) => item.status === 'TRADING' && item.quoteAsset === 'USDT');
+    exchangeCatalogCache.set(account.id, { expiresAt: Date.now() + 5 * 60_000, symbols });
+    return { account, symbols };
+  } catch (error) {
+    if (required) throw new ApiError(503, 'Bağlı Binance Futures sembol kataloğu alınamadı. Borsa bağlantısını kontrol edip yeniden deneyin.', 'TRADING_UNIVERSE_EXCHANGE_CATALOG_UNAVAILABLE', error instanceof Error ? error.message : undefined);
+    return null;
+  }
 }
 
 async function refreshExternalIntelligence(userId: string) {

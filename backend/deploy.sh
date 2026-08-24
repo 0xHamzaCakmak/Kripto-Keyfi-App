@@ -4,7 +4,7 @@ set -Eeuo pipefail
 # KriptoKeyfi production deploy (PAPER + Binance TESTNET only).
 # This script never bootstraps bots, resets the database, or enables real-money LIVE.
 
-PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BRANCH="${BRANCH:-main}"
 SKIP_GIT_UPDATE="${SKIP_GIT_UPDATE:-false}"
 RUN_BACKEND_TESTS="${RUN_BACKEND_TESTS:-true}"
@@ -32,6 +32,8 @@ ENV_FILE="$BACKEND_DIR/.env"
 ENGINE_BINARY="$ENGINE_DIR/trading-engine"
 ENGINE_CANDIDATE="$ENGINE_DIR/trading-engine.deploy"
 ENGINE_ROLLBACK="$ENGINE_DIR/trading-engine.previous"
+FRONTEND_HEALTH_URL="${FRONTEND_HEALTH_URL:-}"
+FRONTEND_ASSET_PATH=""
 
 CURRENT_STEP="Baslangic"
 FLEET_MAINTENANCE_STARTED=false
@@ -91,6 +93,7 @@ update_code() {
   git fetch origin "$BRANCH"
   git checkout "$BRANCH"
   git merge --ff-only "origin/$BRANCH"
+  log "Deploy commit: $(git rev-parse --short HEAD)"
 }
 
 install_dependencies() {
@@ -138,6 +141,7 @@ NODE
   fi
   export PORT="$BACKEND_PORT"
   BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-http://127.0.0.1:${BACKEND_PORT}/api/health}"
+  FRONTEND_HEALTH_URL="${FRONTEND_HEALTH_URL:-${FRONTEND_URL:-}}"
 
   local required=(DATABASE_URL JWT_ACCESS_SECRET JWT_REFRESH_SECRET TRADING_ENGINE_URL TRADING_ENGINE_TOKEN TRADING_CREDENTIALS_MASTER_KEY)
   local variable
@@ -205,6 +209,12 @@ validate_and_build() {
 
   test -f "$BACKEND_DIR/dist/server.js"
   test -f "$FRONTEND_DIR/dist/index.html"
+  FRONTEND_ASSET_PATH="$(grep -oE '/assets/index-[^"]+\.js' "$FRONTEND_DIR/dist/index.html" | head -n 1)"
+  if [ -z "$FRONTEND_ASSET_PATH" ]; then
+    printf 'Frontend build asset hash bulunamadi: %s\n' "$FRONTEND_DIR/dist/index.html" >&2
+    exit 1
+  fi
+  log "Frontend build asset: $FRONTEND_ASSET_PATH"
   test -x "$ENGINE_CANDIDATE"
 }
 
@@ -294,6 +304,7 @@ install_frontend() {
   if [ -n "$WEB_ROOT" ]; then
     mkdir -p "$WEB_ROOT"
     cp -a "$FRONTEND_DIR/dist/." "$WEB_ROOT/"
+    test -f "$WEB_ROOT$FRONTEND_ASSET_PATH"
     log "Frontend kopyalandi: $WEB_ROOT"
   else
     log "WEB_ROOT bos: Nginx'in frontend/dist dizinini servis ettigi varsayildi"
@@ -302,6 +313,23 @@ install_frontend() {
     nginx -t
     systemctl reload nginx
   fi
+}
+
+verify_frontend_release() {
+  if [ -z "$FRONTEND_HEALTH_URL" ]; then
+    log "FRONTEND_URL/FRONTEND_HEALTH_URL bos: yayinlanan frontend hash kontrolu atlandi"
+    return
+  fi
+  local url body
+  url="${FRONTEND_HEALTH_URL%/}/"
+  body="$(curl -fsS --max-time 15 -H 'Cache-Control: no-cache' "${url}?deploy=$(date +%s)")"
+  if [[ "$body" != *"$FRONTEND_ASSET_PATH"* ]]; then
+    printf 'Canli frontend yeni build hashini sunmuyor: %s\n' "$FRONTEND_ASSET_PATH" >&2
+    printf 'Nginx baska dizini servis ediyor olabilir. WEB_ROOT degerini gercek Nginx root dizinine ayarlayin.\n' >&2
+    return 1
+  fi
+  curl -fsS --max-time 15 -o /dev/null "${url%/}${FRONTEND_ASSET_PATH}"
+  log "Canli frontend build dogrulandi: $FRONTEND_ASSET_PATH"
 }
 
 restart_backend() {
@@ -398,6 +426,7 @@ wait_for_engine_contract() {
 health_checks() {
   step "11/13 Backend ve Engine health/reconciliation kontrol ediliyor"
   wait_for_backend
+  verify_frontend_release
   if ! wait_for_url "Trading Engine" "$ENGINE_HEALTH_URL" "$ENGINE_PM2_NAME"; then
     if [ -x "$ENGINE_ROLLBACK" ]; then
       log "Engine hazir olmadi; onceki binary geri yukleniyor"

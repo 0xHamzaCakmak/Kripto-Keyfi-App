@@ -49,8 +49,8 @@ import { autonomousAudit, systemHealth } from '../ai-trading/autonomous-observab
 import { autonomousAuditQuerySchema } from '../ai-trading/autonomous-observability.schema.js';
 import { activateTestnet, archive, arenaStatus, autonomousOverview, capital, createPaperBot, generations, liveEligibilityStatus, pausePaperBot, promotion, resumePaperBot, settings, startPaperBot, testnetBotOperation, testnetOperations, triggerGeneration } from '../ai-trading/autonomous-admin.controller.js';
 import { autonomousBotParamsSchema, autonomousGenerationQuerySchema, botCapitalSchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema, promotionReviewSchema, testnetActivationSchema, triggerPaperGenerationSchema } from '../ai-trading/autonomous-admin.schema.js';
-import { changeTradingUniverseAsset, tradingUniverse } from '../ai-trading/trading-universe.controller.js';
-import { tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../ai-trading/trading-universe.schema.js';
+import { addUniverseAsset, changeTradingUniverseAsset, searchUniverse, tradingUniverse } from '../ai-trading/trading-universe.controller.js';
+import { addTradingUniverseAssetSchema, searchTradingUniverseSchema, tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../ai-trading/trading-universe.schema.js';
 import { coinPerformance } from '../ai-trading/coin-performance.controller.js';
 import { coinPerformanceQuerySchema } from '../ai-trading/coin-performance.schema.js';
 
@@ -62,6 +62,8 @@ tradingRouter.get('/system-health/audit', validateRequest({ query: autonomousAud
 tradingRouter.get('/autonomous/overview', asyncHandler(autonomousOverview));
 tradingRouter.get('/autonomous/arena-status', asyncHandler(arenaStatus));
 tradingRouter.get('/autonomous/trading-universe', asyncHandler(tradingUniverse));
+tradingRouter.get('/autonomous/trading-universe/search', validateRequest({ query: searchTradingUniverseSchema }), asyncHandler(searchUniverse));
+tradingRouter.post('/autonomous/trading-universe', validateRequest({ body: addTradingUniverseAssetSchema }), asyncHandler(addUniverseAsset));
 tradingRouter.patch('/autonomous/trading-universe/:symbol', validateRequest({ params: tradingUniverseAssetParamsSchema, body: updateTradingUniverseAssetSchema }), asyncHandler(changeTradingUniverseAsset));
 tradingRouter.get('/autonomous/coin-performance', validateRequest({ query: coinPerformanceQuerySchema }), asyncHandler(coinPerformance));
 tradingRouter.get('/autonomous/generations', validateRequest({ query: autonomousGenerationQuerySchema }), asyncHandler(generations));

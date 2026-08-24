@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kripto-keyfi-shell-v1';
+const CACHE_NAME = 'kripto-keyfi-shell-v2';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/pwa/icon-192.png', '/pwa/icon-512.png'];
 
 self.addEventListener('install', (event) => {

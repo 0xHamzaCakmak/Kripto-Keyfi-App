@@ -11,7 +11,7 @@ function bot(overrides: Partial<StrategyRouterEvidence> = {}): StrategyRouterEvi
     botId: 'bot-a', botName: 'Bot A', exchangeAccountId: 'account-1', mode: 'PAPER', lifecycleStatus: 'PAPER',
     state: 'RUNNING', desiredState: 'RUNNING', lastErrorCode: null, heartbeatAt: now,
     regimeScore: 80, metricAt: now, riskProfileEnabled: true, accountKillSwitch: false,
-    globalKillSwitch: false, accountActive: true, accountConnected: true, ...overrides,
+    globalKillSwitch: false, accountActive: true, accountConnected: true, universeEnabled: true, ...overrides,
   };
 }
 
@@ -52,6 +52,12 @@ describe('strategy router', () => {
     expect(decision.selectedBots).toHaveLength(0);
     expect(decision.excludedBots.find((item) => item.botId === 'shadow')?.failedGates).toContain('PAPER_MODE_REQUIRED');
     expect(decision.excludedBots.find((item) => item.botId === 'stale-metric')?.failedGates).toContain('REGIME_SCORE_STALE');
+  });
+
+  it('never routes a bot for a symbol disabled outside Trading Universe', () => {
+    const decision = selectStrategyPool([bot({ universeEnabled: false })], 'TRENDING_UP', input, now);
+    expect(decision.selectedBots).toHaveLength(0);
+    expect(decision.excludedBots[0]?.failedGates).toContain('SYMBOL_OUTSIDE_TRADING_UNIVERSE');
   });
 
   it('validates bounded deterministic routing configuration', () => {

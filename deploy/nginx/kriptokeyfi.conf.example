@@ -30,4 +30,19 @@ server {
     location / {
         try_files $uri $uri/ /index.html;
     }
+
+    # HTML ve service worker her deployda yeniden doğrulanır. Hashli /assets
+    # dosyaları uzun süre güvenle cache edilebilir.
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    }
+
+    location = /sw.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+    }
+
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
 }
