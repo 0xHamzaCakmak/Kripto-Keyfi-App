@@ -22,7 +22,7 @@ export function MetricCard({ label, value, detail, help, tone = 'neutral' }: { l
     <div className="flex items-start justify-between gap-3"><p className="text-xs font-black uppercase tracking-[.14em] text-on-surface-variant">{label}</p>{help && <CircleHelp aria-hidden="true" className="shrink-0 text-outline transition-colors group-hover/help:text-primary" size={15} />}</div>
     <div className={cn('mt-2 font-headline text-2xl font-black', tone === 'danger' ? 'text-error' : tone === 'safe' ? 'text-secondary' : tone === 'warning' ? 'text-tertiary' : 'text-white')}>{value}</div>
     {detail && <div className="mt-2 text-xs leading-5 text-outline">{detail}</div>}
-    {help && <div role="tooltip" className="pointer-events-none absolute left-3 right-3 top-[calc(100%+8px)] z-[70] rounded-xl border border-primary/25 bg-background px-3 py-2 text-xs font-medium normal-case leading-5 tracking-normal text-on-surface-variant opacity-0 shadow-2xl transition-opacity group-hover/help:opacity-100 group-focus-within/help:opacity-100">{help}</div>}
+    {help && <div role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+8px)] left-3 right-3 z-[70] rounded-xl border border-primary/25 bg-background px-3 py-2 text-xs font-medium normal-case leading-5 tracking-normal text-on-surface-variant opacity-0 shadow-2xl transition-opacity group-hover/help:opacity-100 group-focus-within/help:opacity-100">{help}</div>}
   </div>;
 }
 

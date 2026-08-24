@@ -139,7 +139,7 @@ export async function listTeacherEvaluations(userId: string, query: TeacherEvalu
       ...(query.strategyId ? { strategyId: query.strategyId } : {}),
       ...(query.severity ? { severity: query.severity } : {}),
     },
-    include: { tradingBot: { select: { name: true } }, strategy: { select: { name: true, family: true } } },
+    include: { tradingBot: { select: { name: true, symbol: true, symbols: true } }, strategy: { select: { name: true, family: true } } },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: query.limit,
   });
   return rows.map((row) => ({ ...row, id: row.id.toString(), confidence: row.confidence.toNumber() }));

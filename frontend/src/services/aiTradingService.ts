@@ -244,7 +244,7 @@ export type TeacherEvaluation = {
   recommendedAction: unknown;
   analyzer: string;
   createdAt: string;
-  tradingBot?: { name: string } | null;
+  tradingBot?: { name: string; symbol: string; symbols: unknown } | null;
   strategy?: { name: string; family: string } | null;
 };
 
