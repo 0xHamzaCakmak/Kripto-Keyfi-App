@@ -5,7 +5,7 @@ import "testing"
 func TestManagedExitTakesPartialThenTrails(t *testing.T) {
 	input := ManagedExitInput{Side: "BUY", EntryPrice: "100", Quantity: "2", StopLoss: "99", FirstTarget: "102", MarkPrice: "102", MarketRegime: "TREND", PartialFraction: 0.5, TrailingStopBps: 50}
 	partial, err := PlanManagedExit(input)
-	if err != nil || partial.Action != "PARTIAL_TAKE_PROFIT" || partial.Quantity != "1.000000000000000000" || partial.NewStop != "100" {
+	if err != nil || partial.Action != "PARTIAL_TAKE_PROFIT" || partial.Quantity != "1.000000000000000000" || partial.NewStop != "102" {
 		t.Fatalf("unexpected partial plan: %#v err=%v", partial, err)
 	}
 	input.PartialTaken, input.Quantity, input.StopLoss, input.MarkPrice = true, "1", "100", "104"
@@ -21,8 +21,14 @@ func TestManagedExitTakesPartialThenTrails(t *testing.T) {
 }
 
 func TestManagedExitClosesOnRegimeChange(t *testing.T) {
-	plan, err := PlanManagedExit(ManagedExitInput{Side: "SELL", EntryPrice: "100", Quantity: "1", StopLoss: "101", FirstTarget: "98", MarkPrice: "99", MarketRegime: "RANGE", PartialFraction: 0.5, TrailingStopBps: 50})
+	input := ManagedExitInput{Side: "SELL", EntryPrice: "100", Quantity: "1", StopLoss: "101", FirstTarget: "98", MarkPrice: "99", MarketRegime: "RANGE", PartialFraction: 0.5, TrailingStopBps: 50}
+	plan, err := PlanManagedExit(input)
+	if err != nil || plan.Action != "NONE" {
+		t.Fatalf("sub-target regime change closed the trade: %#v err=%v", plan, err)
+	}
+	input.PartialTaken, input.StopLoss, input.MarkPrice = true, "98", "97.5"
+	plan, err = PlanManagedExit(input)
 	if err != nil || plan.Action != "CLOSE" || plan.Reason != "REGIME_CHANGE" {
-		t.Fatalf("regime change did not close: %#v err=%v", plan, err)
+		t.Fatalf("qualified regime change did not close: %#v err=%v", plan, err)
 	}
 }

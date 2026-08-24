@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import { assertPositiveDecimal, compareDecimals, isStepAligned, multiplyDecimals, normalizeDecimal } from './decimal.js';
-import { adapterFor, exchangeCall, ownedAccount } from './exchange-account.service.js';
+import { adapterFor, exchangeCall, ownedAccount, readExchangeState } from './exchange-account.service.js';
 import { ExchangeAdapterError } from './exchanges/exchange-adapter.js';
 import type { ExchangeAdapter } from './exchanges/exchange-adapter.js';
 import type { CancelOrderInput, ClosePositionInput, PreviewOrderInput, SubmitOrderInput } from './manual-trading.schema.js';
@@ -16,9 +16,9 @@ const PREVIEW_TTL_MS = 2 * 60 * 1000;
 
 export async function listSymbols(userId: string, exchangeAccountId: string) {
   const account = await tradingAccount(userId, exchangeAccountId);
-  const symbols = account.executionEngine === 'GO'
-    ? (await getTradingEngineSnapshot(account)).symbols
-    : await exchangeCall(() => adapterFor(account).getSymbols());
+  const symbols = await readExchangeState(account.executionEngine,
+    async () => (await getTradingEngineSnapshot(account)).symbols,
+    () => exchangeCall(() => adapterFor(account).getSymbols()));
   if (account.executionEngine === 'TYPESCRIPT') scheduleShadowComparison(userId, exchangeAccountId, 'symbols', symbols);
   return symbols;
 }
@@ -177,9 +177,9 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
 
 export async function listOpenOrders(userId: string, exchangeAccountId: string) {
   const account = await tradingAccount(userId, exchangeAccountId);
-  const orders = account.executionEngine === 'GO'
-    ? (await getTradingEngineSnapshot(account)).orders
-    : await exchangeCall(() => adapterFor(account).getOpenOrders());
+  const orders = await readExchangeState(account.executionEngine,
+    async () => (await getTradingEngineSnapshot(account)).orders,
+    () => exchangeCall(() => adapterFor(account).getOpenOrders()));
   if (account.executionEngine === 'TYPESCRIPT') scheduleShadowComparison(userId, exchangeAccountId, 'orders', orders);
   const localPending = await prisma.tradingOrder.findMany({
     where: { userId, exchangeAccountId, status: { in: ['SUBMITTING', 'CANCELING', 'CLOSING', 'RECONCILIATION_REQUIRED'] } },
@@ -201,9 +201,9 @@ export async function listOpenOrders(userId: string, exchangeAccountId: string) 
 export async function cancelOpenOrder(userId: string, exchangeOrderId: string, input: CancelOrderInput, ipAddress?: string) {
   const account = await tradingAccount(userId, input.exchangeAccountId);
   const adapter = account.executionEngine === 'TYPESCRIPT' ? adapterFor(account) : undefined;
-  const current = account.executionEngine === 'GO'
-    ? (await getTradingEngineSnapshot(account)).orders
-    : await exchangeCall(() => adapter!.getOpenOrders());
+  const current = await readExchangeState(account.executionEngine,
+    async () => (await getTradingEngineSnapshot(account)).orders,
+    () => exchangeCall(() => adapterFor(account).getOpenOrders()));
   const order = current.find((item) => item.exchangeOrderId === exchangeOrderId && item.symbol === input.symbol);
   if (!order) throw new ApiError(404, 'Açık emir bulunamadı veya daha önce sonuçlandı.', 'OPEN_ORDER_NOT_FOUND');
   await emitTradingState({ userId, exchangeAccountId: input.exchangeAccountId, provider: account.provider,
@@ -232,9 +232,9 @@ export async function cancelOpenOrder(userId: string, exchangeOrderId: string, i
 
 export async function listPositions(userId: string, exchangeAccountId: string) {
   const account = await tradingAccount(userId, exchangeAccountId);
-  const positions = account.executionEngine === 'GO'
-    ? (await getTradingEngineSnapshot(account)).positions
-    : await exchangeCall(() => adapterFor(account).getPositions());
+  const positions = await readExchangeState(account.executionEngine,
+    async () => (await getTradingEngineSnapshot(account)).positions,
+    () => exchangeCall(() => adapterFor(account).getPositions()));
   if (account.executionEngine === 'TYPESCRIPT') scheduleShadowComparison(userId, exchangeAccountId, 'positions', positions);
   return positions;
 }

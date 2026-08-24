@@ -32,6 +32,16 @@ export type ArenaStatus = {
   executionMode: 'SIMULATION_ONLY';
 };
 
+export type TradingUniverseAsset = {
+  id: string; symbol: string; baseAsset: string; displayName: string; enabled: boolean; sortOrder: number;
+  marketCap: string | null; volume24h: string | null; marketRank: number | null; volumeChange24h: string | null;
+  intelligenceSource: string | null; intelligenceUpdatedAt: string | null;
+};
+export type TradingUniverse = {
+  assets: TradingUniverseAsset[];
+  intelligence: { providers: string[]; globalContext: Record<string, unknown>; refreshedAt: string };
+};
+
 export type AutonomousBot = {
   id: string;
   name: string;
@@ -60,6 +70,11 @@ export type AutonomousBot = {
   version: number;
   strategyVersion: { version: number; strategy: { id: string; name: string; family: string } } | null;
   paperPosition: PaperPosition | null;
+  promotionEvidence: {
+    botId: string; lifecycleStatus: AutonomousLifecycle; evidenceAt: string; evidenceVersion: string; score: number | null;
+    totalTrades: number; paperDurationDays: number; profitFactor: number | null;
+    maxDrawdown: number; regimeCoverage: number; openPaperTrades: number;
+  } | null;
   _count: { paperFills: number; paperTrades: number };
 };
 
@@ -72,7 +87,19 @@ export type PaperFill = {
   id: string; decisionId: string; side: 'BUY' | 'SELL'; quantity: string; markPrice: string; fillPrice: string;
   notional: string; fee: string; realizedPnl: string; slippageBps: string; feeBps: string; occurredAt: string;
 };
-export type PaperPerformance = { position: PaperPosition | null; fills: PaperFill[] };
+export type PaperTrade = {
+  id: string; symbol: string; side: 'BUY' | 'SELL'; status: 'OPEN' | 'CLOSED' | 'LIQUIDATED';
+  entryPrice: string; exitPrice: string | null; markPrice: string; quantity: string; leverage: number;
+  notional: string; initialMargin: string; fees: string; realizedPnl: string; unrealizedPnl: string;
+  netPnl: string; pnlPct: string; stopLoss: string | null; takeProfit: string | null;
+  closeReason: string | null; openedAt: string; closedAt: string | null;
+};
+export type PaperPerformance = {
+  position: PaperPosition | null;
+  fills: PaperFill[];
+  trades?: PaperTrade[];
+  closedSummary?: { tradeCount: number; wins: number; losses: number; netPnl: string; fees: string };
+};
 
 export type TestnetPosition = {
   positionKey: string; symbol: string; side: 'LONG' | 'SHORT'; quantity: string; entryPrice: string; markPrice: string;
@@ -97,6 +124,12 @@ export type LeaderboardRow = {
   botName: string;
   strategyVersionId: string | null;
   score: number;
+  currentEquity: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  netPnl: number;
+  totalTrades: number;
+  maxDrawdown: number;
   breakdown: unknown;
   snapshotAt: string;
   rank: number;
@@ -135,6 +168,7 @@ export type LiveEligibilityStatus = {
   lifecycleStatus: 'CHAMPION' | 'LIVE_ELIGIBLE';
   state: string;
   updatedAt: string;
+  evidence: unknown;
   latestCandidate: { id: string; status: string; score: number | null; evidence: unknown; evaluatedAt: string } | null;
   liveActivated: false;
   manualApprovalRequired: boolean;
@@ -143,6 +177,13 @@ export type LiveEligibilityStatus = {
 export type Generation = {
   id: string; number: number; status: string; populationTarget: number; metadata: unknown;
   counts: { bots: number; mutations: number; crossovers: number };
+  readiness: {
+    ready: boolean; populationReady: boolean; survivorEvidenceReady: boolean;
+    paperBots: number; populationTarget: number; eligibleBots: number; requiredSurvivors: number;
+    botsMeetingTradeMinimum: number; botsWithScore: number; minimumTrades: number;
+    minimumObservedTrades: number; maximumObservedTrades: number;
+    blocker: 'POPULATION_BELOW_TARGET' | 'SURVIVOR_EVIDENCE_INSUFFICIENT' | null;
+  };
   startedAt: string | null; completedAt: string | null; createdAt: string; updatedAt: string;
 };
 export type EvolutionRun = {
@@ -277,6 +318,9 @@ async function getAutonomousData<T>(path: string, params?: Record<string, unknow
 export const aiTradingApi = {
   overview: () => getAutonomousData<AutonomousOverview>('/admin/trading/autonomous/overview'),
   arenaStatus: () => getAutonomousData<ArenaStatus>('/admin/trading/autonomous/arena-status'),
+  tradingUniverse: () => getData<TradingUniverse>('/admin/trading/autonomous/trading-universe'),
+  setTradingUniverseAsset: (symbol: string, enabled: boolean) =>
+    api.patch<ResponseEnvelope<TradingUniverseAsset>>(`/admin/trading/autonomous/trading-universe/${encodeURIComponent(symbol)}`, { enabled }).then((response) => response.data.data),
   bots: () => getData<AutonomousBot[]>('/admin/trading/bot-factory/bots'),
   paperPerformance: (botId: string) => getData<PaperPerformance>(`/admin/trading/bot-factory/bots/${encodeURIComponent(botId)}/paper-performance`),
   leaderboard: (limit = 100) => getData<LeaderboardRow[]>('/admin/trading/leaderboard', { limit }),

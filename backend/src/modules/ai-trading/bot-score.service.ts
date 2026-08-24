@@ -8,6 +8,12 @@ export type ScoreRow = {
   botName: string;
   strategyVersionId: string | null;
   score: Prisma.Decimal;
+  currentEquity: Prisma.Decimal;
+  realizedPnl: Prisma.Decimal;
+  unrealizedPnl: Prisma.Decimal;
+  netPnl: Prisma.Decimal;
+  totalTrades: number;
+  maxDrawdown: Prisma.Decimal;
   metrics: Prisma.JsonValue | null;
   snapshotAt: Date;
 };
@@ -18,6 +24,12 @@ export type RankedScore = {
   botName: string;
   strategyVersionId: string | null;
   score: number;
+  currentEquity: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  netPnl: number;
+  totalTrades: number;
+  maxDrawdown: number;
   breakdown: Prisma.JsonValue | null;
   snapshotAt: Date;
   rank: number;
@@ -36,7 +48,8 @@ export async function getBotScore(userId: string, botId: string) {
 async function loadScoreRows(userId: string) {
   return prisma.$queryRaw<ScoreRow[]>(Prisma.sql`
     SELECT m.id AS metricId, m.tradingBotId, b.name AS botName, m.strategyVersionId,
-      m.score, m.metrics, m.snapshotAt
+      m.score, m.currentEquity, m.realizedPnl, m.unrealizedPnl, m.netPnl,
+      m.totalTrades, m.maxDrawdown, m.metrics, m.snapshotAt
     FROM bot_metrics m
     JOIN (
       SELECT metrics.tradingBotId, MAX(metrics.id) AS metricId
@@ -70,6 +83,12 @@ export function rankLeaderboardRows(rows: ScoreRow[]): RankedScore[] {
       botName: row.botName,
       strategyVersionId: row.strategyVersionId,
       score,
+      currentEquity: row.currentEquity.toNumber(),
+      realizedPnl: row.realizedPnl.toNumber(),
+      unrealizedPnl: row.unrealizedPnl.toNumber(),
+      netPnl: row.netPnl.toNumber(),
+      totalTrades: row.totalTrades,
+      maxDrawdown: row.maxDrawdown.toNumber(),
       breakdown: scoreBreakdown(row.metrics),
       snapshotAt: row.snapshotAt,
       rank,

@@ -36,10 +36,6 @@ func PlanManagedExit(input ManagedExitInput) (ManagedExitPlan, error) {
 		}
 		return ManagedExitPlan{Action: "CLOSE", Quantity: input.Quantity, Reason: reason}, nil
 	}
-	regime := strings.ToUpper(strings.TrimSpace(input.MarketRegime))
-	if regime != "" && regime != "TREND" {
-		return ManagedExitPlan{Action: "CLOSE", Quantity: input.Quantity, Reason: "REGIME_CHANGE"}, nil
-	}
 	if !input.PartialTaken {
 		target, targetOK := new(big.Rat).SetString(input.FirstTarget)
 		if !targetOK || target.Sign() <= 0 {
@@ -49,9 +45,18 @@ func PlanManagedExit(input ManagedExitInput) (ManagedExitPlan, error) {
 		if targetReached {
 			fraction, _ := new(big.Rat).SetString(strconv.FormatFloat(input.PartialFraction, 'f', 8, 64))
 			partial := new(big.Rat).Mul(quantity, fraction)
-			return ManagedExitPlan{Action: "PARTIAL_TAKE_PROFIT", Quantity: partial.FloatString(18), NewStop: input.EntryPrice, Reason: "PARTIAL_TAKE_PROFIT"}, nil
+			// The remaining quantity may not trail below the already-qualified
+			// profit floor. FirstTarget is fee/slippage adjusted by the PAPER
+			// lifecycle before this planner is called.
+			return ManagedExitPlan{Action: "PARTIAL_TAKE_PROFIT", Quantity: partial.FloatString(18), NewStop: input.FirstTarget, Reason: "PARTIAL_TAKE_PROFIT"}, nil
 		}
+		// A regime signal is a discretionary exit. PAPER/TRAINING evidence must
+		// not record a sub-target "win" merely because the regime label changed.
 		return ManagedExitPlan{Action: "NONE"}, nil
+	}
+	regime := strings.ToUpper(strings.TrimSpace(input.MarketRegime))
+	if regime != "" && regime != "TREND" {
+		return ManagedExitPlan{Action: "CLOSE", Quantity: input.Quantity, Reason: "REGIME_CHANGE"}, nil
 	}
 	rate, _ := new(big.Rat).SetString(strconv.FormatFloat(input.TrailingStopBps/10_000, 'f', 8, 64))
 	one := big.NewRat(1, 1)

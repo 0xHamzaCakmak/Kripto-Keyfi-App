@@ -15,12 +15,17 @@ import (
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/entrycheck"
 )
 
+const (
+	paperTrainingMaxConcurrentPositions = 100
+	testnetLiveMaxConcurrentPositions   = 15
+)
+
 func evaluateAutonomousPaperRisk(ctx context.Context, tx *sql.Tx, instance bot.Instance, decision bot.Decision, now time.Time) (autonomousrisk.Decision, error) {
 	order := decision.HypotheticalOrder
 	intent := autonomousrisk.Intent{Mode: instance.Mode, Side: textValue(order["side"]), MarginMode: textValue(order["marginMode"]), EntryPrice: decision.MarkPrice,
 		StopLoss: textValue(order["stopLoss"]), TakeProfit: textValue(order["takeProfit"]), Quantity: textValue(order["quantity"]), Leverage: intValue(order["leverage"]),
 		EntryEvidence: entrycheck.Input{Regime: textValue(order["marketRegime"]), HigherTimeframeAligned: boolValue(order["higherTimeframeAligned"]),
-			ConfirmedTimeframes: intValue(order["confirmedTimeframes"]), DerivativesAligned: boolValue(order["derivativesAligned"])},
+			ConfirmedTimeframes: intValue(order["confirmedTimeframes"]), DerivativesAligned: boolValue(order["derivativesAligned"]), ContinuousTraining: boolValue(order["continuousTrainingEntry"])},
 		ExecutionMode: instance.Mode, ObservationApproved: boolValue(instance.Configuration["observationApproved"])}
 	// DEMO is the persisted marker for explicitly activated TESTNET execution.
 	// The immutable autonomous policy is evaluated with PAPER semantics first;
@@ -55,6 +60,7 @@ WHERE b.id = ? AND b.userId = ? FOR UPDATE`, instance.ID, instance.UserID).Scan(
 	if err != nil {
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous risk profile: %w", err)
 	}
+	policy = autonomousPolicyForMode(policy, instance.Mode)
 	if instance.Mode == "SHADOW" {
 		shadowErr := tx.QueryRowContext(ctx, `SELECT CAST(netQuantity AS CHAR), CAST(cumulativePnl AS CHAR),
 CAST(unrealizedPnl AS CHAR), CAST(totalFees AS CHAR), CAST(markPrice AS CHAR), occurredAt
@@ -68,16 +74,34 @@ FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, instance.ID
 			lastFill = sql.NullTime{}
 		}
 	}
-	// A bot's configured allocation is an immutable upper bound for its
-	// aggregate same-symbol position, not only for each individual order.
+	// A bot's configured allocation is the cash allocation boundary. PAPER
+	// stores leveraged notional, so its position-size boundary is allocation x
+	// leverage; TESTNET/live continue to use the stricter persisted boundary.
 	if allocation, ok := numericBotConfiguration(instance.Configuration["allocationUsdt"]); ok && allocation > 0 {
-		configured := ratText(new(big.Rat).SetFloat64(allocation))
-		if current, currentOK := decimalRat(policy.MaxPositionSize); currentOK {
-			limit, _ := decimalRat(configured)
-			if current.Cmp(limit) > 0 {
-				policy.MaxPositionSize = configured
+		configuredLimit := allocation
+		if instance.Mode == "PAPER" {
+			configuredLimit *= float64(maxIntValue(intent.Leverage, 1))
+			policy.MaxPositionSize = ratText(new(big.Rat).SetFloat64(configuredLimit))
+			policy.CooldownSeconds = 0
+			if configuredRisk, riskOK := numericBotConfiguration(instance.Configuration["paperMaxRiskPerTradePct"]); riskOK && configuredRisk >= 0.01 && configuredRisk <= 0.20 {
+				policy.MaxRiskPerTradePct = ratText(new(big.Rat).SetFloat64(configuredRisk))
+			}
+		} else {
+			configured := ratText(new(big.Rat).SetFloat64(configuredLimit))
+			if current, currentOK := decimalRat(policy.MaxPositionSize); currentOK {
+				limit, _ := decimalRat(configured)
+				if current.Cmp(limit) > 0 {
+					policy.MaxPositionSize = configured
+				}
 			}
 		}
+	}
+	if instance.Mode == "PAPER" {
+		// PAPER concurrency is a training fleet limit, not a claim on the shared
+		// TESTNET/live account notional. Size its aggregate/symbol exposure from
+		// the already risk-capped per-bot allocation so 100 independent bots can
+		// collect evidence without weakening per-trade checks or live policies.
+		policy = paperTrainingExposurePolicy(policy)
 	}
 
 	quantity, qok := decimalRat(intent.Quantity)
@@ -88,6 +112,20 @@ FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, instance.ID
 	}
 	intent.RiskReducing = (net.Sign() > 0 && intent.Side == "SELL" && quantity.Cmp(absRat(net)) <= 0) || (net.Sign() < 0 && intent.Side == "BUY" && quantity.Cmp(absRat(net)) <= 0)
 	intent.OpensNewPosition = net.Sign() == 0
+	if !intent.RiskReducing {
+		var universeEnabled bool
+		universeErr := tx.QueryRowContext(ctx, `SELECT enabled FROM trading_universe_assets WHERE userId = ? AND symbol = ? LIMIT 1`, instance.UserID, instance.Symbol).Scan(&universeEnabled)
+		if universeErr != nil && !errors.Is(universeErr, sql.ErrNoRows) {
+			return autonomousrisk.Decision{}, fmt.Errorf("load Core Trading Universe policy: %w", universeErr)
+		}
+		if !coreUniverseAllowsExposure(intent.RiskReducing, universeErr == nil, universeEnabled) {
+			result := autonomousrisk.Decision{Status: "REJECTED", Code: "RISK_SYMBOL_OUTSIDE_CORE_UNIVERSE", Message: "New autonomous exposure is disabled for this Core Trading Universe symbol.", Metrics: map[string]any{"symbol": instance.Symbol, "riskReducing": false}}
+			if recordErr := recordAutonomousRiskDecision(ctx, tx, instance, result, now); recordErr != nil {
+				return autonomousrisk.Decision{}, recordErr
+			}
+			return result, nil
+		}
+	}
 	orderNotional := new(big.Rat).Mul(quantity, entry)
 
 	var openPositions int
@@ -96,8 +134,8 @@ FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, instance.ID
 COALESCE(CAST(SUM(ABS(pos.netQuantity) * pos.lastMarkPrice) AS CHAR), '0'),
 COALESCE(CAST(SUM(CASE WHEN pos.symbol = ? THEN ABS(pos.netQuantity) * pos.lastMarkPrice ELSE 0 END) AS CHAR), '0')
 FROM trading_bot_paper_positions pos JOIN trading_bots b ON b.id = pos.tradingBotId
-WHERE b.id = ? AND pos.netQuantity <> 0`
-	exposureScope := instance.ID
+WHERE b.exchangeAccountId = ? AND b.mode = 'PAPER' AND pos.netQuantity <> 0`
+	exposureScope := instance.ExchangeAccountID
 	if instance.Mode == "DEMO" {
 		exposureQuery = `SELECT COUNT(*),
 COALESCE(CAST(SUM(ABS(pos.netQuantity) * pos.lastMarkPrice) AS CHAR), '0'),
@@ -192,6 +230,53 @@ FROM shadow_trades f JOIN trading_bots b ON b.id = f.tradingBotId WHERE b.exchan
 	}
 	_ = lastMark
 	return result, nil
+}
+
+func maxIntValue(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
+}
+
+func coreUniverseAllowsExposure(riskReducing, configured, enabled bool) bool {
+	return riskReducing || (configured && enabled)
+}
+
+func autonomousPolicyForMode(policy autonomousrisk.Policy, mode string) autonomousrisk.Policy {
+	if mode == "PAPER" {
+		// PAPER follows the admin-owned persisted limit, up to its supported
+		// training ceiling, so Risk Management changes take effect immediately.
+		if policy.MaxConcurrentPositions < 1 {
+			policy.MaxConcurrentPositions = 1
+		}
+		if policy.MaxConcurrentPositions > paperTrainingMaxConcurrentPositions {
+			policy.MaxConcurrentPositions = paperTrainingMaxConcurrentPositions
+		}
+		return policy
+	}
+	// A shared account profile must not raise TESTNET/LIVE autonomous
+	// concurrency when PAPER is configured aggressively.
+	if policy.MaxConcurrentPositions > testnetLiveMaxConcurrentPositions {
+		policy.MaxConcurrentPositions = testnetLiveMaxConcurrentPositions
+	}
+	return policy
+}
+
+func paperTrainingExposurePolicy(policy autonomousrisk.Policy) autonomousrisk.Policy {
+	perPosition, ok := decimalRat(policy.MaxPositionSize)
+	if !ok || perPosition.Sign() <= 0 || policy.MaxConcurrentPositions < 1 {
+		return policy
+	}
+	trainingCapacity := new(big.Rat).Mul(perPosition, big.NewRat(int64(policy.MaxConcurrentPositions), 1))
+	capacityText := ratText(trainingCapacity)
+	if current, valid := decimalRat(policy.MaxTotalExposure); !valid || current.Cmp(trainingCapacity) < 0 {
+		policy.MaxTotalExposure = capacityText
+	}
+	if current, valid := decimalRat(policy.MaxSymbolExposure); !valid || current.Cmp(trainingCapacity) < 0 {
+		policy.MaxSymbolExposure = capacityText
+	}
+	return policy
 }
 
 func consecutiveShadowLosses(ctx context.Context, tx *sql.Tx, botID string, limit int) (int, *time.Time, error) {

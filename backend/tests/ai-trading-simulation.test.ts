@@ -50,8 +50,12 @@ describe('AI Trading backend simulation suite', () => {
     expect(risky.maxDrawdown).toBeGreaterThan(0.3);
     expect(stable.score).toBeGreaterThan(risky.score);
     const ranked = rankLeaderboardRows([
-      { metricId: 1n, tradingBotId: 'risky', botName: 'Risky', strategyVersionId: null, score: new Prisma.Decimal(risky.score), metrics: { scoreBreakdown: { maxDrawdown: risky.maxDrawdown } }, snapshotAt: new Date(0) },
-      { metricId: 2n, tradingBotId: 'stable', botName: 'Stable', strategyVersionId: null, score: new Prisma.Decimal(stable.score), metrics: { scoreBreakdown: { maxDrawdown: stable.maxDrawdown } }, snapshotAt: new Date(0) },
+      { metricId: 1n, tradingBotId: 'risky', botName: 'Risky', strategyVersionId: null, score: new Prisma.Decimal(risky.score),
+        currentEquity: new Prisma.Decimal(100 + risky.netPnl), realizedPnl: new Prisma.Decimal(risky.netPnl), unrealizedPnl: new Prisma.Decimal(0),
+        netPnl: new Prisma.Decimal(risky.netPnl), totalTrades: 3, maxDrawdown: new Prisma.Decimal(risky.maxDrawdown), metrics: { scoreBreakdown: { maxDrawdown: risky.maxDrawdown } }, snapshotAt: new Date(0) },
+      { metricId: 2n, tradingBotId: 'stable', botName: 'Stable', strategyVersionId: null, score: new Prisma.Decimal(stable.score),
+        currentEquity: new Prisma.Decimal(100 + stable.netPnl), realizedPnl: new Prisma.Decimal(stable.netPnl), unrealizedPnl: new Prisma.Decimal(0),
+        netPnl: new Prisma.Decimal(stable.netPnl), totalTrades: 20, maxDrawdown: new Prisma.Decimal(stable.maxDrawdown), metrics: { scoreBreakdown: { maxDrawdown: stable.maxDrawdown } }, snapshotAt: new Date(0) },
     ]);
     expect(ranked[0]?.tradingBotId).toBe('stable');
   });
@@ -77,8 +81,9 @@ describe('AI Trading backend simulation suite', () => {
 
   it('14. promotes only evidence-qualified bots to challenger/champion, never LIVE', () => {
     const evidence = Array.from({ length: 25 }, (_, index): PromotionEvidence => ({
-      botId: `bot-${index}`, lifecycleStatus: 'PAPER', score: 90 - index, totalTrades: 250,
-      paperDurationDays: 10, profitFactor: 1.8, maxDrawdown: 0.1, regimeCoverage: 4,
+      botId: `bot-${index}`, lifecycleStatus: 'PAPER', evidenceAt: new Date(2026, 7, 24, 10, index).toISOString(), evidenceVersion: `v-${index}`,
+      score: 90 - index, totalTrades: 250, paperDurationDays: 10, profitFactor: 1.8,
+      maxDrawdown: 0.1, regimeCoverage: 4, openPaperTrades: 0,
     }));
     const first = selectChampions(evidence, DEFAULT_CHAMPION_SELECTION_CONFIG);
     const second = selectChampions(first.map((item) => ({ ...item, lifecycleStatus: item.targetStatus })), DEFAULT_CHAMPION_SELECTION_CONFIG);

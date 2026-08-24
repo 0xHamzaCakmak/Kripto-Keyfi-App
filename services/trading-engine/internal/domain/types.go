@@ -8,6 +8,7 @@ type Decimal string
 
 type MarketCandle struct {
 	Open, High, Low, Close, Volume Decimal
+	OpenTimeMS                     int64
 }
 
 type DerivativesContext struct {

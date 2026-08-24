@@ -105,12 +105,25 @@ export async function updateExchangeCredentials(userId: string, id: string, inpu
 export async function getExchangeBalances(userId: string, id: string) {
   const account = await ownedAccount(userId, id);
   if (!account.isActive) throw new ApiError(409, 'Pasif borsa hesabı senkronize edilemez.', 'EXCHANGE_ACCOUNT_DISABLED');
-  const balances = account.executionEngine === 'GO'
-    ? (await getTradingEngineSnapshot(account)).balances
-    : await exchangeCall(() => adapterFor(account).getBalances());
+  const balances = await readExchangeState(account.executionEngine,
+    async () => (await getTradingEngineSnapshot(account)).balances,
+    () => exchangeCall(() => adapterFor(account).getBalances()));
   if (account.executionEngine === 'TYPESCRIPT') scheduleShadowComparison(userId, id, 'balances', balances);
   await prisma.exchangeAccount.update({ where: { id }, data: { connectionStatus: 'CONNECTED', lastSyncAt: new Date() } });
   return balances;
+}
+
+// Read-only account state may safely fall back to the Node adapter. Both paths
+// resolve the encrypted API credentials from exchange_accounts; no exchange
+// secret is read from env or sent by the browser. Order writes never use this
+// fallback and remain owned by Go + the central Risk Engine.
+export async function readExchangeState<T>(executionEngine: string, goRead: () => Promise<T>, databaseCredentialRead: () => Promise<T>) {
+  if (executionEngine !== 'GO') return databaseCredentialRead();
+  try {
+    return await goRead();
+  } catch {
+    return databaseCredentialRead();
+  }
 }
 
 export async function deleteExchangeAccount(userId: string, id: string) {

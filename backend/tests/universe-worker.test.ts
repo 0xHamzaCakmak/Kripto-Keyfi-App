@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { automaticCapitalScaleTarget, botAllocationUsdt, fleetLeverage, rotationPending, staleAutonomousProtection, TESTNET_ROTATION_SETTLE_MS, universeCandidate } from '../src/modules/ai-trading/universe.worker.js';
+import { readFileSync } from 'node:fs';
+import { automaticCapitalScaleTarget, botAllocationUsdt, fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, PAPER_TRAINING_MAX_OPEN_POSITIONS, PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT, PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, PAPER_TRAINING_STOP_LOSS_BPS, PAPER_TRAINING_TAKE_PROFIT_BPS, paperTrainingConfiguration, rotationPending, schedulerLeaseActive, staleAutonomousProtection, TESTNET_ROTATION_SETTLE_MS, universeCandidate } from '../src/modules/ai-trading/universe.worker.js';
+import { CORE_TRADING_UNIVERSE } from '../src/modules/ai-trading/trading-universe.service.js';
+import { tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../src/modules/ai-trading/trading-universe.schema.js';
 
 describe('autonomous Futures universe', () => {
   it('rotates a cohort deterministically across the full symbol list', () => {
@@ -9,6 +12,16 @@ describe('autonomous Futures universe', () => {
     expect(new Set(first).size).toBe(100);
     expect(second).not.toEqual(first);
     expect(new Set([...first, ...second]).size).toBe(120);
+  });
+
+  it('uses the exact 20-coin Core Universe and spreads 100 bots independently across it', () => {
+    const symbols = CORE_TRADING_UNIVERSE.map(([, , baseAsset]) => `${baseAsset}USDT`);
+    expect(symbols).toHaveLength(20); expect(new Set(symbols).size).toBe(20);
+    expect(symbols).toEqual(['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'BCHUSDT', 'LINKUSDT', 'AVAXUSDT', 'LTCUSDT', 'DOTUSDT', 'TONUSDT', 'SUIUSDT', 'UNIUSDT', 'AAVEUSDT', 'NEARUSDT', 'ETCUSDT', 'XLMUSDT']);
+    const assignments = Array.from({ length: 100 }, (_, index) => universeCandidate(symbols, 0, index, 100));
+    expect(symbols.every((symbol) => assignments.filter((item) => item === symbol).length === 5)).toBe(true);
+    expect(tradingUniverseAssetParamsSchema.parse({ symbol: 'btcusdt' }).symbol).toBe('BTCUSDT');
+    expect(updateTradingUniverseAssetSchema.parse({ enabled: false })).toEqual({ enabled: false });
   });
 
   it('spreads fleet leverage from 5x through 20x', () => {
@@ -39,5 +52,37 @@ describe('autonomous Futures universe', () => {
     expect(automaticCapitalScaleTarget(100, 100, 200, 101)).toBe(200);
     expect(automaticCapitalScaleTarget(100, 100, 199, 150)).toBe(100);
     expect(automaticCapitalScaleTarget(100, 100, 500, 99)).toBe(100);
+  });
+
+  it('applies aggressive limits only to PAPER training configuration', () => {
+    const result = paperTrainingConfiguration({ signalThresholdBps: 45, stopLossBps: 50, takeProfitBps: 100 }, 12);
+    expect(PAPER_TRAINING_MAX_OPEN_POSITIONS).toBe(100);
+    expect(PAPER_TRAINING_INTERVAL_SECONDS).toBe(5);
+    expect(result).toMatchObject({ paperTrainingMode: true, signalThresholdBps: 10,
+      stopLossBps: 50, takeProfitBps: PAPER_TRAINING_TAKE_PROFIT_BPS, riskRewardRatio: 1.5,
+      adaptiveStopMaxBps: 50, pyramidingEnabled: false, independentPaperTrades: true,
+      minimumInitialMarginUsdt: PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT,
+      paperMaxRiskPerTradePct: PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, paperAlwaysInMarket: true });
+    const capped = paperTrainingConfiguration({ stopLossBps: 2500, takeProfitBps: 500 }, 12);
+    expect(capped).toMatchObject({ stopLossBps: PAPER_TRAINING_STOP_LOSS_BPS, takeProfitBps: 500 });
+  });
+
+  it('does not rotate a bot while a scheduler cycle owns its lease', () => {
+    const now = new Date('2026-08-24T10:00:00Z');
+    expect(schedulerLeaseActive('engine:w1', new Date('2026-08-24T10:01:00Z'), now)).toBe(true);
+    expect(schedulerLeaseActive('engine:w1', new Date('2026-08-24T09:59:00Z'), now)).toBe(false);
+    expect(schedulerLeaseActive(null, null, now)).toBe(false);
+  });
+
+  it('never overwrites the admin-owned risk profile during universe rotation', () => {
+    const source = readFileSync(new URL('../src/modules/ai-trading/universe.worker.ts', import.meta.url), 'utf8');
+    expect(source).not.toMatch(/tradingRiskProfile\.update/);
+    expect(source).toContain('ADMIN_MANAGED_NOT_MUTATED_BY_UNIVERSE_WORKER');
+  });
+
+  it('rechecks a PAPER ledger is flat at the atomic symbol update', () => {
+    const source = readFileSync(new URL('../src/modules/ai-trading/universe.worker.ts', import.meta.url), 'utf8');
+    expect(source).toContain("paperPosition: { is: { netQuantity: 0 } }");
+    expect(source).toContain("paperPosition: { is: null }");
   });
 });

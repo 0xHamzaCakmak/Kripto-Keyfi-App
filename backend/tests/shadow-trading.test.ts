@@ -43,6 +43,6 @@ describe('shadow trading', () => {
     expect(storage).not.toMatch(/persistPaperCycle\([^)]*SHADOW/);
     expect(risk).toContain("b.mode = 'SHADOW'");
     expect(risk).toContain('FROM shadow_trades');
-    expect(runner).toContain('exchange.DemoEndpoints(), exchange.PublicMarketEndpoints()');
+    expect(runner).toContain('exchange.PublicMarketEndpoints(), exchange.PublicMarketEndpoints()');
   });
 });

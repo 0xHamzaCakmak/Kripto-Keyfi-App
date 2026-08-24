@@ -9,6 +9,7 @@ import type {
 import { assertBotLifecycleTransition } from './bot-lifecycle.js';
 import { validateStrategyParameterSet } from './strategy-parameter-validator.js';
 import { strategyParameterSchemaSchema } from './strategy-registry.schema.js';
+import { loadCurrentPromotionEvidence } from './champion-selection.service.js';
 
 const botFactorySelect = {
   id: true, name: true, type: true, mode: true, state: true, desiredState: true,
@@ -66,11 +67,16 @@ export function mergeParameterVariant(
 }
 
 export async function listFactoryBots(userId: string) {
-  return prisma.tradingBot.findMany({
-    where: { userId, type: 'AUTONOMOUS' },
-    select: botFactorySelect,
-    orderBy: { createdAt: 'desc' },
-  });
+  const [bots, evidence] = await Promise.all([
+    prisma.tradingBot.findMany({
+      where: { userId, type: 'AUTONOMOUS' },
+      select: botFactorySelect,
+      orderBy: { createdAt: 'desc' },
+    }),
+    loadCurrentPromotionEvidence(userId),
+  ]);
+  const evidenceByBot = new Map(evidence.map((item) => [item.botId, item]));
+  return bots.map((bot) => ({ ...bot, promotionEvidence: evidenceByBot.get(bot.id) ?? null }));
 }
 
 export async function getFactoryBot(userId: string, id: string) {
@@ -79,9 +85,16 @@ export async function getFactoryBot(userId: string, id: string) {
 
 export async function getFactoryBotPaperPerformance(userId: string, id: string) {
   await ownedFactoryBot(userId, id);
-  const [position, fills] = await Promise.all([
+  const [position, fills, trades, closedAggregate, closedWins, closedLosses] = await Promise.all([
     prisma.tradingBotPaperPosition.findUnique({ where: { tradingBotId: id } }),
     prisma.tradingBotPaperFill.findMany({ where: { tradingBotId: id }, orderBy: { id: 'desc' }, take: 100 }),
+    prisma.paperTrade.findMany({ where: { tradingBotId: id }, orderBy: { openedAt: 'desc' }, take: 100 }),
+    prisma.paperTrade.aggregate({
+      where: { tradingBotId: id, status: { in: ['CLOSED', 'LIQUIDATED'] } },
+      _count: { _all: true }, _sum: { realizedPnl: true, fees: true },
+    }),
+    prisma.paperTrade.count({ where: { tradingBotId: id, status: { in: ['CLOSED', 'LIQUIDATED'] }, realizedPnl: { gt: 0 } } }),
+    prisma.paperTrade.count({ where: { tradingBotId: id, status: { in: ['CLOSED', 'LIQUIDATED'] }, realizedPnl: { lt: 0 } } }),
   ]);
   return {
     position: position ? {
@@ -96,6 +109,42 @@ export async function getFactoryBotPaperPerformance(userId: string, id: string) 
       markPrice: fill.markPrice.toString(), fillPrice: fill.fillPrice.toString(), notional: fill.notional.toString(),
       fee: fill.fee.toString(), realizedPnl: fill.realizedPnl.toString(), slippageBps: fill.slippageBps.toString(), feeBps: fill.feeBps.toString(),
     })),
+    trades: trades.map((trade) => {
+      const isOpen = trade.status === 'OPEN';
+      const markPrice = isOpen && position?.symbol === trade.symbol
+        ? position.lastMarkPrice
+        : trade.exitPrice ?? trade.entryPrice;
+      const priceMove = trade.side === 'BUY'
+        ? markPrice.sub(trade.entryPrice)
+        : trade.entryPrice.sub(markPrice);
+      const unrealizedPnl = isOpen ? priceMove.mul(trade.quantity) : new Prisma.Decimal(0);
+      // CLOSED/LIQUIDATED realizedPnl is already fee-net. OPEN trades may have
+      // partial realized value, so include current unrealized and deduct the
+      // entry/partial fees accumulated so far.
+      const netPnl = isOpen
+        ? trade.realizedPnl.add(unrealizedPnl).sub(trade.fees)
+        : trade.realizedPnl;
+      const leverage = Math.max(1, trade.leverage);
+      const notional = trade.entryPrice.mul(trade.quantity);
+      const initialMargin = notional.div(leverage);
+      const pnlPct = initialMargin.isZero() ? new Prisma.Decimal(0) : netPnl.div(initialMargin).mul(100);
+      return {
+        id: trade.id, symbol: trade.symbol, side: trade.side, status: trade.status,
+        entryPrice: trade.entryPrice.toString(), exitPrice: trade.exitPrice?.toString() ?? null,
+        markPrice: markPrice.toString(), quantity: trade.quantity.toString(), leverage,
+        notional: notional.toString(), initialMargin: initialMargin.toString(),
+        fees: trade.fees.toString(), realizedPnl: trade.realizedPnl.toString(),
+        unrealizedPnl: unrealizedPnl.toString(), netPnl: netPnl.toString(), pnlPct: pnlPct.toString(),
+        stopLoss: trade.stopLoss?.toString() ?? null, takeProfit: trade.takeProfit?.toString() ?? null,
+        closeReason: trade.closeReason, openedAt: trade.openedAt, closedAt: trade.closedAt,
+      };
+    }),
+    closedSummary: {
+      tradeCount: closedAggregate._count._all, wins: closedWins, losses: closedLosses,
+      // paper_trades.realizedPnl is persisted net of entry and exit fees.
+      netPnl: closedAggregate._sum.realizedPnl?.toString() ?? '0',
+      fees: closedAggregate._sum.fees?.toString() ?? '0',
+    },
   };
 }
 

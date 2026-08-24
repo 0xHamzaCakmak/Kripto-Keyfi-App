@@ -88,7 +88,7 @@ func Load() (Config, error) {
 			return Config{}, errors.New("DATABASE_URL must use mysql:// when bot scheduler is enabled")
 		}
 	}
-	botWorkers, err := strconv.Atoi(valueOrDefault("TRADING_ENGINE_BOT_WORKERS", "4"))
+	botWorkers, err := strconv.Atoi(valueOrDefault("TRADING_ENGINE_BOT_WORKERS", "8"))
 	if err != nil || botWorkers < 1 || botWorkers > 32 {
 		return Config{}, errors.New("TRADING_ENGINE_BOT_WORKERS must be between 1 and 32")
 	}

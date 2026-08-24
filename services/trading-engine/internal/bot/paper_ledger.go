@@ -12,6 +12,7 @@ const (
 )
 
 type PaperPosition struct {
+	Symbol        string
 	NetQuantity   string
 	AvgEntryPrice string
 	RealizedPnL   string

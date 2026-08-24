@@ -23,7 +23,7 @@ export type LiveEligibilityEvidence = {
 
 export function evaluateLiveEligibility(evidence: LiveEligibilityEvidence, config: LiveEligibilityConfig) {
   const failedGates: string[] = [];
-  if (evidence.lifecycleStatus !== 'CHAMPION') failedGates.push('CHAMPION_REQUIRED');
+  if (!['CHAMPION', 'LIVE_ELIGIBLE'].includes(evidence.lifecycleStatus)) failedGates.push('CHAMPION_REQUIRED');
   if (evidence.paperTrades < config.minPaperTrades) failedGates.push('MIN_PAPER_TRADES');
   if (evidence.paperDurationDays < config.minPaperDurationDays) failedGates.push('MIN_PAPER_DURATION');
   if (evidence.maxDrawdown > config.maxDrawdown) failedGates.push('MAX_DRAWDOWN');
@@ -44,8 +44,32 @@ export function evaluateLiveEligibility(evidence: LiveEligibilityEvidence, confi
 }
 
 export async function runLiveEligibility(userId: string, input: RunLiveEligibilityInput, ipAddress?: string) {
+  const decisions = await collectLiveEligibilityEvidence(userId, input.config, input.botId);
+  if (input.botId && decisions.length === 0) throw new ApiError(404, 'Champion bot not found.', 'CHAMPION_BOT_NOT_FOUND');
+  const promoted: string[] = [];
+  await prisma.$transaction(async (tx) => {
+    for (const decision of decisions) {
+      if (!decision.eligible || decision.lifecycleStatus !== 'CHAMPION') continue;
+      const changed = await tx.tradingBot.updateMany({
+        where: { id: decision.botId, userId, type: 'AUTONOMOUS', lifecycleStatus: 'CHAMPION', mode: 'SHADOW' },
+        data: { lifecycleStatus: 'LIVE_ELIGIBLE', version: { increment: 1 } },
+      });
+      if (changed.count !== 1) throw new ApiError(409, 'Bot lifecycle changed concurrently.', 'BOT_VERSION_CONFLICT');
+      await tx.tradingAuditLog.create({ data: {
+        userId, action: 'AI_BOT_LIVE_ELIGIBLE', entityType: 'TRADING_BOT', entityId: decision.botId,
+        metadata: { from: 'CHAMPION', to: 'LIVE_ELIGIBLE', evidence: decision, config: input.config,
+          liveActivated: false, orderSubmitted: false, adminLiveApprovalRequired: true } as unknown as Prisma.InputJsonObject,
+        ...(ipAddress ? { ipAddress } : {}),
+      } });
+      promoted.push(decision.botId);
+    }
+  });
+  return { config: input.config, evaluated: decisions.length, promoted, decisions, liveActivated: false, orderSubmitted: false };
+}
+
+export async function collectLiveEligibilityEvidence(userId: string, config: LiveEligibilityConfig, botId?: string) {
   const bots = await prisma.tradingBot.findMany({
-    where: { userId, type: 'AUTONOMOUS', lifecycleStatus: 'CHAMPION', ...(input.botId ? { id: input.botId } : {}) },
+    where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { in: ['CHAMPION', 'LIVE_ELIGIBLE'] }, ...(botId ? { id: botId } : {}) },
     include: {
       paperTrades: {
         orderBy: [{ openedAt: 'asc' }, { id: 'asc' }],
@@ -59,8 +83,7 @@ export async function runLiveEligibility(userId: string, input: RunLiveEligibili
     },
     orderBy: { id: 'asc' },
   });
-  if (input.botId && bots.length === 0) throw new ApiError(404, 'Champion bot not found.', 'CHAMPION_BOT_NOT_FOUND');
-  const since = new Date(Date.now() - input.config.criticalRiskLookbackHours * 3_600_000);
+  const since = new Date(Date.now() - config.criticalRiskLookbackHours * 3_600_000);
   const decisions = await Promise.all(bots.map(async (bot) => {
     const metric = bot.metrics[0];
     const metrics = jsonObject(metric?.metrics ?? null);
@@ -89,27 +112,9 @@ export async function runLiveEligibility(userId: string, input: RunLiveEligibili
       shadowDurationDays: shadow.shadowDurationDays, shadowCloseTrades: shadow.wouldClose,
       shadowProfitFactor: shadow.profitFactor, shadowMaxDrawdown: shadow.maxDrawdown,
       criticalRiskViolations: riskEvents + riskAudits,
-    }, input.config);
+    }, config);
   }));
-  const promoted: string[] = [];
-  await prisma.$transaction(async (tx) => {
-    for (const decision of decisions) {
-      if (!decision.eligible) continue;
-      const changed = await tx.tradingBot.updateMany({
-        where: { id: decision.botId, userId, type: 'AUTONOMOUS', lifecycleStatus: 'CHAMPION' },
-        data: { lifecycleStatus: 'LIVE_ELIGIBLE', version: { increment: 1 } },
-      });
-      if (changed.count !== 1) throw new ApiError(409, 'Bot lifecycle changed concurrently.', 'BOT_VERSION_CONFLICT');
-      await tx.tradingAuditLog.create({ data: {
-        userId, action: 'AI_BOT_LIVE_ELIGIBLE', entityType: 'TRADING_BOT', entityId: decision.botId,
-        metadata: { from: 'CHAMPION', to: 'LIVE_ELIGIBLE', evidence: decision, config: input.config,
-          liveActivated: false, orderSubmitted: false, adminLiveApprovalRequired: true } as unknown as Prisma.InputJsonObject,
-        ...(ipAddress ? { ipAddress } : {}),
-      } });
-      promoted.push(decision.botId);
-    }
-  });
-  return { config: input.config, evaluated: decisions.length, promoted, decisions, liveActivated: false, orderSubmitted: false };
+  return decisions;
 }
 
 function jsonObject(value: Prisma.JsonValue | null) {

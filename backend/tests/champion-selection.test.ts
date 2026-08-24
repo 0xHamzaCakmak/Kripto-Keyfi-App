@@ -6,6 +6,7 @@ import {
 } from '../src/modules/ai-trading/champion-selection.schema.js';
 import {
   selectChampions,
+  shouldPersistEvaluation,
   type PromotionEvidence,
 } from '../src/modules/ai-trading/champion-selection.service.js';
 
@@ -13,12 +14,15 @@ function evidence(index: number, status: PromotionEvidence['lifecycleStatus'] = 
   return {
     botId: `bot-${String(index).padStart(3, '0')}`,
     lifecycleStatus: status,
+    evidenceAt: new Date(2026, 7, 24, 10, index).toISOString(),
+    evidenceVersion: `v-${index}`,
     score: 100 - index / 10,
     totalTrades: 250,
     paperDurationDays: 10,
     profitFactor: 2,
     maxDrawdown: 0.1,
     regimeCoverage: 4,
+    openPaperTrades: 0,
   };
 }
 
@@ -54,6 +58,20 @@ describe('champion/challenger selection', () => {
     expect(decision?.targetStatus).toBe('PAPER');
   });
 
+  it('requires fresh metric evidence before advancing another lifecycle stage', () => {
+    expect(shouldPersistEvaluation(undefined, 'v1')).toBe(true);
+    expect(shouldPersistEvaluation('v1', 'v1')).toBe(false);
+    expect(shouldPersistEvaluation('v1', 'v2')).toBe(true);
+  });
+
+  it('keeps an open PAPER position out of promotion', () => {
+    const withPosition = evidence(1);
+    withPosition.openPaperTrades = 1;
+    const [decision] = selectChampions([withPosition], DEFAULT_CHAMPION_SELECTION_CONFIG);
+    expect(decision?.eligible).toBe(false);
+    expect(decision?.failedGates).toContain('OPEN_PAPER_POSITION');
+  });
+
   it('writes promotion and demotion audit logs without live execution paths', () => {
     const service = readFileSync(new URL('../src/modules/ai-trading/champion-selection.service.ts', import.meta.url), 'utf8');
     expect(service).toContain("'AI_BOT_PROMOTED'");
@@ -61,5 +79,6 @@ describe('champion/challenger selection', () => {
     expect(service).not.toContain('tradingOutboxEvent.create');
     expect(service).not.toContain('submitOrder');
     expect(service).not.toContain("targetStatus = 'LIVE'");
+    expect(service).toContain("mode: 'SHADOW'");
   });
 });

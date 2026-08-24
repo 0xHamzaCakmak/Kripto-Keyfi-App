@@ -151,7 +151,8 @@ func TestAutonomousMarketEntryCarriesCompletePlaybookEvidence(t *testing.T) {
 		t.Fatalf("entry evidence is incomplete: %#v", order)
 	}
 	stopBps, stopOK := order["stopLossBps"].(float64)
-	if !stopOK || stopBps < 75 || stopBps > 300 || order["fixedRiskPct"] != 0.0075 || order["riskPlanVersion"] != "ATR_ADAPTIVE_FIXED_RISK_V1" {
+	takeBps, takeOK := order["takeProfitBps"].(float64)
+	if !stopOK || !takeOK || stopBps > PaperTrainingStopLossBps || takeBps < PaperTrainingTakeProfitBps || order["fixedRiskPct"] != 0.0075 || order["riskPlanVersion"] != "PAPER_TRAINING_20PCT_STOP_V1" {
 		t.Fatalf("adaptive risk plan is incomplete: %#v", order)
 	}
 	quantity, quantityOK := decimalRat(order["quantity"].(string))
@@ -159,14 +160,38 @@ func TestAutonomousMarketEntryCarriesCompletePlaybookEvidence(t *testing.T) {
 		t.Fatalf("adaptive quantity is invalid: %#v", order)
 	}
 	mark, _ := decimalRat("209.5")
-	if new(big.Rat).Mul(quantity, mark).Cmp(big.NewRat(100, 1)) > 0 {
-		t.Fatalf("adaptive quantity exceeded bot allocation: %#v", order)
+	notional := new(big.Rat).Mul(quantity, mark)
+	leverage := int64(order["leverage"].(int))
+	if notional.Cmp(big.NewRat(100*leverage, 1)) > 0 {
+		t.Fatalf("adaptive PAPER quantity exceeded leveraged allocation: %#v", order)
+	}
+	margin := new(big.Rat).Quo(notional, big.NewRat(leverage, 1))
+	if margin.Cmp(big.NewRat(20, 1)) < 0 {
+		t.Fatalf("adaptive PAPER quantity did not reserve the 20 USDT minimum margin: %#v", order)
 	}
 	conflicting := trendingSnapshot(1)
 	conflicting.Derivatives.FundingRate = "0.002"
-	hold, err := EvaluateStrategyWithMarket(instance, "209.5", "209", conflicting)
+	testnet := instance
+	testnet.Mode = "DEMO"
+	hold, err := EvaluateStrategyWithMarket(testnet, "209.5", "209", conflicting)
 	if err != nil || hold.HypotheticalOrder != nil {
-		t.Fatalf("unconfirmed entry was not held: %#v err=%v", hold, err)
+		t.Fatalf("TESTNET unconfirmed entry was not held: %#v err=%v", hold, err)
+	}
+}
+
+func TestContinuousPaperTrainingEntryCarriesIsolatedRiskContract(t *testing.T) {
+	instance := autonomousMomentumInstance("PAPER")
+	closes := make([]domain.Decimal, 30)
+	for index := range closes {
+		closes[index] = domain.Decimal(decimalStringForTest(100 + float64(index)*0.1))
+	}
+	result, err := paperContinuousTrainingDecision(instance, "103", "102.9", closes)
+	if err != nil || result.HypotheticalOrder == nil {
+		t.Fatalf("continuous PAPER decision failed: %#v err=%v", result, err)
+	}
+	order := result.HypotheticalOrder
+	if order["marginMode"] != "ISOLATED" || order["continuousTrainingEntry"] != true || order["martingaleAllowed"] != false {
+		t.Fatalf("continuous PAPER risk contract is incomplete: %#v", order)
 	}
 }
 

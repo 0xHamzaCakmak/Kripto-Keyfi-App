@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_EVOLUTION_CONFIG, evolutionConfigSchema, runEvolutionBodySchema } from '../src/modules/ai-trading/evolution.schema.js';
-import { selectEvolutionPopulation, type EvolutionEvidence } from '../src/modules/ai-trading/evolution.service.js';
+import { assessEvolutionReadiness, evolutionConfigForPopulation, selectEvolutionPopulation, type EvolutionEvidence } from '../src/modules/ai-trading/evolution.service.js';
 
 function bot(index: number, score: number | null, totalTrades = 250, lifecycleStatus: EvolutionEvidence['lifecycleStatus'] = 'PAPER'): EvolutionEvidence {
   return { botId: `bot-${index}`, score, totalTrades, lifecycleStatus };
@@ -9,10 +9,29 @@ function bot(index: number, score: number | null, totalTrades = 250, lifecycleSt
 
 describe('Evolution Engine', () => {
   it('defaults to a 100 PAPER-candidate population and validates count consistency', () => {
-    expect(DEFAULT_EVOLUTION_CONFIG).toMatchObject({ populationSize: 100, survivorCount: 20, mutationCount: 60, crossoverCount: 20, researcherCandidateCount: 0 });
+    expect(DEFAULT_EVOLUTION_CONFIG).toMatchObject({ populationSize: 100, survivorCount: 20, mutationCount: 60, crossoverCount: 20, researcherCandidateCount: 0, minimumTrades: 50 });
     expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 50, crossoverCount: 20, researcherCandidateCount: 10 }).success).toBe(true);
     expect(evolutionConfigSchema.safeParse({ ...DEFAULT_EVOLUTION_CONFIG, mutationCount: 49, crossoverCount: 20, researcherCandidateCount: 10 }).success).toBe(false);
     expect(runEvolutionBodySchema.safeParse({ sourceGenerationId: 'generation-1', config: { minimumTrades: 300 } }).success).toBe(true);
+  });
+
+  it('does not deadlock when population exceeds its target or weak bots lag behind', () => {
+    const config = evolutionConfigForPopulation(100, 50, 20);
+    const evidence = Array.from({ length: 101 }, (_, index) => bot(index, 100 - index, index < 20 ? 50 : 3));
+    const readiness = assessEvolutionReadiness(evidence, 100, config);
+    expect(readiness.ready).toBe(true);
+    expect(readiness.paperBots).toBe(101);
+    expect(readiness.eligibleBots).toBe(20);
+    expect(readiness.requiredSurvivors).toBe(20);
+  });
+
+  it('reports evidence progress instead of evolving an under-tested population', () => {
+    const config = evolutionConfigForPopulation(100, 50, 20);
+    const evidence = Array.from({ length: 100 }, (_, index) => bot(index, 80, index < 12 ? 50 : 10));
+    const readiness = assessEvolutionReadiness(evidence, 100, config);
+    expect(readiness.ready).toBe(false);
+    expect(readiness.blocker).toBe('SURVIVOR_EVIDENCE_INSUFFICIENT');
+    expect(readiness.eligibleBots).toBe(12);
   });
 
   it('uses score plus minimum evidence, not raw profit, to select survivors', () => {

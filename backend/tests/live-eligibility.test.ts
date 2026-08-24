@@ -20,6 +20,13 @@ describe('live eligibility gate', () => {
     expect(decision.liveActivated).toBe(false);
   });
 
+  it('keeps a promoted bot observable without reopening the Champion gate', () => {
+    const decision = evaluateLiveEligibility(evidence({ lifecycleStatus: 'LIVE_ELIGIBLE' }), DEFAULT_LIVE_ELIGIBILITY_CONFIG);
+    expect(decision.eligible).toBe(true);
+    expect(decision.failedGates).not.toContain('CHAMPION_REQUIRED');
+    expect(decision.liveActivated).toBe(false);
+  });
+
   it('fails every configurable paper, shadow and risk gate explicitly', () => {
     const decision = evaluateLiveEligibility(evidence({
       lifecycleStatus: 'CHALLENGER', mode: 'PAPER', paperTrades: 2, paperDurationDays: 1, maxDrawdown: 0.3,

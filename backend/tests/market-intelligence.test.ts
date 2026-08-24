@@ -26,6 +26,11 @@ describe('market intelligence', () => {
     expect(context.market.trend).toBe('BULLISH');
     expect(context.market.atrPct).toBeGreaterThan(0);
     expect(context.market.volumeRelative).toBe(2);
+    expect(context.market.ema9).toBeGreaterThan(context.market.ema21!);
+    expect(context.market.rsi14).toBe(100);
+    expect(context.market.adx14).toBeGreaterThan(0);
+    expect(context.market.bollingerUpper).toBeGreaterThan(context.market.bollingerMiddle!);
+    expect(context.market.vwap).toBeGreaterThan(0);
     expect(context.intelligence).toEqual({ newsSentiment: null, socialSentiment: null, whaleBias: null });
     expect(context.sources.news.status).toBe('UNKNOWN');
   });

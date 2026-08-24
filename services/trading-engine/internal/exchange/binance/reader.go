@@ -321,13 +321,14 @@ func (r *Reader) GetPositions(ctx context.Context) ([]domain.Position, error) {
 
 func (r *Reader) GetMarkPrice(ctx context.Context, symbol string) (domain.Decimal, error) {
 	var body struct {
+		Symbol    string `json:"symbol"`
 		MarkPrice string `json:"markPrice"`
 	}
 	params := url.Values{"symbol": {symbol}}
 	if err := r.publicGet(ctx, r.futuresURL, "/fapi/v1/premiumIndex", params, &body); err != nil {
 		return "", err
 	}
-	if body.MarkPrice == "" {
+	if body.Symbol != symbol || body.MarkPrice == "" {
 		return "", exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
 	}
 	return domain.Decimal(body.MarkPrice), nil
@@ -362,11 +363,12 @@ func (r *Reader) GetRecentCandles(ctx context.Context, symbol, interval string, 
 		if len(candle) < 6 {
 			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
 		}
+		var openTime int64
 		var open, high, low, closeText, volume string
-		if json.Unmarshal(candle[1], &open) != nil || json.Unmarshal(candle[2], &high) != nil || json.Unmarshal(candle[3], &low) != nil || json.Unmarshal(candle[4], &closeText) != nil || json.Unmarshal(candle[5], &volume) != nil || open == "" || high == "" || low == "" || closeText == "" || volume == "" {
+		if json.Unmarshal(candle[0], &openTime) != nil || json.Unmarshal(candle[1], &open) != nil || json.Unmarshal(candle[2], &high) != nil || json.Unmarshal(candle[3], &low) != nil || json.Unmarshal(candle[4], &closeText) != nil || json.Unmarshal(candle[5], &volume) != nil || openTime <= 0 || open == "" || high == "" || low == "" || closeText == "" || volume == "" {
 			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
 		}
-		candles = append(candles, domain.MarketCandle{Open: domain.Decimal(open), High: domain.Decimal(high), Low: domain.Decimal(low), Close: domain.Decimal(closeText), Volume: domain.Decimal(volume)})
+		candles = append(candles, domain.MarketCandle{Open: domain.Decimal(open), High: domain.Decimal(high), Low: domain.Decimal(low), Close: domain.Decimal(closeText), Volume: domain.Decimal(volume), OpenTimeMS: openTime})
 	}
 	if len(candles) < 2 {
 		return nil, exchange.NewError(domain.ErrorInternal, "INSUFFICIENT_CHART_DATA", "", false, false)
@@ -376,18 +378,22 @@ func (r *Reader) GetRecentCandles(ctx context.Context, symbol, interval string, 
 
 func (r *Reader) GetDerivativesContext(ctx context.Context, symbol string) (domain.DerivativesContext, error) {
 	var premium struct {
+		Symbol          string `json:"symbol"`
 		LastFundingRate string `json:"lastFundingRate"`
 	}
 	if err := r.publicGet(ctx, r.futuresURL, "/fapi/v1/premiumIndex", url.Values{"symbol": {symbol}}, &premium); err != nil {
 		return domain.DerivativesContext{}, err
 	}
 	var history []struct {
+		Symbol       string `json:"symbol"`
 		OpenInterest string `json:"sumOpenInterest"`
 	}
 	if err := r.publicGet(ctx, r.futuresURL, "/futures/data/openInterestHist", url.Values{"symbol": {symbol}, "period": {"5m"}, "limit": {"2"}}, &history); err != nil {
 		return domain.DerivativesContext{}, err
 	}
-	if premium.LastFundingRate == "" || len(history) != 2 || history[0].OpenInterest == "" || history[1].OpenInterest == "" {
+	if premium.Symbol != symbol || premium.LastFundingRate == "" || len(history) != 2 ||
+		history[0].Symbol != symbol || history[1].Symbol != symbol ||
+		history[0].OpenInterest == "" || history[1].OpenInterest == "" {
 		return domain.DerivativesContext{}, exchange.NewError(domain.ErrorInternal, "INVALID_DERIVATIVES_CONTEXT", "", false, false)
 	}
 	return domain.DerivativesContext{FundingRate: domain.Decimal(premium.LastFundingRate), PreviousOpenInterest: domain.Decimal(history[0].OpenInterest), OpenInterest: domain.Decimal(history[1].OpenInterest)}, nil

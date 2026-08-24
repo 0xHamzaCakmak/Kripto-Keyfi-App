@@ -1,6 +1,7 @@
 import type { AutonomousTradingStatus, MarketRegime, Prisma, TradingBotMode, TradingBotState } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import type { RouteStrategyInput } from './strategy-router.schema.js';
+import { getCoinPerformance } from './coin-performance.service.js';
 
 const ROUTABLE_LIFECYCLES = new Set<AutonomousTradingStatus>(['PAPER', 'CHALLENGER', 'CHAMPION']);
 const UNHEALTHY_STATES = new Set<TradingBotState>(['RISK_BLOCKED', 'EMERGENCY_STOPPED', 'ERROR']);
@@ -46,7 +47,7 @@ export async function routeStrategies(userId: string, input: RouteStrategyInput,
     orderBy: [{ observedAt: 'desc' }, { id: 'desc' }], select: { id: true, regime: true, confidence: true, observedAt: true },
   });
   const regime = regimeSnapshot?.regime ?? 'UNKNOWN';
-  const [globalRisk, bots] = await Promise.all([
+  const [globalRisk, bots, coinPerformance] = await Promise.all([
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
     prisma.tradingBot.findMany({
       where: {
@@ -64,13 +65,15 @@ export async function routeStrategies(userId: string, input: RouteStrategyInput,
         },
       },
       orderBy: { id: 'asc' },
-    }),
+    }), getCoinPerformance(userId, { symbol: input.symbol, regime, limit: 500 }),
   ]);
+  const coinPerformanceByBot = new Map(coinPerformance.map((row) => [row.tradingBotId, row]));
   const evidence: StrategyRouterEvidence[] = bots.map((bot) => ({
     botId: bot.id, botName: bot.name, exchangeAccountId: bot.exchangeAccountId, mode: bot.mode,
     lifecycleStatus: bot.lifecycleStatus, state: bot.state, desiredState: bot.desiredState,
     lastErrorCode: bot.lastErrorCode, heartbeatAt: bot.heartbeatAt,
-    regimeScore: bot.metrics[0]?.score?.toNumber() ?? null, metricAt: bot.metrics[0]?.snapshotAt ?? null,
+    regimeScore: coinPerformanceByBot.get(bot.id)?.score ?? bot.metrics[0]?.score?.toNumber() ?? null,
+    metricAt: coinPerformanceByBot.get(bot.id)?.latestTradeAt ?? bot.metrics[0]?.snapshotAt ?? null,
     riskProfileEnabled: bot.riskProfile?.enabled === true, accountKillSwitch: bot.riskProfile?.accountKillSwitch ?? true,
     globalKillSwitch: globalRisk?.globalKillSwitch ?? true, accountActive: bot.exchangeAccount.isActive,
     accountConnected: bot.exchangeAccount.connectionStatus === 'CONNECTED',
@@ -83,6 +86,7 @@ export async function routeStrategies(userId: string, input: RouteStrategyInput,
       regimeSnapshotId: regimeSnapshot?.id.toString() ?? null,
       regimeObservedAt: regimeSnapshot?.observedAt.toISOString() ?? null,
       regimeConfidence: regimeSnapshot?.confidence.toNumber() ?? null,
+      scoreScope: 'BOT_COIN_STRATEGY_REGIME', coinPerformanceEvidence: coinPerformance,
       selectedBots: decision.selectedBots, excludedBots: decision.excludedBots,
       reasonSummary: decision.reasonSummary, deterministic: true, orderSubmitted: false, liveActivated: false,
     } as Prisma.InputJsonObject,

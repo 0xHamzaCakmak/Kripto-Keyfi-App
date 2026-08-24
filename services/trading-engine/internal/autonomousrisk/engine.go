@@ -88,7 +88,8 @@ func Evaluate(policy Policy, intent Intent, snapshot Snapshot) Decision {
 	if !eok || !qok || !eqok || !dlok || !wlok || !ddok || !pok || !tok || !sok || !mpok || !mtok || !msok || entry.Sign() <= 0 || quantity.Sign() <= 0 || equity.Sign() <= 0 || dailyLoss.Sign() < 0 || weeklyLoss.Sign() < 0 || drawdown.Sign() < 0 {
 		return block("RISK_SNAPSHOT_INVALID", "Autonomous risk snapshot is incomplete or invalid.", nil)
 	}
-	metrics := map[string]any{"equity": text(equity), "projectedPositionSize": text(position), "projectedTotalExposure": text(total), "projectedSymbolExposure": text(symbol)}
+	metrics := map[string]any{"equity": text(equity), "projectedPositionSize": text(position), "projectedTotalExposure": text(total), "projectedSymbolExposure": text(symbol),
+		"openPositions": snapshot.OpenPositions, "maxConcurrentPositions": policy.MaxConcurrentPositions, "executionMode": intent.ExecutionMode}
 	if position.Cmp(maxPosition) > 0 {
 		return reject("RISK_MAX_POSITION_SIZE", "Autonomous position size exceeds policy.", metrics)
 	}
@@ -162,6 +163,9 @@ func Evaluate(policy Policy, intent Intent, snapshot Snapshot) Decision {
 	checkInput.RiskRewardSatisfied = true
 	checkInput.PositionLimitSatisfied = !intent.OpensNewPosition || snapshot.OpenPositions < policy.MaxConcurrentPositions
 	checklist := entrycheck.Validate(checkInput)
+	if intent.ExecutionMode == "PAPER" {
+		checklist = entrycheck.ValidatePaperTraining(checkInput)
+	}
 	metrics["entryChecklistPassed"] = checklist.Passed
 	metrics["entryChecklistFailed"] = checklist.Failed
 	if !checklist.Passed {

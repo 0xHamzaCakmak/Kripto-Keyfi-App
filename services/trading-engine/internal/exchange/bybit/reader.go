@@ -303,7 +303,11 @@ func (r *Reader) GetRecentCandles(ctx context.Context, symbol, interval string, 
 		if len(item) < 6 || item[1] == "" || item[2] == "" || item[3] == "" || item[4] == "" || item[5] == "" {
 			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
 		}
-		result = append(result, domain.MarketCandle{Open: domain.Decimal(item[1]), High: domain.Decimal(item[2]), Low: domain.Decimal(item[3]), Close: domain.Decimal(item[4]), Volume: domain.Decimal(item[5])})
+		openTime, parseErr := strconv.ParseInt(item[0], 10, 64)
+		if parseErr != nil || openTime <= 0 {
+			return nil, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, false)
+		}
+		result = append(result, domain.MarketCandle{Open: domain.Decimal(item[1]), High: domain.Decimal(item[2]), Low: domain.Decimal(item[3]), Close: domain.Decimal(item[4]), Volume: domain.Decimal(item[5]), OpenTimeMS: openTime})
 	}
 	return result, nil
 }

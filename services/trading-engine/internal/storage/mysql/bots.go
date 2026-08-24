@@ -94,7 +94,7 @@ WHERE a.id = ? AND a.userId = ? LIMIT 1`
 	switch {
 	case !active:
 		return bot.Gate{Code: "BOT_ACCOUNT_DISABLED", Message: "Borsa hesabı devre dışı."}, nil
-	case connectionStatus != "CONNECTED":
+	case botModeRequiresConnectedAccount(instance.Mode) && connectionStatus != "CONNECTED":
 		return bot.Gate{Code: "BOT_ACCOUNT_NOT_READY", Message: "Borsa bağlantısı hazır değil."}, nil
 	case !riskEnabled:
 		return bot.Gate{Code: "BOT_RISK_PROFILE_DISABLED", Message: "Risk profili etkin değil."}, nil
@@ -107,7 +107,9 @@ WHERE a.id = ? AND a.userId = ? LIMIT 1`
 	}
 }
 
-func (s *AccountStore) LoadBotMarketAccount(ctx context.Context, userID, accountID string) (bot.MarketAccount, error) {
+func botModeRequiresConnectedAccount(mode string) bool { return mode == "DEMO" }
+
+func (s *AccountStore) LoadBotMarketAccount(ctx context.Context, userID, accountID, mode string) (bot.MarketAccount, error) {
 	var account bot.MarketAccount
 	var active bool
 	var status string
@@ -120,7 +122,7 @@ FROM exchange_accounts WHERE id = ? AND userId = ? LIMIT 1`, accountID, userID).
 	if err != nil {
 		return bot.MarketAccount{}, fmt.Errorf("load bot market account: %w", err)
 	}
-	if !active || status != "CONNECTED" {
+	if !active || (botModeRequiresConnectedAccount(mode) && status != "CONNECTED") {
 		return bot.MarketAccount{}, errors.New("bot market account is not ready")
 	}
 	if account.Environment != domain.EnvironmentDemo && account.Environment != domain.EnvironmentTestnet {
@@ -183,13 +185,13 @@ func (s *AccountStore) completeCycleOnce(ctx context.Context, instance bot.Insta
 	}
 	defer func() { _ = tx.Rollback() }()
 	result, err := tx.ExecContext(ctx, `UPDATE trading_bots SET heartbeatAt = ?, lastDecisionAt = ?, leaseExpiresAt = ?, version = version + 1
-WHERE id = ? AND schedulerOwner = ? AND state = 'RUNNING'`, now, now, leaseUntil, instance.ID, owner)
+WHERE id = ? AND schedulerOwner = ? AND state = 'RUNNING' AND symbol = ?`, now, now, leaseUntil, instance.ID, owner, instance.Symbol)
 	if err != nil {
 		return bot.CycleResult{}, fmt.Errorf("heartbeat bot cycle: %w", err)
 	}
 	affected, _ := result.RowsAffected()
 	if affected != 1 {
-		return bot.CycleResult{}, errors.New("bot cycle lost its scheduler lease")
+		return bot.CycleResult{}, errors.New("bot cycle lost its scheduler lease or market symbol changed")
 	}
 	hypotheticalOrder, err := nullableJSON(decision.HypotheticalOrder)
 	if err != nil {
@@ -407,13 +409,20 @@ func signalConfidence(kind string) string {
 }
 
 type openPaperTrade struct {
-	ID, Side, EntryPrice, Quantity, Fees, SlippageCost, StopLoss, TakeProfit, RealizedPnL string
-	OpenedAt                                                                              time.Time
-	MaxFavorableExcursion, MaxAdverseExcursion                                            string
-	PartialTakeProfitTaken                                                                bool
+	ID, Symbol, Side, EntryPrice, Quantity, Fees, SlippageCost, StopLoss, TakeProfit, RealizedPnL, SignalKey string
+	OpenedAt                                                                                                 time.Time
+	MaxFavorableExcursion, MaxAdverseExcursion                                                               string
+	PartialTakeProfitTaken                                                                                   bool
 }
 
 func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, decision bot.Decision, decisionID int64, now time.Time, entryRiskApproved bool) (*bot.PaperExecution, error) {
+	// PAPER is a distinct runtime risk profile. Apply its default in memory as
+	// well as in provisioned configuration so already-running/restored bots do
+	// not need to be recreated before receiving the net-profit floor.
+	instance.Configuration["paperTrainingMode"] = true
+	if configured, ok := paperNumber(instance.Configuration["minimumNetProfitBps"]); !ok || configured < bot.PaperTrainingMinNetProfitBps {
+		instance.Configuration["minimumNetProfitBps"] = bot.PaperTrainingMinNetProfitBps
+	}
 	position, exists, err := loadPaperPosition(ctx, tx, instance.ID)
 	if err != nil {
 		return nil, err
@@ -429,6 +438,25 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 		}
 	}
 	if openTrade != nil {
+		legacyOutsideCore, coreErr := paperTradeOutsideCoreUniverse(ctx, tx, instance.UserID, openTrade.Symbol)
+		if coreErr != nil {
+			return nil, coreErr
+		}
+		// paper_trades is the immutable lifecycle source of truth. The aggregate
+		// row may still carry the symbol of a previously closed trade after a
+		// Universe rotation; repair only its label before marking this position.
+		if position.Symbol != openTrade.Symbol {
+			if _, repairErr := tx.ExecContext(ctx, `UPDATE trading_bot_paper_positions SET symbol = ?, updatedAt = UTC_TIMESTAMP(3) WHERE tradingBotId = ?`, openTrade.Symbol, instance.ID); repairErr != nil {
+				return nil, fmt.Errorf("repair paper aggregate symbol: %w", repairErr)
+			}
+			position.Symbol = openTrade.Symbol
+		}
+		if instance.Symbol != openTrade.Symbol {
+			return nil, fmt.Errorf("paper market symbol mismatch: bot=%s open_trade=%s", instance.Symbol, openTrade.Symbol)
+		}
+		if floorErr := applyPaperTrainingProfitFloor(ctx, tx, instance.Configuration, openTrade); floorErr != nil {
+			return nil, floorErr
+		}
 		unrealized, markErr := bot.MarkPaperPosition(position, decision.MarkPrice)
 		if markErr != nil {
 			return nil, fmt.Errorf("mark paper position: %w", markErr)
@@ -452,11 +480,18 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 		if planErr != nil {
 			return nil, fmt.Errorf("plan managed paper exit: %w", planErr)
 		}
+		if legacyOutsideCore {
+			// Symbols which are not part of the configured Core Universe are old
+			// training debt, not merely unchecked assets. Close them at the current
+			// verified mark, then rotate the flat bot into an enabled Core asset.
+			plan.Action = "CLOSE"
+			plan.Reason = "CORE_UNIVERSE_LEGACY_EXIT"
+		}
 		if plan.Action == "MOVE_STOP" {
 			if _, err = tx.ExecContext(ctx, `UPDATE paper_trades SET stopLoss = ?, maxFavorableExcursion = ?, maxAdverseExcursion = ?, marketContext = JSON_SET(COALESCE(marketContext, JSON_OBJECT()), '$.trailingStopActive', true), updatedAt = UTC_TIMESTAMP(3) WHERE id = ?`, plan.NewStop, favorable, adverse, openTrade.ID); err != nil {
 				return nil, fmt.Errorf("advance paper trailing stop: %w", err)
 			}
-			if _, err = tx.ExecContext(ctx, `UPDATE trading_bot_paper_positions SET unrealizedPnl = ?, lastMarkPrice = ?, updatedAt = ? WHERE tradingBotId = ?`, unrealized, decision.MarkPrice, now, instance.ID); err != nil {
+			if _, err = tx.ExecContext(ctx, `UPDATE trading_bot_paper_positions SET symbol = ?, unrealizedPnl = ?, lastMarkPrice = ?, updatedAt = ? WHERE tradingBotId = ?`, openTrade.Symbol, unrealized, decision.MarkPrice, now, instance.ID); err != nil {
 				return nil, fmt.Errorf("update trailed paper position: %w", err)
 			}
 			return nil, nil
@@ -508,14 +543,17 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 			reason = plan.Reason
 		}
 		if reason == "" {
-			if _, err = tx.ExecContext(ctx, `UPDATE trading_bot_paper_positions SET unrealizedPnl = ?, lastMarkPrice = ?, updatedAt = ? WHERE tradingBotId = ?`,
-				unrealized, decision.MarkPrice, now, instance.ID); err != nil {
+			if _, err = tx.ExecContext(ctx, `UPDATE trading_bot_paper_positions SET symbol = ?, unrealizedPnl = ?, lastMarkPrice = ?, updatedAt = ? WHERE tradingBotId = ?`,
+				openTrade.Symbol, unrealized, decision.MarkPrice, now, instance.ID); err != nil {
 				return nil, fmt.Errorf("update paper position mark: %w", err)
 			}
 			if _, err = tx.ExecContext(ctx, `UPDATE paper_trades SET maxFavorableExcursion = ?, maxAdverseExcursion = ?, updatedAt = UTC_TIMESTAMP(3) WHERE id = ?`, favorable, adverse, openTrade.ID); err != nil {
 				return nil, fmt.Errorf("update paper trade excursions: %w", err)
 			}
-			if decision.HypotheticalOrder == nil || !entryRiskApproved || instance.Configuration["pyramidingEnabled"] != true {
+			// PAPER evidence units stay independent: a bot never mutates an
+			// already-open trade into a larger/averaged trade. Multiple bots and
+			// strategies may still hold separate trades on the same coin.
+			if decision.HypotheticalOrder == nil || !entryRiskApproved || !paperPyramidingAllowed(instance.Mode, instance.Configuration) {
 				return nil, nil
 			}
 			side, sideOK := decision.HypotheticalOrder["side"].(string)
@@ -526,6 +564,10 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 				return nil, errors.New("paper pyramid order is incomplete")
 			}
 			if side != openTrade.Side {
+				return nil, nil
+			}
+			signalKey, _ := decision.HypotheticalOrder["signalKey"].(string)
+			if duplicatePaperSignal(openTrade.SignalKey, signalKey) {
 				return nil, nil
 			}
 			quantity, hasAllocation, capErr := capPaperPyramidQuantity(quantity, position.NetQuantity, decision.MarkPrice, instance.Configuration)
@@ -563,8 +605,8 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 				return nil, errors.New("paper pyramid quantity is invalid")
 			}
 			quantityValue.Abs(quantityValue)
-			if _, err = tx.ExecContext(ctx, `UPDATE paper_trades SET entryPrice = ?, quantity = ?, fees = ?, slippageCost = ?, stopLoss = ?, takeProfit = ?, maxFavorableExcursion = ?, maxAdverseExcursion = ?, decisionSummary = ?, updatedAt = UTC_TIMESTAMP(3) WHERE id = ? AND status = 'OPEN'`,
-				execution.AvgEntryPrice, quantityValue.FloatString(18), totalFees, totalSlippage, stop, take, favorable, adverse, decision.Summary, openTrade.ID); err != nil {
+			if _, err = tx.ExecContext(ctx, `UPDATE paper_trades SET entryPrice = ?, quantity = ?, fees = ?, slippageCost = ?, stopLoss = ?, takeProfit = ?, maxFavorableExcursion = ?, maxAdverseExcursion = ?, decisionSummary = ?, marketContext = JSON_SET(COALESCE(marketContext, JSON_OBJECT()), '$.signalKey', ?), updatedAt = UTC_TIMESTAMP(3) WHERE id = ? AND status = 'OPEN'`,
+				execution.AvgEntryPrice, quantityValue.FloatString(18), totalFees, totalSlippage, stop, take, favorable, adverse, decision.Summary, signalKey, openTrade.ID); err != nil {
 				return nil, fmt.Errorf("update pyramided paper trade: %w", err)
 			}
 			if err = savePaperPosition(ctx, tx, instance, position, execution, decision.MarkPrice, now, exists); err != nil {
@@ -612,6 +654,11 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 		if err = savePaperPosition(ctx, tx, instance, position, execution, decision.MarkPrice, now, exists); err != nil {
 			return nil, err
 		}
+		if legacyOutsideCore {
+			if err = rotateFlatPaperBotToCore(ctx, tx, instance); err != nil {
+				return nil, err
+			}
+		}
 		return &execution, nil
 	}
 	if decision.HypotheticalOrder == nil || !entryRiskApproved {
@@ -631,8 +678,10 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 	if err = insertPaperFill(ctx, tx, instance.ID, decisionID, execution, now); err != nil {
 		return nil, err
 	}
-	stopLoss, _ := decision.HypotheticalOrder["stopLoss"].(string)
-	takeProfit, _ := decision.HypotheticalOrder["takeProfit"].(string)
+	stopLoss, takeProfit, protectionErr := plannedProtectionPrices(instance.Configuration, decision.HypotheticalOrder, side, execution.FillPrice)
+	if protectionErr != nil {
+		return nil, protectionErr
+	}
 	leverage, _ := paperNumber(decision.HypotheticalOrder["leverage"])
 	entrySlippage, calcErr := paperSlippageCost(execution.FillPrice, decision.MarkPrice, execution.Quantity)
 	if calcErr != nil {
@@ -645,17 +694,61 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 	signalExperimentID, _ := decision.HypotheticalOrder["signalExperimentId"].(string)
 	signalExperimentVariant, _ := decision.HypotheticalOrder["signalExperimentVariant"].(string)
 	riskPlanVersion, _ := decision.HypotheticalOrder["riskPlanVersion"].(string)
+	signalKey, _ := decision.HypotheticalOrder["signalKey"].(string)
+	var marketRegimeSnapshotID sql.NullInt64
+	regimeErr := tx.QueryRowContext(ctx, `SELECT id FROM market_regime_snapshots WHERE symbol = ? ORDER BY observedAt DESC, id DESC LIMIT 1`, instance.Symbol).Scan(&marketRegimeSnapshotID)
+	if regimeErr != nil && !errors.Is(regimeErr, sql.ErrNoRows) {
+		return nil, fmt.Errorf("load paper trade market regime: %w", regimeErr)
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO paper_trades
-(id, tradingBotId, strategyVersionId, symbol, side, status, entryPrice, quantity, leverage, fees, funding, slippageCost, realizedPnl, stopLoss, takeProfit, maxFavorableExcursion, maxAdverseExcursion, decisionSummary, marketContext, openedAt, createdAt, updatedAt)
-VALUES (?, ?, NULLIF(?, ''), ?, ?, 'OPEN', ?, ?, ?, ?, 0, ?, 0, NULLIF(?, ''), NULLIF(?, ''), 0, 0, ?, JSON_OBJECT('partialTakeProfitTaken', false, 'playbookVersion', ?, 'experimentId', ?, 'experimentVariant', ?, 'signalExperimentId', ?, 'signalExperimentVariant', ?, 'riskPlanVersion', ?), ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
-		tradeID, instance.ID, instance.StrategyVersionID, instance.Symbol, execution.Side, execution.FillPrice, execution.Quantity,
-		int(leverage), execution.Fee, entrySlippage, stopLoss, takeProfit, decision.Summary, playbookVersion, experimentID, experimentVariant, signalExperimentID, signalExperimentVariant, riskPlanVersion, now); err != nil {
+(id, tradingBotId, strategyVersionId, marketRegimeSnapshotId, symbol, side, status, entryPrice, quantity, leverage, fees, funding, slippageCost, realizedPnl, stopLoss, takeProfit, maxFavorableExcursion, maxAdverseExcursion, decisionSummary, marketContext, openedAt, createdAt, updatedAt)
+VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, 'OPEN', ?, ?, ?, ?, 0, ?, 0, NULLIF(?, ''), NULLIF(?, ''), 0, 0, ?, JSON_OBJECT('partialTakeProfitTaken', false, 'playbookVersion', ?, 'experimentId', ?, 'experimentVariant', ?, 'signalExperimentId', ?, 'signalExperimentVariant', ?, 'riskPlanVersion', ?, 'signalKey', ?), ?, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3))`,
+		tradeID, instance.ID, instance.StrategyVersionID, marketRegimeSnapshotID, instance.Symbol, execution.Side, execution.FillPrice, execution.Quantity,
+		int(leverage), execution.Fee, entrySlippage, stopLoss, takeProfit, decision.Summary, playbookVersion, experimentID, experimentVariant, signalExperimentID, signalExperimentVariant, riskPlanVersion, signalKey, now); err != nil {
 		return nil, fmt.Errorf("open autonomous paper trade: %w", err)
 	}
 	if err = savePaperPosition(ctx, tx, instance, position, execution, decision.MarkPrice, now, exists); err != nil {
 		return nil, err
 	}
 	return &execution, nil
+}
+
+func paperTradeOutsideCoreUniverse(ctx context.Context, tx *sql.Tx, userID, symbol string) (bool, error) {
+	var configured bool
+	err := tx.QueryRowContext(ctx, `SELECT TRUE FROM trading_universe_assets WHERE userId = ? AND symbol = ? LIMIT 1`, userID, symbol).Scan(&configured)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("load paper trade Core Universe membership: %w", err)
+	}
+	return !configured, nil
+}
+
+func rotateFlatPaperBotToCore(ctx context.Context, tx *sql.Tx, instance bot.Instance) error {
+	var symbol string
+	err := tx.QueryRowContext(ctx, `SELECT symbol FROM trading_universe_assets
+WHERE userId = ? AND enabled = TRUE
+ORDER BY CRC32(CONCAT(symbol, ?)), sortOrder, symbol LIMIT 1`, instance.UserID, instance.ID).Scan(&symbol)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errors.New("cannot rotate PAPER bot: Core Trading Universe has no enabled symbol")
+	}
+	if err != nil {
+		return fmt.Errorf("select PAPER Core Universe assignment: %w", err)
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE trading_bots SET symbol = ?, symbols = JSON_ARRAY(?), lastDecisionAt = NULL, version = version + 1, updatedAt = UTC_TIMESTAMP(3)
+WHERE id = ? AND userId = ? AND mode = 'PAPER' AND symbol = ?`, symbol, symbol, instance.ID, instance.UserID, instance.Symbol); err != nil {
+		return fmt.Errorf("rotate PAPER bot into Core Trading Universe: %w", err)
+	}
+	return nil
+}
+
+func duplicatePaperSignal(previous, current string) bool {
+	return current != "" && current == previous
+}
+
+func paperPyramidingAllowed(mode string, configuration map[string]any) bool {
+	return mode != "PAPER" && configuration["pyramidingEnabled"] == true
 }
 
 func capPaperPyramidQuantity(requestedText, currentQuantityText, markText string, configuration map[string]any) (string, bool, error) {
@@ -687,9 +780,9 @@ func capPaperPyramidQuantity(requestedText, currentQuantityText, markText string
 
 func loadPaperPosition(ctx context.Context, tx *sql.Tx, botID string) (bot.PaperPosition, bool, error) {
 	var position bot.PaperPosition
-	err := tx.QueryRowContext(ctx, `SELECT netQuantity, avgEntryPrice, realizedPnl, totalFees
+	err := tx.QueryRowContext(ctx, `SELECT symbol, netQuantity, avgEntryPrice, realizedPnl, totalFees
 FROM trading_bot_paper_positions WHERE tradingBotId = ? FOR UPDATE`, botID).Scan(
-		&position.NetQuantity, &position.AvgEntryPrice, &position.RealizedPnL, &position.TotalFees)
+		&position.Symbol, &position.NetQuantity, &position.AvgEntryPrice, &position.RealizedPnL, &position.TotalFees)
 	if errors.Is(err, sql.ErrNoRows) {
 		return bot.PaperPosition{}, false, nil
 	}
@@ -702,13 +795,14 @@ FROM trading_bot_paper_positions WHERE tradingBotId = ? FOR UPDATE`, botID).Scan
 func loadOpenPaperTrade(ctx context.Context, tx *sql.Tx, botID string) (*openPaperTrade, error) {
 	var trade openPaperTrade
 	var partialTaken string
-	err := tx.QueryRowContext(ctx, `SELECT id, side, entryPrice, quantity, fees, slippageCost,
+	err := tx.QueryRowContext(ctx, `SELECT id, symbol, side, entryPrice, quantity, fees, slippageCost,
 COALESCE(CAST(stopLoss AS CHAR), ''), COALESCE(CAST(takeProfit AS CHAR), ''), openedAt,
 CAST(maxFavorableExcursion AS CHAR), CAST(maxAdverseExcursion AS CHAR), CAST(realizedPnl AS CHAR),
-COALESCE(JSON_UNQUOTE(JSON_EXTRACT(marketContext, '$.partialTakeProfitTaken')), 'false')
+COALESCE(JSON_UNQUOTE(JSON_EXTRACT(marketContext, '$.partialTakeProfitTaken')), 'false'),
+COALESCE(JSON_UNQUOTE(JSON_EXTRACT(marketContext, '$.signalKey')), '')
 FROM paper_trades WHERE tradingBotId = ? AND status = 'OPEN' ORDER BY openedAt DESC LIMIT 1 FOR UPDATE`, botID).Scan(
-		&trade.ID, &trade.Side, &trade.EntryPrice, &trade.Quantity, &trade.Fees, &trade.SlippageCost,
-		&trade.StopLoss, &trade.TakeProfit, &trade.OpenedAt, &trade.MaxFavorableExcursion, &trade.MaxAdverseExcursion, &trade.RealizedPnL, &partialTaken)
+		&trade.ID, &trade.Symbol, &trade.Side, &trade.EntryPrice, &trade.Quantity, &trade.Fees, &trade.SlippageCost,
+		&trade.StopLoss, &trade.TakeProfit, &trade.OpenedAt, &trade.MaxFavorableExcursion, &trade.MaxAdverseExcursion, &trade.RealizedPnL, &partialTaken, &trade.SignalKey)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -734,7 +828,7 @@ func recoverLegacyPaperTrade(ctx context.Context, tx *sql.Tx, instance bot.Insta
 		return nil, err
 	}
 	trade := &openPaperTrade{
-		ID: fmt.Sprintf("paper_recovered_%s_%d", instance.ID, decisionID), Side: side, EntryPrice: position.AvgEntryPrice,
+		ID: fmt.Sprintf("paper_recovered_%s_%d", instance.ID, decisionID), Symbol: instance.Symbol, Side: side, EntryPrice: position.AvgEntryPrice,
 		Quantity: quantity.FloatString(18), Fees: "0", SlippageCost: "0", StopLoss: stop, TakeProfit: take,
 		OpenedAt: now, MaxFavorableExcursion: "0", MaxAdverseExcursion: "0", RealizedPnL: "0",
 	}
@@ -770,10 +864,98 @@ func plannedProtectionPrices(configuration, plan map[string]any, side, entryValu
 	stopRate, _ := new(big.Rat).SetString(strconv.FormatFloat(stopBps/10_000, 'f', 8, 64))
 	takeRate, _ := new(big.Rat).SetString(strconv.FormatFloat(takeBps/10_000, 'f', 8, 64))
 	one := big.NewRat(1, 1)
+	var stop, take *big.Rat
 	if side == "BUY" {
-		return new(big.Rat).Mul(entry, new(big.Rat).Sub(one, stopRate)).FloatString(18), new(big.Rat).Mul(entry, new(big.Rat).Add(one, takeRate)).FloatString(18), nil
+		stop = new(big.Rat).Mul(entry, new(big.Rat).Sub(one, stopRate))
+		take = new(big.Rat).Mul(entry, new(big.Rat).Add(one, takeRate))
+	} else if side == "SELL" {
+		stop = new(big.Rat).Mul(entry, new(big.Rat).Add(one, stopRate))
+		take = new(big.Rat).Mul(entry, new(big.Rat).Sub(one, takeRate))
+	} else {
+		return "", "", errors.New("paper protection side is invalid")
 	}
-	return new(big.Rat).Mul(entry, new(big.Rat).Add(one, stopRate)).FloatString(18), new(big.Rat).Mul(entry, new(big.Rat).Sub(one, takeRate)).FloatString(18), nil
+	if configuration["paperTrainingMode"] == true {
+		minimumNetBps, ok := paperNumber(configuration["minimumNetProfitBps"])
+		if !ok || minimumNetBps < bot.PaperTrainingMinNetProfitBps {
+			minimumNetBps = bot.PaperTrainingMinNetProfitBps
+		}
+		feeBps, slippageBps := paperCosts(configuration)
+		netTarget, targetErr := paperMinimumNetTarget(entry, side, minimumNetBps, feeBps, slippageBps)
+		if targetErr != nil {
+			return "", "", targetErr
+		}
+		if (side == "BUY" && netTarget.Cmp(take) > 0) || (side == "SELL" && netTarget.Cmp(take) < 0) {
+			take = netTarget
+		}
+	}
+	return stop.FloatString(18), take.FloatString(18), nil
+}
+
+// paperMinimumNetTarget returns the mark price which still realizes the
+// requested profit after both entry/exit fees and adverse exit slippage. The
+// entry argument is the actual simulated fill, so entry slippage is already
+// represented and must not be deducted a second time.
+func paperMinimumNetTarget(entry *big.Rat, side string, minimumNetBps, feeBps, slippageBps float64) (*big.Rat, error) {
+	if entry == nil || entry.Sign() <= 0 || minimumNetBps <= 0 || feeBps < 0 || slippageBps < 0 {
+		return nil, errors.New("paper minimum net target input is invalid")
+	}
+	one := big.NewRat(1, 1)
+	// A tiny execution buffer prevents DECIMAL(36,18) rounding from placing the
+	// trigger a fraction below the promised net floor.
+	netRate := bpsRat(minimumNetBps + 0.01)
+	feeRate := bpsRat(feeBps)
+	slippageRate := bpsRat(slippageBps)
+	var ratio *big.Rat
+	if side == "BUY" {
+		denominator := new(big.Rat).Mul(new(big.Rat).Sub(one, feeRate), new(big.Rat).Sub(one, slippageRate))
+		if denominator.Sign() <= 0 {
+			return nil, errors.New("paper long net target costs are invalid")
+		}
+		ratio = new(big.Rat).Quo(new(big.Rat).Add(new(big.Rat).Add(one, netRate), feeRate), denominator)
+	} else if side == "SELL" {
+		numerator := new(big.Rat).Sub(new(big.Rat).Sub(one, netRate), feeRate)
+		denominator := new(big.Rat).Mul(new(big.Rat).Add(one, feeRate), new(big.Rat).Add(one, slippageRate))
+		if numerator.Sign() <= 0 || denominator.Sign() <= 0 {
+			return nil, errors.New("paper short net target costs are invalid")
+		}
+		ratio = new(big.Rat).Quo(numerator, denominator)
+	} else {
+		return nil, errors.New("paper minimum net target side is invalid")
+	}
+	return new(big.Rat).Mul(entry, ratio), nil
+}
+
+func bpsRat(value float64) *big.Rat {
+	parsed, _ := new(big.Rat).SetString(strconv.FormatFloat(value/10_000, 'f', 8, 64))
+	return parsed
+}
+
+func applyPaperTrainingProfitFloor(ctx context.Context, tx *sql.Tx, configuration map[string]any, trade *openPaperTrade) error {
+	if configuration["paperTrainingMode"] != true || trade == nil || trade.PartialTakeProfitTaken {
+		return nil
+	}
+	_, floor, err := configuredProtectionPrices(configuration, trade.Side, trade.EntryPrice)
+	if err != nil {
+		return err
+	}
+	current, currentOK := new(big.Rat).SetString(trade.TakeProfit)
+	minimum, minimumOK := new(big.Rat).SetString(floor)
+	if !minimumOK {
+		return errors.New("paper minimum profit floor is invalid")
+	}
+	needsUpgrade := !currentOK || (trade.Side == "BUY" && current.Cmp(minimum) < 0) || (trade.Side == "SELL" && current.Cmp(minimum) > 0)
+	if !needsUpgrade {
+		return nil
+	}
+	minimumNetBps, ok := paperNumber(configuration["minimumNetProfitBps"])
+	if !ok || minimumNetBps < bot.PaperTrainingMinNetProfitBps {
+		minimumNetBps = bot.PaperTrainingMinNetProfitBps
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE paper_trades SET takeProfit = ?, marketContext = JSON_SET(COALESCE(marketContext, JSON_OBJECT()), '$.minimumNetProfitBps', ?), updatedAt = UTC_TIMESTAMP(3) WHERE id = ? AND status = 'OPEN'`, floor, minimumNetBps, trade.ID); err != nil {
+		return fmt.Errorf("upgrade paper minimum profit floor: %w", err)
+	}
+	trade.TakeProfit = floor
+	return nil
 }
 
 func paperProtectionTrigger(trade *openPaperTrade, markValue string) string {
@@ -853,10 +1035,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, UTC_TIMESTAMP(3), ?)`, instance.ID, ins
 		if decimalSign(previous.NetQuantity) != 0 && decimalSign(execution.NetQuantity) != 0 {
 			openedAt = nil
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE trading_bot_paper_positions SET netQuantity = ?, avgEntryPrice = ?, realizedPnl = ?,
+		_, err = tx.ExecContext(ctx, `UPDATE trading_bot_paper_positions SET symbol = ?, netQuantity = ?, avgEntryPrice = ?, realizedPnl = ?,
 unrealizedPnl = ?, totalFees = ?, lastMarkPrice = ?, totalFills = totalFills + 1,
 openedAt = CASE WHEN ? = '0.000000000000000000' THEN NULL ELSE COALESCE(?, openedAt) END, lastFilledAt = ?, updatedAt = ?
-WHERE tradingBotId = ?`, execution.NetQuantity, execution.AvgEntryPrice, execution.CumulativePnL, execution.UnrealizedPnL,
+WHERE tradingBotId = ?`, instance.Symbol, execution.NetQuantity, execution.AvgEntryPrice, execution.CumulativePnL, execution.UnrealizedPnL,
 			execution.TotalFees, mark, execution.NetQuantity, openedAt, now, now, instance.ID)
 	}
 	if err != nil {

@@ -15,7 +15,7 @@ type strategyRunnerStore struct {
 	loaded    bool
 }
 
-func (s *strategyRunnerStore) LoadBotMarketAccount(context.Context, string, string) (MarketAccount, error) {
+func (s *strategyRunnerStore) LoadBotMarketAccount(context.Context, string, string, string) (MarketAccount, error) {
 	s.loaded = true
 	return s.account, nil
 }
@@ -146,7 +146,7 @@ func TestStrategyRunnerFetchesDifferentSymbolsConcurrently(t *testing.T) {
 	}
 }
 
-func TestAutonomousRunnerHoldsWhenDerivativesEvidenceIsUnavailable(t *testing.T) {
+func TestAutonomousRunnerSeparatesPaperTrainingFromTestnetDerivativesGate(t *testing.T) {
 	store := &strategyRunnerStore{account: MarketAccount{Provider: domain.ProviderBinance}, reference: "209"}
 	runner := NewStrategyRunnerWithFactory(store, func(MarketAccount) (PriceReader, error) {
 		return unavailableDerivativesReader{fixedPriceReader{price: "209.5"}}, nil
@@ -154,7 +154,12 @@ func TestAutonomousRunnerHoldsWhenDerivativesEvidenceIsUnavailable(t *testing.T)
 	instance := autonomousMomentumInstance("PAPER")
 	instance.Configuration["signalThresholdBps"] = float64(5)
 	decision, err := runner.Tick(t.Context(), instance)
-	if err != nil || decision.Kind != "HOLD" || decision.HypotheticalOrder != nil || decision.Metrics["derivativesAvailable"] != false {
-		t.Fatalf("missing derivatives evidence did not fail closed: %#v err=%v", decision, err)
+	if err != nil || decision.Kind != "BUY" || decision.HypotheticalOrder == nil || decision.Metrics["derivativesAvailable"] != false {
+		t.Fatalf("PAPER training did not accept valid price evidence: %#v err=%v", decision, err)
+	}
+	instance.Mode = "DEMO"
+	decision, err = runner.Tick(t.Context(), instance)
+	if err != nil || decision.Kind != "HOLD" || decision.HypotheticalOrder != nil {
+		t.Fatalf("TESTNET derivatives gate was relaxed: %#v err=%v", decision, err)
 	}
 }

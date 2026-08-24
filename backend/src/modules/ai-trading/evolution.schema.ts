@@ -7,7 +7,7 @@ const evolutionConfigObject = z.object({
   crossoverCount: z.number().int().min(0).max(1000).default(20),
   researcherCandidateCount: z.number().int().min(0).max(1000).default(0),
   maxGenerations: z.number().int().min(1).max(1000).default(20),
-  minimumTrades: z.number().int().min(1).max(1_000_000).default(200),
+  minimumTrades: z.number().int().min(1).max(1_000_000).default(50),
 }).strict();
 
 export const evolutionConfigSchema = evolutionConfigObject.superRefine((value, context) => {

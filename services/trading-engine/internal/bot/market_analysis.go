@@ -171,7 +171,10 @@ func atrExpansion(candles []domain.MarketCandle, period int) (float64, error) {
 	}
 	average /= float64(period)
 	if average <= 0 {
-		return 0, errors.New("ATR baseline is invalid")
+		// A genuinely flat/quantized market series is valid evidence, not a
+		// corrupt feed. Treat it as non-expanding volatility; malformed candles
+		// are already rejected by trueRanges above.
+		return 1, nil
 	}
 	return trueRanges[len(trueRanges)-1] / average, nil
 }

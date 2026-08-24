@@ -23,7 +23,14 @@ export async function getRiskProfile(userId: string, exchangeAccountId: string) 
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true, reason: true, activatedAt: true } }),
   ]);
   if (!profile || !global) throw new ApiError(503, 'Risk profili hazır değil.', 'RISK_PROFILE_UNAVAILABLE');
-  return { ...serializeProfile(profile), globalKillSwitch: global.globalKillSwitch, globalKillSwitchReason: global.reason, globalKillSwitchActivatedAt: global.activatedAt };
+  return { ...serializeProfile(profile), effectiveMaxOpenPositions: effectiveAutonomousPositionLimits(profile.maxOpenPositions),
+    globalKillSwitch: global.globalKillSwitch, globalKillSwitchReason: global.reason, globalKillSwitchActivatedAt: global.activatedAt };
+}
+
+export function effectiveAutonomousPositionLimits(configured: number) {
+  const paper = Math.max(1, Math.min(configured, 100));
+  const testnetLive = Math.max(1, Math.min(configured, 15));
+  return { paper, futuresTestnet: testnetLive, live: testnetLive };
 }
 
 export async function updateRiskProfile(userId: string, exchangeAccountId: string, input: UpdateRiskProfileInput, ipAddress?: string) {

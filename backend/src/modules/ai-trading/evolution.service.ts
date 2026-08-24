@@ -22,12 +22,41 @@ export function selectEvolutionPopulation(evidence: EvolutionEvidence[], config:
   return { eligible, survivors, weak, insufficient, protectedBots };
 }
 
+export function evolutionConfigForPopulation(populationSize: number, minimumTrades: number, maxGenerations: number): EvolutionConfig {
+  const survivorCount = Math.min(populationSize, Math.max(1, Math.floor(populationSize * 0.2)));
+  const crossoverCount = survivorCount >= 2 ? Math.floor(populationSize * 0.2) : 0;
+  const mutationCount = populationSize - survivorCount - crossoverCount;
+  return evolutionConfigSchema.parse({
+    populationSize, survivorCount, mutationCount, crossoverCount,
+    researcherCandidateCount: 0, minimumTrades, maxGenerations,
+  });
+}
+
+export function assessEvolutionReadiness(evidence: EvolutionEvidence[], populationTarget: number, config: EvolutionConfig) {
+  const selection = selectEvolutionPopulation(evidence, config);
+  const botsMeetingTradeMinimum = evidence.filter((item) => item.totalTrades >= config.minimumTrades).length;
+  const botsWithScore = evidence.filter((item) => item.score !== null).length;
+  const tradeCounts = evidence.map((item) => item.totalTrades);
+  const populationReady = evidence.length >= populationTarget;
+  const survivorEvidenceReady = selection.survivors.length >= config.survivorCount;
+  return {
+    ready: populationReady && survivorEvidenceReady,
+    populationReady, survivorEvidenceReady,
+    paperBots: evidence.length, populationTarget,
+    eligibleBots: selection.eligible.length, requiredSurvivors: config.survivorCount,
+    botsMeetingTradeMinimum, botsWithScore, minimumTrades: config.minimumTrades,
+    minimumObservedTrades: tradeCounts.length ? Math.min(...tradeCounts) : 0,
+    maximumObservedTrades: tradeCounts.length ? Math.max(...tradeCounts) : 0,
+    blocker: !populationReady ? 'POPULATION_BELOW_TARGET' : !survivorEvidenceReady ? 'SURVIVOR_EVIDENCE_INSUFFICIENT' : null,
+  };
+}
+
 export async function runEvolution(userId: string, input: RunEvolutionInput, ipAddress?: string) {
   const config = evolutionConfigSchema.parse({ ...DEFAULT_EVOLUTION_CONFIG, ...input.config });
   const source = await prisma.generation.findFirst({
     where: { id: input.sourceGenerationId, createdById: userId },
     include: { bots: {
-      where: { type: 'AUTONOMOUS' },
+      where: { type: 'AUTONOMOUS', mode: 'PAPER' },
       include: {
         metrics: { orderBy: [{ snapshotAt: 'desc' }, { id: 'desc' }], take: 1 },
         strategyVersion: { select: { parameterSchema: true, strategy: { select: { family: true } } } },

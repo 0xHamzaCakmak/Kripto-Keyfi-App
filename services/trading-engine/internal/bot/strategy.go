@@ -40,8 +40,17 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 		closes = append(closes, candle.Close)
 	}
 	result, err := evaluateAutonomousStrategy(instance, markPrice, referencePrice, closes)
-	if err != nil || result.HypotheticalOrder == nil {
+	if err != nil {
 		return result, err
+	}
+	if result.HypotheticalOrder == nil && instance.Mode == "PAPER" && booleanConfig(instance.Configuration, "paperAlwaysInMarket") {
+		result, err = paperContinuousTrainingDecision(instance, markPrice, referencePrice, closes)
+		if err != nil {
+			return Decision{}, err
+		}
+	}
+	if result.HypotheticalOrder == nil {
+		return result, nil
 	}
 	side, _ := result.HypotheticalOrder["side"].(string)
 	analysis, err := AnalyzeMarket(snapshot, side)
@@ -65,6 +74,9 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 	order := result.HypotheticalOrder
 	order["marketRegime"], order["higherTimeframeAligned"], order["confirmedTimeframes"], order["derivativesAligned"] = analysis.Regime, analysis.HigherTimeframeAligned, analysis.ConfirmedTimeframes, analysis.DerivativesAligned
 	order["oiConfirmed"], order["regimeConfidence"] = analysis.OIConfirmed, roundFloat(analysis.RegimeConfidence, 4)
+	latestMinute := snapshot.Candles["1m"][len(snapshot.Candles["1m"])-1]
+	order["signalKey"] = fmt.Sprintf("%s:%d:%s", instance.Symbol, latestMinute.OpenTimeMS, side)
+	result.Metrics["marketDataOpenTimeMs"] = latestMinute.OpenTimeMS
 	family := strings.ToUpper(strings.TrimSpace(instance.StrategyFamily))
 	selected, _ := result.Metrics["selectedSubStrategy"].(string)
 	isMeanReversion := family == "RSI_MEAN_REVERSION" || family == "BOLLINGER_MEAN_REVERSION" || (family == "MULTI_AGENT" && selected == "RANGE_MEAN_REVERSION")
@@ -73,6 +85,21 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 		marketConfirmed = marketConfirmed && analysis.Regime == "RANGE"
 	} else {
 		marketConfirmed = marketConfirmed && analysis.Regime == "TREND" && analysis.HigherTimeframeAligned && analysis.ConfirmedTimeframes >= 2
+	}
+	if instance.Mode == "PAPER" {
+		marketConfirmed = analysis.ConfirmedTimeframes >= 1
+		if isMeanReversion {
+			marketConfirmed = marketConfirmed && analysis.Regime == "RANGE"
+		} else {
+			marketConfirmed = marketConfirmed && analysis.Regime == "TREND"
+		}
+		if booleanConfig(instance.Configuration, "paperAlwaysInMarket") && result.Metrics["continuousTrainingEntry"] == true {
+			// Continuous PAPER evidence needs valid OHLCV/regime classification,
+			// but it intentionally does not require directional agreement across
+			// timeframes; EMA chooses the side and the central Risk Engine still
+			// enforces leverage, stop, exposure and loss limits.
+			marketConfirmed = analysis.Regime != ""
+		}
 	}
 	if !marketConfirmed {
 		result.Kind = "HOLD"
@@ -118,22 +145,50 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 	minimumBps := configNumberOr(instance.Configuration, "adaptiveStopMinBps", 75)
 	maximumBps := configNumberOr(instance.Configuration, "adaptiveStopMaxBps", 300)
 	riskReward := configNumberOr(instance.Configuration, "riskRewardRatio", 1.5)
+	minimumTakeProfitBps := float64(0)
 	maintenanceMarginBps := configNumberOr(instance.Configuration, "maintenanceMarginBps", 50)
 	liquidationReserveFraction := configNumberOr(instance.Configuration, "liquidationReserveFraction", 0.20)
-	if multiplier <= 0 || minimumBps < 50 || maximumBps < minimumBps || maximumBps > 500 || riskReward < 1 || riskReward > 5 || maintenanceMarginBps < 0 || liquidationReserveFraction < 0.1 || liquidationReserveFraction > 0.5 {
+	if instance.Mode == "PAPER" {
+		maximumBps = math.Min(configNumberOr(instance.Configuration, "stopLossBps", PaperTrainingStopLossBps), PaperTrainingStopLossBps)
+		minimumBps = math.Min(configNumberOr(instance.Configuration, "adaptiveStopMinBps", 75), maximumBps)
+		minimumTakeProfitBps = math.Max(configNumberOr(instance.Configuration, "takeProfitBps", PaperTrainingTakeProfitBps), PaperTrainingTakeProfitBps)
+		minimumMargin := math.Max(20, configNumberOr(instance.Configuration, "minimumInitialMarginUsdt", 20))
+		maximumRiskPct := math.Max(0.01, math.Min(0.20, configNumberOr(instance.Configuration, "paperMaxRiskPerTradePct", 0.05)))
+		targetNotional := minimumMargin * float64(leverage)
+		if targetNotional <= 0 || minimumMargin > allocation {
+			return errors.New("PAPER minimum initial margin is outside the bot allocation")
+		}
+		// Size against 80% of the PAPER risk budget. The central engine evaluates
+		// against current equity (which may be below the original allocation), so
+		// this buffer prevents harmless rounding/small drawdown rejections while
+		// preserving the persisted risk ceiling.
+		maximumRiskStopBps := allocation * maximumRiskPct * 0.80 / targetNotional * 10_000
+		maximumBps = math.Min(maximumBps, maximumRiskStopBps)
+		minimumBps = math.Min(minimumBps, maximumBps)
+	}
+	maximumAllowedStopBps := float64(500)
+	if instance.Mode == "PAPER" {
+		maximumAllowedStopBps = PaperTrainingStopLossBps
+	}
+	if multiplier <= 0 || minimumBps < 50 || maximumBps < minimumBps || maximumBps > maximumAllowedStopBps || riskReward < 1 || riskReward > 5 || maintenanceMarginBps < 0 || liquidationReserveFraction < 0.1 || liquidationReserveFraction > 0.5 {
 		return errors.New("adaptive risk configuration is invalid")
 	}
 	stopBps := math.Max(minimumBps, math.Min(maximumBps, analysis.ATRBps15m*multiplier))
 	liquidationDistanceBps := 10_000/float64(leverage) - maintenanceMarginBps
 	safeLiquidationBps := liquidationDistanceBps * (1 - liquidationReserveFraction)
-	if safeLiquidationBps <= 0 {
-		return errors.New("adaptive stop has no liquidation safety distance")
-	}
-	stopBps = math.Min(stopBps, safeLiquidationBps)
-	if stopBps < minimumBps {
-		return errors.New("adaptive stop cannot satisfy minimum distance before liquidation")
+	if instance.Mode != "PAPER" {
+		if safeLiquidationBps <= 0 {
+			return errors.New("adaptive stop has no liquidation safety distance")
+		}
+		stopBps = math.Min(stopBps, safeLiquidationBps)
+		if stopBps < minimumBps {
+			return errors.New("adaptive stop cannot satisfy minimum distance before liquidation")
+		}
 	}
 	takeBps := stopBps * riskReward
+	if instance.Mode == "PAPER" {
+		takeBps = math.Max(takeBps, minimumTakeProfitBps)
+	}
 	stop, take, err := protectionPrices(markPrice, side, stopBps, takeBps)
 	if err != nil {
 		return err
@@ -146,15 +201,32 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 	if err != nil {
 		return err
 	}
-	quantity, err = capQuantityToAllocation(quantity, markPrice, allocation)
+	maximumNotionalMultiplier := float64(1)
+	if instance.Mode == "PAPER" {
+		maximumNotionalMultiplier = float64(leverage)
+	}
+	quantity, err = capQuantityToAllocation(quantity, markPrice, allocation*maximumNotionalMultiplier)
 	if err != nil {
 		return err
+	}
+	if instance.Mode == "PAPER" {
+		minimumMargin := math.Max(20, configNumberOr(instance.Configuration, "minimumInitialMarginUsdt", 20))
+		slippageBps := configNumberOr(instance.Configuration, "paperSlippageBps", DefaultPaperSlippageBps)
+		quantity, err = enforceMinimumPaperMargin(quantity, markPrice, minimumMargin, leverage, slippageBps)
+		if err != nil {
+			return err
+		}
+		order["initialMarginUsdt"] = minimumMargin
+		order["targetNotionalUsdt"] = minimumMargin * float64(leverage)
 	}
 	order["quantity"], order["stopLoss"], order["takeProfit"] = quantity, stop, take
 	order["stopLossBps"], order["takeProfitBps"], order["fixedRiskPct"] = roundFloat(stopBps, 4), roundFloat(takeBps, 4), riskFraction
 	order["atrStopMultiplier"], order["atrBps15m"], order["riskRewardRatio"] = multiplier, roundFloat(analysis.ATRBps15m, 4), riskReward
 	order["liquidationDistanceBps"], order["liquidationSafetyBps"] = roundFloat(liquidationDistanceBps, 4), roundFloat(safeLiquidationBps, 4)
 	order["riskPlanVersion"] = "ATR_ADAPTIVE_FIXED_RISK_V1"
+	if instance.Mode == "PAPER" {
+		order["riskPlanVersion"] = "PAPER_TRAINING_20PCT_STOP_V1"
+	}
 	order["playbookVersion"] = stringConfigOr(instance.Configuration, "playbookVersion", "TRADING_PLAYBOOK_V1")
 	order["experimentId"] = stringConfigOr(instance.Configuration, "experimentId", "ATR_STOP_WALK_FORWARD_V1")
 	order["experimentVariant"] = stringConfigOr(instance.Configuration, "experimentVariant", "ATR_1_50")
@@ -190,6 +262,61 @@ func capQuantityToAllocation(quantityText, markPrice string, allocation float64)
 	scaled := new(big.Rat).Mul(quantity, new(big.Rat).SetInt(scale))
 	units := new(big.Int).Quo(scaled.Num(), scaled.Denom())
 	return new(big.Rat).Quo(new(big.Rat).SetInt(units), new(big.Rat).SetInt(scale)).FloatString(18), nil
+}
+
+func enforceMinimumPaperMargin(quantityText, markPrice string, minimumMargin float64, leverage int, slippageBps float64) (string, error) {
+	quantity, quantityOK := decimalRat(quantityText)
+	mark, markOK := decimalRat(markPrice)
+	margin, marginOK := decimalRat(strconv.FormatFloat(minimumMargin, 'f', 8, 64))
+	if !quantityOK || !markOK || !marginOK || quantity.Sign() <= 0 || mark.Sign() <= 0 || margin.Sign() <= 0 || leverage < 1 || slippageBps < 0 || slippageBps >= 10_000 {
+		return "", errors.New("PAPER minimum margin sizing input is invalid")
+	}
+	// SELL fills receive adverse downward slippage, so size against the lowest
+	// possible simulated fill. BUY fills then naturally retain a small buffer.
+	slippageRate, _ := new(big.Rat).SetString(strconv.FormatFloat(slippageBps/10_000, 'f', 8, 64))
+	minimumNotional := new(big.Rat).Mul(margin, big.NewRat(int64(leverage), 1))
+	minimumNotional.Quo(minimumNotional, new(big.Rat).Sub(big.NewRat(1, 1), slippageRate))
+	minimumQuantity := new(big.Rat).Quo(minimumNotional, mark)
+	if quantity.Cmp(minimumQuantity) < 0 {
+		quantity = minimumQuantity
+	}
+	return quantity.FloatString(18), nil
+}
+
+func paperContinuousTrainingDecision(instance Instance, markPrice, referencePrice string, closes []domain.Decimal) (Decision, error) {
+	if len(closes) < 21 {
+		return Decision{}, errors.New("continuous PAPER training requires complete 1m chart history")
+	}
+	values := make([]float64, 0, len(closes))
+	for _, closeText := range closes {
+		value, err := strconv.ParseFloat(string(closeText), 64)
+		if err != nil || value <= 0 {
+			return Decision{}, errors.New("continuous PAPER chart contains an invalid close")
+		}
+		values = append(values, value)
+	}
+	fast, slow := ema(values, 9), ema(values, 21)
+	side := "BUY"
+	if fast < slow {
+		side = "SELL"
+	}
+	configuredSide := strings.ToUpper(stringConfigOr(instance.Configuration, "side", "BOTH"))
+	if configuredSide == "BUY" || configuredSide == "SELL" {
+		side = configuredSide
+	}
+	kind, direction := "BUY", "LONG"
+	if side == "SELL" {
+		kind, direction = "SELL", "SHORT"
+	}
+	result := decision(instance, kind, "PAPER sürekli eğitim modu geçerli EMA yönünde "+direction+" kanıt işlemi üretti.", markPrice, referencePrice,
+		map[string]any{"continuousTrainingEntry": true, "selectedSubStrategy": "CONTINUOUS_EMA_TRAINING", "emaFast": roundFloat(fast, 8), "emaSlow": roundFloat(slow, 8)})
+	if result.HypotheticalOrder != nil {
+		result.HypotheticalOrder["continuousTrainingEntry"] = true
+		result.HypotheticalOrder["marginMode"] = "ISOLATED"
+		result.HypotheticalOrder["strategyFamily"] = strings.ToUpper(strings.TrimSpace(instance.StrategyFamily))
+		result.HypotheticalOrder["martingaleAllowed"] = false
+	}
+	return result, nil
 }
 
 func maxInt(left, right int) int {
@@ -387,7 +514,12 @@ func evaluateChartMomentum(instance Instance, markPrice string, closes []domain.
 	return result, nil
 }
 
-const paperSignalExperimentID = "PAPER_SIGNAL_SENSITIVITY_V1"
+const (
+	paperSignalExperimentID      = "PAPER_SIGNAL_SENSITIVITY_V1"
+	PaperTrainingStopLossBps     = float64(2000)
+	PaperTrainingTakeProfitBps   = float64(300)
+	PaperTrainingMinNetProfitBps = float64(300)
+)
 
 type signalExperiment struct {
 	ID, Variant                            string

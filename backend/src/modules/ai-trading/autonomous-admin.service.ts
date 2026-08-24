@@ -3,6 +3,9 @@ import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import { env } from '../../config/env.js';
 import type { BotCapitalInput, NonCriticalBotSettingsInput, PromotionReviewInput, TestnetActivationInput, TriggerPaperGenerationInput } from './autonomous-admin.schema.js';
+import { collectLiveEligibilityEvidence } from './live-eligibility.service.js';
+import { DEFAULT_LIVE_ELIGIBILITY_CONFIG } from './live-eligibility.schema.js';
+import { assessEvolutionReadiness, evolutionConfigForPopulation } from './evolution.service.js';
 
 export const AUTONOMOUS_ADMIN_API_VERSION = 'v1' as const;
 
@@ -47,28 +50,44 @@ export async function getArenaStatus(userId: string) {
 export async function listGenerations(userId: string, limit: number) {
   const rows = await prisma.generation.findMany({
     where: { createdById: userId }, orderBy: [{ number: 'desc' }, { createdAt: 'desc' }], take: limit,
-    include: { _count: { select: { bots: true, mutations: true, crossovers: true } } },
+    include: {
+      _count: { select: { bots: true, mutations: true, crossovers: true } },
+      bots: { where: { type: 'AUTONOMOUS', mode: 'PAPER' }, select: {
+        id: true, lifecycleStatus: true,
+        metrics: { orderBy: [{ snapshotAt: 'desc' }, { id: 'desc' }], take: 1, select: { totalTrades: true, score: true } },
+      } },
+    },
   });
-  return autonomousDTO('GENERATION_LIST', rows.map((row) => ({
-    id: row.id, number: row.number, status: row.status, populationTarget: row.populationTarget,
-    metadata: row.metadata, counts: row._count, startedAt: row.startedAt, completedAt: row.completedAt,
-    createdAt: row.createdAt, updatedAt: row.updatedAt,
-  })));
+  return autonomousDTO('GENERATION_LIST', rows.map((row) => {
+    const config = evolutionConfigForPopulation(row.populationTarget, env.AI_TRADING_EVOLUTION_MIN_TRADES, env.AI_TRADING_MAX_GENERATIONS);
+    const evidence = row.bots.map((bot) => ({
+      botId: bot.id, lifecycleStatus: bot.lifecycleStatus,
+      score: bot.metrics[0]?.score?.toNumber() ?? null, totalTrades: bot.metrics[0]?.totalTrades ?? 0,
+    }));
+    return {
+      id: row.id, number: row.number, status: row.status, populationTarget: row.populationTarget,
+      metadata: row.metadata, counts: row._count,
+      readiness: assessEvolutionReadiness(evidence, row.populationTarget, config),
+      startedAt: row.startedAt, completedAt: row.completedAt, createdAt: row.createdAt, updatedAt: row.updatedAt,
+    };
+  }));
 }
 
 export async function listLiveEligibilityStatus(userId: string) {
-  const bots = await prisma.tradingBot.findMany({
+  const [bots, currentEvidence] = await Promise.all([prisma.tradingBot.findMany({
     where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { in: ['CHAMPION', 'LIVE_ELIGIBLE'] } },
     select: {
       id: true, name: true, mode: true, lifecycleStatus: true, state: true, updatedAt: true,
       championCandidates: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, status: true, score: true, evidence: true, evaluatedAt: true } },
     },
     orderBy: [{ lifecycleStatus: 'desc' }, { updatedAt: 'desc' }],
-  });
+  }), collectLiveEligibilityEvidence(userId, DEFAULT_LIVE_ELIGIBILITY_CONFIG)]);
+  const evidenceByBot = new Map(currentEvidence.map((item) => [item.botId, item]));
   return autonomousDTO('LIVE_ELIGIBILITY_STATUS', bots.map((bot) => ({
     ...bot, latestCandidate: bot.championCandidates[0] ? {
       ...bot.championCandidates[0], score: bot.championCandidates[0].score?.toNumber() ?? null,
-    } : null, championCandidates: undefined, liveActivated: false, manualApprovalRequired: bot.lifecycleStatus === 'LIVE_ELIGIBLE',
+    } : null, championCandidates: undefined, evidence: evidenceByBot.get(bot.id) ?? null,
+    liveActivated: false, manualApprovalRequired: bot.lifecycleStatus === 'LIVE_ELIGIBLE',
   })));
 }
 

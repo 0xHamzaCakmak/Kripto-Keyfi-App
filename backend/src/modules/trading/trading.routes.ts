@@ -49,6 +49,10 @@ import { autonomousAudit, systemHealth } from '../ai-trading/autonomous-observab
 import { autonomousAuditQuerySchema } from '../ai-trading/autonomous-observability.schema.js';
 import { activateTestnet, archive, arenaStatus, autonomousOverview, capital, createPaperBot, generations, liveEligibilityStatus, pausePaperBot, promotion, resumePaperBot, settings, startPaperBot, testnetBotOperation, testnetOperations, triggerGeneration } from '../ai-trading/autonomous-admin.controller.js';
 import { autonomousBotParamsSchema, autonomousGenerationQuerySchema, botCapitalSchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema, promotionReviewSchema, testnetActivationSchema, triggerPaperGenerationSchema } from '../ai-trading/autonomous-admin.schema.js';
+import { changeTradingUniverseAsset, tradingUniverse } from '../ai-trading/trading-universe.controller.js';
+import { tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../ai-trading/trading-universe.schema.js';
+import { coinPerformance } from '../ai-trading/coin-performance.controller.js';
+import { coinPerformanceQuerySchema } from '../ai-trading/coin-performance.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -57,6 +61,9 @@ tradingRouter.get('/system-health', asyncHandler(systemHealth));
 tradingRouter.get('/system-health/audit', validateRequest({ query: autonomousAuditQuerySchema }), asyncHandler(autonomousAudit));
 tradingRouter.get('/autonomous/overview', asyncHandler(autonomousOverview));
 tradingRouter.get('/autonomous/arena-status', asyncHandler(arenaStatus));
+tradingRouter.get('/autonomous/trading-universe', asyncHandler(tradingUniverse));
+tradingRouter.patch('/autonomous/trading-universe/:symbol', validateRequest({ params: tradingUniverseAssetParamsSchema, body: updateTradingUniverseAssetSchema }), asyncHandler(changeTradingUniverseAsset));
+tradingRouter.get('/autonomous/coin-performance', validateRequest({ query: coinPerformanceQuerySchema }), asyncHandler(coinPerformance));
 tradingRouter.get('/autonomous/generations', validateRequest({ query: autonomousGenerationQuerySchema }), asyncHandler(generations));
 tradingRouter.post('/autonomous/generations', validateRequest({ body: triggerPaperGenerationSchema }), asyncHandler(triggerGeneration));
 tradingRouter.get('/autonomous/live-eligibility', asyncHandler(liveEligibilityStatus));

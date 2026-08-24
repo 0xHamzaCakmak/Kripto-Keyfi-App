@@ -37,3 +37,25 @@ func TestValidateFailsClosedWhenEvidenceIsMissing(t *testing.T) {
 		t.Fatalf("missing evidence did not fail closed: %#v", result)
 	}
 }
+
+func TestValidatePaperTrainingKeepsCoreRiskEvidenceWithoutTestnetConfluence(t *testing.T) {
+	input := Input{Regime: "TREND", ConfirmedTimeframes: 1, RiskRewardSatisfied: true, PositionLimitSatisfied: true}
+	if result := ValidatePaperTraining(input); !result.Passed {
+		t.Fatalf("paper training evidence rejected: %#v", result)
+	}
+	input.PositionLimitSatisfied = false
+	if result := ValidatePaperTraining(input); result.Passed || len(result.Failed) != 1 || result.Failed[0] != "POSITION_LIMIT" {
+		t.Fatalf("paper position limit was bypassed: %#v", result)
+	}
+}
+
+func TestContinuousPaperTrainingRelaxesOnlyMarketConfluence(t *testing.T) {
+	input := Input{Regime: "UNCERTAIN", ConfirmedTimeframes: 0, ContinuousTraining: true, RiskRewardSatisfied: true, PositionLimitSatisfied: true}
+	if result := ValidatePaperTraining(input); !result.Passed {
+		t.Fatalf("continuous PAPER evidence should pass market-only relaxation: %#v", result)
+	}
+	input.PositionLimitSatisfied = false
+	if result := ValidatePaperTraining(input); result.Passed || len(result.Failed) != 1 || result.Failed[0] != "POSITION_LIMIT" {
+		t.Fatalf("continuous PAPER must keep exposure limits mandatory: %#v", result)
+	}
+}

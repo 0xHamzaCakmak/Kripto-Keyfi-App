@@ -19,9 +19,11 @@ $engineDirectory = (Resolve-Path (Join-Path $projectRoot 'services\trading-engin
 $environmentFile = Join-Path $projectRoot 'backend\.env'
 
 foreach ($line in Get-Content -LiteralPath $environmentFile) {
-  if ($line -match '^\s*#' -or $line -notmatch '^\s*([^=]+)=(.*)$') { continue }
-  $key = $matches[1].Trim()
-  $value = $matches[2].Trim()
+  if ($line -match '^\s*#') { continue }
+  $parsedLine = [regex]::Match($line, '^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$')
+  if (-not $parsedLine.Success) { continue }
+  $key = $parsedLine.Groups[1].Value.Trim()
+  $value = $parsedLine.Groups[2].Value.Trim()
   if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
     $value = $value.Substring(1, $value.Length - 2)
   }
@@ -33,6 +35,12 @@ foreach ($key in $required) {
   if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($key, 'Process'))) {
     throw "$key is required in backend/.env"
   }
+}
+if ($env:TRADING_ENGINE_TOKEN.Length -lt 32) {
+  throw 'TRADING_ENGINE_TOKEN must contain at least 32 characters in backend/.env'
+}
+if ($env:TRADING_CREDENTIALS_MASTER_KEY -notmatch '^[a-fA-F0-9]{64}$') {
+  throw 'TRADING_CREDENTIALS_MASTER_KEY must be the existing 64-character hexadecimal key in backend/.env'
 }
 
 $env:TRADING_ENGINE_MODE = 'cutover'

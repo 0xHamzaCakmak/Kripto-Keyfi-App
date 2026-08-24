@@ -14,6 +14,9 @@ func TestApprovesOnlyWhenEveryAutonomousLimitPasses(t *testing.T) {
 	if !decision.Approved || decision.Code != "RISK_APPROVED" {
 		t.Fatalf("unexpected decision: %#v", decision)
 	}
+	if decision.Metrics["maxConcurrentPositions"] != 5 || decision.Metrics["executionMode"] != "PAPER" {
+		t.Fatalf("effective risk policy was not exposed in metrics: %#v", decision.Metrics)
+	}
 }
 
 func TestRequiresStopAndMinimumRiskReward(t *testing.T) {
@@ -93,6 +96,23 @@ func TestEnforcesExposureLeverageMarginAndPositionCount(t *testing.T) {
 	snapshot.OpenPositions = 5
 	if decision := Evaluate(safePolicy(), safeIntent(), snapshot); decision.Code != "RISK_MAX_CONCURRENT_POSITIONS" {
 		t.Fatal(decision.Code)
+	}
+}
+
+func TestPaperTrainingFleetAllowsNinetyNineAndStopsAtOneHundred(t *testing.T) {
+	policy := safePolicy()
+	policy.MaxConcurrentPositions = 100
+	policy.MaxTotalExposure = "20000"
+	policy.MaxSymbolExposure = "20000"
+	beforeLimit := safeSnapshot()
+	beforeLimit.OpenPositions = 99
+	if decision := Evaluate(policy, safeIntent(), beforeLimit); !decision.Approved {
+		t.Fatalf("99-position PAPER fleet was rejected: %#v", decision)
+	}
+	atLimit := beforeLimit
+	atLimit.OpenPositions = 100
+	if decision := Evaluate(policy, safeIntent(), atLimit); decision.Code != "RISK_MAX_CONCURRENT_POSITIONS" {
+		t.Fatalf("100-position boundary was not enforced: %#v", decision)
 	}
 }
 

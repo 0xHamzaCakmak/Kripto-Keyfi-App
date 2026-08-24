@@ -31,6 +31,19 @@ func TestAnalyzeMarketRejectsMissingDerivativesEvidence(t *testing.T) {
 	}
 }
 
+func TestAnalyzeMarketTreatsFlatQuantizedSeriesAsRange(t *testing.T) {
+	series := make([]domain.MarketCandle, 220)
+	for index := range series {
+		series[index] = domain.MarketCandle{Open: "1", High: "1", Low: "1", Close: "1", Volume: "100"}
+	}
+	snapshot := MarketSnapshot{Candles: map[string][]domain.MarketCandle{"1m": series, "5m": series, "15m": series, "1h": series, "4h": series},
+		Derivatives: domain.DerivativesContext{FundingRate: "0", OpenInterest: "100", PreviousOpenInterest: "100"}}
+	analysis, err := AnalyzeMarket(snapshot, "BUY")
+	if err != nil || analysis.Regime != "RANGE" || analysis.ATRExpansion != 1 {
+		t.Fatalf("flat valid series was not classified safely: %#v err=%v", analysis, err)
+	}
+}
+
 func trendingSnapshot(direction float64) MarketSnapshot {
 	series := make([]domain.MarketCandle, 220)
 	start := 100.0

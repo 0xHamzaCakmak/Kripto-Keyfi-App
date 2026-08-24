@@ -109,7 +109,10 @@ func main() {
 			owner := fmt.Sprintf("%s:%d", hostname(), os.Getpid())
 			// Strategy evaluation reads real public market prices through a read-only interface.
 			// Account/order/reconciliation paths remain pinned to demo endpoints above.
-			runner := bot.NewStrategyRunner(store, &http.Client{Timeout: 8 * time.Second}, exchange.DemoEndpoints(), exchange.PublicMarketEndpoints())
+			// PAPER and SHADOW consume real public market data through a read-only
+			// PriceReader. Demo/Testnet endpoints remain exclusive to execution and
+			// reconciliation services.
+			runner := bot.NewStrategyRunner(store, &http.Client{Timeout: 8 * time.Second}, exchange.PublicMarketEndpoints(), exchange.PublicMarketEndpoints())
 			if cfg.LiquidationStream {
 				collector := liquidation.New(cfg.LiquidationURL, logger)
 				runner.SetLiquidationReader(collector)

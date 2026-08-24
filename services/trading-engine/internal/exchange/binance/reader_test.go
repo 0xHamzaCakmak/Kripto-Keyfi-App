@@ -185,6 +185,20 @@ func TestReaderLoadsFuturesChartCloses(t *testing.T) {
 	}
 }
 
+func TestReaderRejectsMarkPriceForAnotherSymbol(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Query().Get("symbol") != "ETHUSDT" {
+			t.Fatalf("unexpected mark query: %s", request.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"symbol":"ENAUSDT","markPrice":"0.1595"}`))
+	}))
+	defer server.Close()
+	reader := New(Options{Client: server.Client(), FuturesURL: server.URL})
+	if price, err := reader.GetMarkPrice(t.Context(), "ETHUSDT"); err == nil || price != "" {
+		t.Fatalf("cross-symbol mark price was accepted: price=%s err=%v", price, err)
+	}
+}
+
 func TestReaderLoadsDerivativesContext(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -194,7 +208,7 @@ func TestReaderLoadsDerivativesContext(t *testing.T) {
 			if request.URL.Query().Get("period") != "5m" || request.URL.Query().Get("limit") != "2" {
 				t.Fatalf("unexpected OI query: %s", request.URL.RawQuery)
 			}
-			_, _ = w.Write([]byte(`[{"sumOpenInterest":"100"},{"sumOpenInterest":"110"}]`))
+			_, _ = w.Write([]byte(`[{"symbol":"BTCUSDT","sumOpenInterest":"100"},{"symbol":"BTCUSDT","sumOpenInterest":"110"}]`))
 		default:
 			http.NotFound(w, request)
 		}

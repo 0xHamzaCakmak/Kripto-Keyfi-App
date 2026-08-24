@@ -34,7 +34,7 @@ type MarketAccount struct {
 }
 type PriceReaderFactory func(MarketAccount) (PriceReader, error)
 type StrategyStore interface {
-	LoadBotMarketAccount(context.Context, string, string) (MarketAccount, error)
+	LoadBotMarketAccount(context.Context, string, string, string) (MarketAccount, error)
 	LoadBotStrategyFamily(context.Context, string) (string, error)
 	LoadLatestBotDecisionPrice(context.Context, string) (string, error)
 	LoadRecentNewsContext(context.Context, string, time.Time) (NewsContext, error)
@@ -124,7 +124,7 @@ func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision,
 		}
 		instance.StrategyFamily = family
 	}
-	account, err := r.store.LoadBotMarketAccount(ctx, instance.UserID, instance.ExchangeAccountID)
+	account, err := r.store.LoadBotMarketAccount(ctx, instance.UserID, instance.ExchangeAccountID, instance.Mode)
 	if err != nil {
 		return Decision{}, err
 	}
