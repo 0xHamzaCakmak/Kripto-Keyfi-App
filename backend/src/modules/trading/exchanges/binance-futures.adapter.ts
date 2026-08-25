@@ -8,6 +8,7 @@ import { ExchangeAdapterError } from './exchange-adapter.js';
 import { getJson, requestJson } from './http.js';
 
 const FUTURES_BASE_URL = 'https://demo-fapi.binance.com';
+const FUTURES_PUBLIC_MARKET_BASE_URL = 'https://fapi.binance.com';
 const SPOT_BASE_URL = 'https://demo-api.binance.com';
 
 type BinanceFuturesAccount = { canTrade?: boolean; canWithdraw?: boolean; assets?: Array<{ asset?: string; walletBalance?: string; availableBalance?: string; unrealizedProfit?: string }> };
@@ -31,6 +32,16 @@ type BinanceUserTrade = {
   id?: number; orderId?: number; symbol?: string; side?: string; price?: string; qty?: string; quoteQty?: string;
   realizedPnl?: string; commission?: string; commissionAsset?: string; maker?: boolean; time?: number;
 };
+
+/**
+ * Public production-market contract metadata for PAPER/TRAINING. This path
+ * deliberately has no API-key dependency; private Demo/Testnet connectivity
+ * must never stop the simulated fleet from rotating through valid markets.
+ */
+export async function getBinanceFuturesPublicSymbols(): Promise<ExchangeSymbol[]> {
+  const info = await getJson(new URL('/fapi/v1/exchangeInfo', FUTURES_PUBLIC_MARKET_BASE_URL), {}) as BinanceExchangeInfo;
+  return mapFuturesSymbols(info, new Map(), 20);
+}
 
 export class BinanceFuturesAdapter implements ExchangeAdapter {
   constructor(private readonly credentials: ExchangeCredentials) {}
@@ -83,20 +94,7 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
     const brackets = Array.isArray(bracketsBody) ? bracketsBody as BinanceLeverageBracket[] : [];
     const leverageBySymbol = new Map(brackets.flatMap((item) => item.symbol && item.brackets?.[0]?.initialLeverage
       ? [[item.symbol, item.brackets[0].initialLeverage] as const] : []));
-    return (info.symbols ?? []).flatMap((symbol) => {
-      if (symbol.status !== 'TRADING' || symbol.quoteAsset !== 'USDT' || symbol.contractType !== 'PERPETUAL' || !symbol.symbol) return [];
-      const price = filter(symbol, 'PRICE_FILTER');
-      const lot = filter(symbol, 'LOT_SIZE');
-      const marketLot = filter(symbol, 'MARKET_LOT_SIZE');
-      const notional = filter(symbol, 'MIN_NOTIONAL');
-      const maxLeverage = leverageBySymbol.get(symbol.symbol);
-      if (!price?.tickSize || !lot?.stepSize || !lot.minQty || !lot.maxQty || !notional?.notional || maxLeverage === undefined) return [];
-      return [{
-        symbol: symbol.symbol, baseAsset: symbol.baseAsset ?? symbol.symbol.replace(/USDT$/, ''), quoteAsset: 'USDT', status: 'TRADING' as const,
-        tickSize: price.tickSize, stepSize: lot.stepSize, minQuantity: lot.minQty,
-        maxQuantity: marketLot?.maxQty ?? lot.maxQty, minNotional: notional.notional, maxLeverage,
-      }];
-    });
+    return mapFuturesSymbols(info, leverageBySymbol);
   }
 
   async getMarkPrice(symbol: string): Promise<string> {
@@ -241,6 +239,22 @@ function signedQuery(params: Record<string, string>, secret: string): string {
 }
 
 function filter(symbol: BinanceExchangeSymbol, filterType: string) { return symbol.filters?.find((item) => item.filterType === filterType); }
+function mapFuturesSymbols(info: BinanceExchangeInfo, leverageBySymbol: Map<string, number>, fallbackMaxLeverage?: number): ExchangeSymbol[] {
+  return (info.symbols ?? []).flatMap((symbol) => {
+    if (symbol.status !== 'TRADING' || symbol.quoteAsset !== 'USDT' || symbol.contractType !== 'PERPETUAL' || !symbol.symbol) return [];
+    const price = filter(symbol, 'PRICE_FILTER');
+    const lot = filter(symbol, 'LOT_SIZE');
+    const marketLot = filter(symbol, 'MARKET_LOT_SIZE');
+    const notional = filter(symbol, 'MIN_NOTIONAL');
+    const maxLeverage = leverageBySymbol.get(symbol.symbol) ?? fallbackMaxLeverage;
+    if (!price?.tickSize || !lot?.stepSize || !lot.minQty || !lot.maxQty || !notional?.notional || maxLeverage === undefined) return [];
+    return [{
+      symbol: symbol.symbol, baseAsset: symbol.baseAsset ?? symbol.symbol.replace(/USDT$/, ''), quoteAsset: 'USDT', status: 'TRADING' as const,
+      tickSize: price.tickSize, stepSize: lot.stepSize, minQuantity: lot.minQty,
+      maxQuantity: marketLot?.maxQty ?? lot.maxQty, minNotional: notional.notional, maxLeverage,
+    }];
+  });
+}
 function binanceOrderType(type: PlaceOrderInput['type']) { return type === 'STOP_LIMIT' ? 'STOP' : type; }
 function fromBinanceOrderType(type?: string): ExchangeOrder['type'] { return type === 'STOP' ? 'STOP_LIMIT' : type === 'LIMIT' || type === 'STOP_MARKET' ? type : 'MARKET'; }
 function mapOrder(order: BinanceOrder): ExchangeOrder {

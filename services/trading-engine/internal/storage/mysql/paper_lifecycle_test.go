@@ -56,25 +56,28 @@ func TestPaperAccountingIncludesEntryAndExitCosts(t *testing.T) {
 
 func TestPaperTrainingPolicyIsSeparateFromTestnetAndSupportsOneHundredPositions(t *testing.T) {
 	base := autonomousrisk.Policy{MaxConcurrentPositions: 100}
-	if got := autonomousPolicyForMode(base, "PAPER").MaxConcurrentPositions; got != 100 {
+	if got := autonomousPolicyForMode(base, "PAPER", 100).MaxConcurrentPositions; got != 100 {
 		t.Fatalf("paper maximum: %d", got)
 	}
-	if got := autonomousPolicyForMode(base, "DEMO").MaxConcurrentPositions; got != 15 {
+	if got := autonomousPolicyForMode(base, "DEMO", 100).MaxConcurrentPositions; got != 15 {
 		t.Fatalf("testnet maximum changed: %d", got)
 	}
-	base.MaxConcurrentPositions = 40
-	if got := autonomousPolicyForMode(base, "PAPER").MaxConcurrentPositions; got != 40 {
+	base.MaxConcurrentPositions = 5
+	if got := autonomousPolicyForMode(base, "PAPER", 40).MaxConcurrentPositions; got != 40 {
 		t.Fatalf("paper did not honor persisted admin maximum: %d", got)
+	}
+	if got := autonomousPolicyForMode(base, "DEMO", 100).MaxConcurrentPositions; got != 5 {
+		t.Fatalf("paper profile leaked into testnet maximum: %d", got)
 	}
 }
 
 func TestPaperTrainingExposureCapacityIsSeparateFromTestnet(t *testing.T) {
 	base := autonomousrisk.Policy{MaxConcurrentPositions: 100, MaxPositionSize: "100", MaxTotalExposure: "1500", MaxSymbolExposure: "1500"}
-	training := paperTrainingExposurePolicy(autonomousPolicyForMode(base, "PAPER"))
+	training := paperTrainingExposurePolicy(autonomousPolicyForMode(base, "PAPER", 100))
 	if training.MaxTotalExposure != "10000" || training.MaxSymbolExposure != "10000" {
 		t.Fatalf("paper fleet exposure was not sized for 100 independent allocations: %#v", training)
 	}
-	testnet := autonomousPolicyForMode(base, "DEMO")
+	testnet := autonomousPolicyForMode(base, "DEMO", 100)
 	if testnet.MaxConcurrentPositions != 15 || testnet.MaxTotalExposure != "1500" || testnet.MaxSymbolExposure != "1500" {
 		t.Fatalf("testnet policy was changed by PAPER training capacity: %#v", testnet)
 	}

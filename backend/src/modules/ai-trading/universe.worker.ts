@@ -3,6 +3,7 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { logger } from '../../utils/logger.js';
 import { adapterFor } from '../trading/exchange-account.service.js';
+import { getBinanceFuturesPublicSymbols } from '../trading/exchanges/binance-futures.adapter.js';
 import type { ExchangeOrder } from '../trading/exchanges/exchange-adapter.js';
 import { cancelTradingEngineOrder, getTradingEngineSnapshot } from '../trading/trading-engine.client.js';
 import { ensureCoreTradingUniverse, getEnabledTradingSymbols } from './trading-universe.service.js';
@@ -93,9 +94,9 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
     });
     if (!account?.riskProfile?.enabled || account.riskProfile.accountKillSwitch) return { status: 'ACCOUNT_NOT_READY' as const };
     const adapter = adapterFor(account);
-    const privateExecutionReady = account.connectionStatus === 'CONNECTED';
-    const [rules, bots, configuredSymbols] = await Promise.all([
-      adapter.getSymbols(),
+    let privateExecutionReady = account.connectionStatus === 'CONNECTED';
+    const [publicRules, bots, configuredSymbols] = await Promise.all([
+      getBinanceFuturesPublicSymbols(),
       prisma.tradingBot.findMany({
         where: {
           userId: account.userId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'DEMO'] }, lifecycleStatus: 'PAPER',
@@ -110,14 +111,22 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
     // PAPER rotation only needs public exchange metadata. A degraded private
     // TESTNET account must pause DEMO reconciliation/execution without
     // stranding the independent simulation fleet on stale symbols.
-    const snapshot = privateExecutionReady
-      ? await getTradingEngineSnapshot(account)
-      : { balances: [], symbols: rules, orders: [], positions: [] };
+    let privateRules = [] as Awaited<ReturnType<typeof adapter.getSymbols>>;
+    let snapshot: Awaited<ReturnType<typeof getTradingEngineSnapshot>> = { balances: [], symbols: publicRules, orders: [], positions: [] };
+    if (privateExecutionReady) {
+      try {
+        [privateRules, snapshot] = await Promise.all([adapter.getSymbols(), getTradingEngineSnapshot(account)]);
+      } catch (error) {
+        privateExecutionReady = false;
+        logger.warn({ err: error, exchangeAccountId: account.id }, 'Futures Testnet private connection degraded; PAPER universe continues on Binance public market data');
+      }
+    }
     const positions = snapshot.positions;
-    const exchangeSymbols = rules.filter((rule) => rule.maxLeverage >= 20).map((rule) => rule.symbol).sort();
-    const exchangeAllowed = new Set(exchangeSymbols);
-    const symbols = configuredSymbols.filter((symbol) => exchangeAllowed.has(symbol));
-    if (symbols.length === 0) throw new Error('Core Trading Universe has no enabled Binance TESTNET USDT perpetual symbol supporting 20x.');
+    const paperAllowed = new Set(publicRules.map((rule) => rule.symbol));
+    const paperSymbols = configuredSymbols.filter((symbol) => paperAllowed.has(symbol));
+    if (paperSymbols.length === 0) throw new Error('Core Trading Universe has no enabled Binance USDT perpetual symbol for PAPER training.');
+    const demoAllowed = new Set(privateRules.filter((rule) => rule.maxLeverage >= 20).map((rule) => rule.symbol));
+    const demoSymbols = configuredSymbols.filter((symbol) => demoAllowed.has(symbol));
     const occupied = new Set(positions.filter((position) => Number(position.quantity) !== 0).map((position) => position.symbol));
     const paper = bots.filter((bot) => bot.mode === 'PAPER');
     const demo = privateExecutionReady ? bots.filter((bot) => bot.mode === 'DEMO') : [];
@@ -161,8 +170,8 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       const bot = paper[index]!;
       const leverage = fleetLeverage(index % 16, 16);
       const flat = !bot.paperPosition || bot.paperPosition.netQuantity.isZero();
-      const target = flat ? universeCandidate(symbols, slot, index, paper.length) : bot.symbol;
-      if (!exchangeAllowed.has(target)) continue;
+      const target = flat ? universeCandidate(paperSymbols, slot, index, paper.length) : bot.symbol;
+      if (!paperAllowed.has(target)) continue;
       const changedSymbol = target !== bot.symbol;
       const allocation = scaleTarget.get(bot.id) ?? botAllocationUsdt(bot.configuration);
       // Runtime policy is safe to refresh while a trade is open; symbol
@@ -195,12 +204,12 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       const allocation = scaleTarget.get(bot.id) ?? botAllocationUsdt(bot.configuration);
       let target = bot.symbol;
       if (pending && !hasPosition) {
-        for (let attempt = 0; attempt < symbols.length; attempt += 1) {
-          const candidate = universeCandidate(symbols, slot, index + attempt, demo.length);
+        for (let attempt = 0; attempt < demoSymbols.length; attempt += 1) {
+          const candidate = universeCandidate(demoSymbols, slot, index + attempt, demo.length);
           if (!reserved.has(candidate)) { target = candidate; break; }
         }
       }
-      if (!exchangeAllowed.has(target)) continue;
+      if (!demoAllowed.has(target)) continue;
       reserved.add(target);
       const changedSymbol = target !== bot.symbol;
       if (!hasPosition && !pending) {
@@ -229,8 +238,9 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       ...updates,
       prisma.tradingAuditLog.create({ data: {
         userId: account.userId, exchangeAccountId: account.id, action: 'AI_FUTURES_UNIVERSE_ROTATED', entityType: 'EXCHANGE_ACCOUNT', entityId: account.id,
-        metadata: { universeSize: symbols.length, rotatedPaper, rotatedDemo, stagedDemo, adjustedPositions, canceledStaleProtectives, autoScaledCapital,
-          paperTrainingPolicy: { adminConfiguredMaxOpenPositions: account.riskProfile.maxOpenPositions,
+        metadata: { universeSize: paperSymbols.length, paperUniverseSize: paperSymbols.length, testnetUniverseSize: demoSymbols.length,
+          privateExecutionReady, rotatedPaper, rotatedDemo, stagedDemo, adjustedPositions, canceledStaleProtectives, autoScaledCapital,
+          paperTrainingPolicy: { adminConfiguredMaxOpenPositions: account.riskProfile.paperMaxOpenPositions,
             maxOpenPositionsCeiling: PAPER_TRAINING_MAX_OPEN_POSITIONS, stopLossBps: PAPER_TRAINING_STOP_LOSS_BPS,
             takeProfitBps: PAPER_TRAINING_TAKE_PROFIT_BPS, intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS,
             minimumInitialMarginUsdt: PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT,
@@ -240,7 +250,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
           projectedDemoAllocation, leverageMin: 5, leverageMax: 20, productionLive: false, occupiedSymbolsPreserved: [...occupied] },
       } }),
     ]);
-    return { status: 'ROTATED' as const, universeSize: symbols.length, paperBots: paper.length, demoBots: demo.length, rotatedPaper, rotatedDemo, stagedDemo, adjustedPositions, canceledStaleProtectives, autoScaledCapital, occupied: occupied.size };
+    return { status: 'ROTATED' as const, universeSize: paperSymbols.length, paperBots: paper.length, demoBots: demo.length, privateExecutionReady, rotatedPaper, rotatedDemo, stagedDemo, adjustedPositions, canceledStaleProtectives, autoScaledCapital, occupied: occupied.size };
   } finally {
     universeCycleRunning = false;
   }

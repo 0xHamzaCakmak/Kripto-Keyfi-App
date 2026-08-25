@@ -1,7 +1,7 @@
 import { prisma } from '../src/database/prisma.js';
 
 const since = new Date(Date.now() - 60_000);
-const [bots, openTrades, recentAudit] = await Promise.all([
+const [bots, openTrades, recentAudit, riskProfiles, enabledUniverse] = await Promise.all([
   prisma.tradingBot.findMany({
     where: { type: 'AUTONOMOUS', mode: 'PAPER' },
     select: { id: true, symbol: true, configuration: true, state: true, lastErrorCode: true },
@@ -14,8 +14,13 @@ const [bots, openTrades, recentAudit] = await Promise.all([
     where: { action: { in: ['AUTONOMOUS_RISK_REJECTED', 'AUTONOMOUS_RISK_BLOCKED', 'AUTONOMOUS_RISK_APPROVED'] }, createdAt: { gte: since } },
     select: { action: true, metadata: true },
   }),
+  prisma.tradingRiskProfile.findMany({
+    where: { exchangeAccount: { provider: 'BINANCE', accountType: 'USDT_M', isActive: true } },
+    select: { exchangeAccountId: true, maxOpenPositions: true, paperMaxOpenPositions: true },
+  }),
+  prisma.tradingUniverseAsset.findMany({ where: { enabled: true }, select: { symbol: true } }),
 ]);
-const universe = new Set((await prisma.tradingUniverseAsset.findMany({ select: { symbol: true } })).map((item) => item.symbol));
+const universe = new Set(enabledUniverse.map((item) => item.symbol));
 const riskCounts: Record<string, number> = {};
 for (const event of recentAudit) {
   const metadata = event.metadata && !Array.isArray(event.metadata) && typeof event.metadata === 'object' ? event.metadata : {};
@@ -31,6 +36,9 @@ console.log(JSON.stringify({
     return value && !Array.isArray(value) && typeof value === 'object' && value.paperAlwaysInMarket === true;
   }).length,
   openTrades: openTrades.length,
+  openTradeSymbols: [...new Set(openTrades.map((trade) => trade.symbol))].sort(),
+  enabledUniverseSymbols: [...universe].sort(),
+  riskProfiles,
   openTradesOutsideCore: openTrades.filter((trade) => !universe.has(trade.symbol)).length,
   openTradesBelowTwentyMargin: openTrades.filter((trade) => trade.entryPrice.mul(trade.quantity).div(Math.max(1, trade.leverage)).lt(20)).length,
   latestOpenTradeSizing: openTrades.sort((left, right) => right.openedAt.getTime() - left.openedAt.getTime()).slice(0, 10).map((trade) => ({

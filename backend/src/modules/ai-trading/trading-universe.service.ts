@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
-import { adapterFor } from '../trading/exchange-account.service.js';
+import { getBinanceFuturesPublicSymbols } from '../trading/exchanges/binance-futures.adapter.js';
 import type { ExchangeSymbol } from '../trading/exchanges/exchange-adapter.js';
 import type { SearchTradingUniverseQuery } from './trading-universe.schema.js';
 
@@ -132,11 +132,11 @@ async function loadExchangeCatalog(userId: string, required: boolean): Promise<E
   const cached = exchangeCatalogCache.get(account.id);
   if (cached && cached.expiresAt > Date.now()) return { account, symbols: cached.symbols };
   try {
-    const symbols = (await adapterFor(account).getSymbols()).filter((item) => item.status === 'TRADING' && item.quoteAsset === 'USDT');
+    const symbols = (await getBinanceFuturesPublicSymbols()).filter((item) => item.status === 'TRADING' && item.quoteAsset === 'USDT');
     exchangeCatalogCache.set(account.id, { expiresAt: Date.now() + 5 * 60_000, symbols });
     return { account, symbols };
   } catch (error) {
-    if (required) throw new ApiError(503, 'Bağlı Binance Futures sembol kataloğu alınamadı. Borsa bağlantısını kontrol edip yeniden deneyin.', 'TRADING_UNIVERSE_EXCHANGE_CATALOG_UNAVAILABLE', error instanceof Error ? error.message : undefined);
+    if (required) throw new ApiError(503, 'Binance Futures public sembol kataloğu alınamadı. Ağ erişimini kontrol edip yeniden deneyin.', 'TRADING_UNIVERSE_EXCHANGE_CATALOG_UNAVAILABLE', error instanceof Error ? error.message : undefined);
     return null;
   }
 }

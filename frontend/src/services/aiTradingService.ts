@@ -222,7 +222,7 @@ export type BotCapitalResult = { bot: AutonomousBot; allocationUsdt: number; max
 export type TradingRiskProfile = {
   id: string; exchangeAccountId: string; enabled: boolean; accountKillSwitch: boolean; killSwitchReason: string | null;
   globalKillSwitch: boolean; globalKillSwitchReason: string | null; globalKillSwitchActivatedAt: string | null;
-  maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string; maxOpenPositions: number; maxSymbolPositions: number; maxLeverage: number;
+  maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string; maxOpenPositions: number; paperMaxOpenPositions: number; maxSymbolPositions: number; maxLeverage: number;
   minAvailableBalance: string; maxOrdersPerMinute: number; maxDailyOrders: number; maxDailyLoss: string | null;
   maxRiskPerTradePct: string; maxDailyLossPct: string; maxWeeklyLossPct: string; maxDrawdownPct: string; maxSymbolOpenNotional: string;
   minRiskRewardRatio: string; stopLossRequired: true; marginModePolicy: 'ISOLATED_ONLY' | 'ALLOW_CROSS'; cooldownSeconds: number; maxConsecutiveLosses: number;

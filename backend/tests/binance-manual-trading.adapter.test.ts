@@ -1,8 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BinanceFuturesAdapter } from '../src/modules/trading/exchanges/binance-futures.adapter.js';
+import { BinanceFuturesAdapter, getBinanceFuturesPublicSymbols } from '../src/modules/trading/exchanges/binance-futures.adapter.js';
 
 describe('Binance manual trading adapter', () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it('loads PAPER symbol rules from the public production market without a private API request', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = input.toString();
+      if (url === 'https://fapi.binance.com/fapi/v1/exchangeInfo') return Response.json({ symbols: [{
+        symbol: 'SOLUSDT', status: 'TRADING', baseAsset: 'SOL', quoteAsset: 'USDT', contractType: 'PERPETUAL',
+        filters: [
+          { filterType: 'PRICE_FILTER', tickSize: '0.001' },
+          { filterType: 'LOT_SIZE', stepSize: '0.1', minQty: '0.1', maxQty: '10000' },
+          { filterType: 'MARKET_LOT_SIZE', maxQty: '1000' },
+          { filterType: 'MIN_NOTIONAL', notional: '5' },
+        ],
+      }] });
+      return Response.json({}, { status: 401 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getBinanceFuturesPublicSymbols()).resolves.toMatchObject([{ symbol: 'SOLUSDT', maxLeverage: 20 }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0].toString()).not.toContain('leverageBracket');
+  });
 
   it('combines exchange filters and leverage brackets into symbol rules', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {

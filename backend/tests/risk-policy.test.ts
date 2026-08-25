@@ -3,8 +3,8 @@ import { effectiveAutonomousPositionLimits } from '../src/modules/trading/risk.s
 
 describe('effective autonomous position limits', () => {
   it('honors the admin value for PAPER and keeps TESTNET/LIVE capped', () => {
-    expect(effectiveAutonomousPositionLimits(100)).toEqual({ paper: 100, futuresTestnet: 15, live: 15 });
-    expect(effectiveAutonomousPositionLimits(40)).toEqual({ paper: 40, futuresTestnet: 15, live: 15 });
-    expect(effectiveAutonomousPositionLimits(10)).toEqual({ paper: 10, futuresTestnet: 10, live: 10 });
+    expect(effectiveAutonomousPositionLimits(5, 100)).toEqual({ paper: 100, futuresTestnet: 5, live: 5 });
+    expect(effectiveAutonomousPositionLimits(40, 80)).toEqual({ paper: 80, futuresTestnet: 15, live: 15 });
+    expect(effectiveAutonomousPositionLimits(10, 25)).toEqual({ paper: 25, futuresTestnet: 10, live: 10 });
   });
 });

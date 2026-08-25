@@ -34,11 +34,12 @@ func evaluateAutonomousPaperRisk(ctx context.Context, tx *sql.Tx, instance bot.I
 		intent.Mode = "PAPER"
 	}
 	var policy autonomousrisk.Policy
+	var paperMaxOpenPositions int
 	var starting, netQuantity, realized, unrealized, fees, lastMark string
 	var lastFill sql.NullTime
 	err := tx.QueryRowContext(ctx, `SELECT p.enabled, c.globalKillSwitch, p.accountKillSwitch,
 CAST(p.maxRiskPerTradePct AS CHAR), CAST(p.maxDailyLossPct AS CHAR), CAST(p.maxWeeklyLossPct AS CHAR), CAST(p.maxDrawdownPct AS CHAR),
-p.maxLeverage, p.maxOpenPositions, CAST(p.maxAccountOpenNotional AS CHAR), CAST(p.maxSymbolOpenNotional AS CHAR),
+p.maxLeverage, p.maxOpenPositions, p.paperMaxOpenPositions, CAST(p.maxAccountOpenNotional AS CHAR), CAST(p.maxSymbolOpenNotional AS CHAR),
 CAST(p.maxOrderNotional AS CHAR), CAST(p.minRiskRewardRatio AS CHAR), p.stopLossRequired, p.marginModePolicy,
 p.cooldownSeconds, p.maxConsecutiveLosses, CAST(b.startingPaperBalance AS CHAR),
 COALESCE(CAST(pos.netQuantity AS CHAR), '0'), COALESCE(CAST(pos.realizedPnl AS CHAR), '0'),
@@ -51,7 +52,7 @@ LEFT JOIN trading_bot_paper_positions pos ON pos.tradingBotId = b.id
 WHERE b.id = ? AND b.userId = ? FOR UPDATE`, instance.ID, instance.UserID).Scan(
 		&policy.Enabled, &policy.GlobalKillSwitch, &policy.AccountKillSwitch,
 		&policy.MaxRiskPerTradePct, &policy.MaxDailyLossPct, &policy.MaxWeeklyLossPct, &policy.MaxDrawdownPct,
-		&policy.MaxLeverage, &policy.MaxConcurrentPositions, &policy.MaxTotalExposure, &policy.MaxSymbolExposure,
+		&policy.MaxLeverage, &policy.MaxConcurrentPositions, &paperMaxOpenPositions, &policy.MaxTotalExposure, &policy.MaxSymbolExposure,
 		&policy.MaxPositionSize, &policy.MinRiskReward, &policy.StopLossRequired, &policy.MarginModePolicy,
 		&policy.CooldownSeconds, &policy.MaxConsecutiveLosses, &starting, &netQuantity, &realized, &unrealized, &fees, &lastMark, &lastFill)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -60,7 +61,7 @@ WHERE b.id = ? AND b.userId = ? FOR UPDATE`, instance.ID, instance.UserID).Scan(
 	if err != nil {
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous risk profile: %w", err)
 	}
-	policy = autonomousPolicyForMode(policy, instance.Mode)
+	policy = autonomousPolicyForMode(policy, instance.Mode, paperMaxOpenPositions)
 	if instance.Mode == "SHADOW" {
 		shadowErr := tx.QueryRowContext(ctx, `SELECT CAST(netQuantity AS CHAR), CAST(cumulativePnl AS CHAR),
 CAST(unrealizedPnl AS CHAR), CAST(totalFees AS CHAR), CAST(markPrice AS CHAR), occurredAt
@@ -243,10 +244,11 @@ func coreUniverseAllowsExposure(riskReducing, configured, enabled bool) bool {
 	return riskReducing || (configured && enabled)
 }
 
-func autonomousPolicyForMode(policy autonomousrisk.Policy, mode string) autonomousrisk.Policy {
+func autonomousPolicyForMode(policy autonomousrisk.Policy, mode string, paperConfigured int) autonomousrisk.Policy {
 	if mode == "PAPER" {
-		// PAPER follows the admin-owned persisted limit, up to its supported
-		// training ceiling, so Risk Management changes take effect immediately.
+		// PAPER has an independent persisted profile. The shared account limit
+		// remains the Futures Testnet/LIVE limit and is never widened here.
+		policy.MaxConcurrentPositions = paperConfigured
 		if policy.MaxConcurrentPositions < 1 {
 			policy.MaxConcurrentPositions = 1
 		}

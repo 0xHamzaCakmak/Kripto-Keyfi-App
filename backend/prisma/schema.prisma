@@ -1694,6 +1694,7 @@ model TradingRiskProfile {
   maxInitialMargin       Decimal  @default(50) @db.Decimal(36, 18)
   maxAccountOpenNotional Decimal  @default(500) @db.Decimal(36, 18)
   maxOpenPositions       Int      @default(5)
+  paperMaxOpenPositions  Int      @default(100)
   maxSymbolPositions     Int      @default(1)
   maxLeverage            Int      @default(5)
   minAvailableBalance    Decimal  @default(20) @db.Decimal(36, 18)

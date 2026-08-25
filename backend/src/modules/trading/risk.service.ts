@@ -8,7 +8,7 @@ import type { UpdateKillSwitchInput, UpdateRiskProfileInput } from './risk.schem
 const riskSelect = {
   id: true, exchangeAccountId: true, enabled: true, accountKillSwitch: true, killSwitchReason: true,
   maxOrderNotional: true, maxInitialMargin: true, maxAccountOpenNotional: true,
-  maxOpenPositions: true, maxSymbolPositions: true, maxLeverage: true, minAvailableBalance: true,
+  maxOpenPositions: true, paperMaxOpenPositions: true, maxSymbolPositions: true, maxLeverage: true, minAvailableBalance: true,
   maxOrdersPerMinute: true, maxDailyOrders: true, maxDailyLoss: true,
   maxRiskPerTradePct: true, maxDailyLossPct: true, maxWeeklyLossPct: true, maxDrawdownPct: true,
   maxSymbolOpenNotional: true, minRiskRewardRatio: true, stopLossRequired: true,
@@ -23,12 +23,12 @@ export async function getRiskProfile(userId: string, exchangeAccountId: string) 
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true, reason: true, activatedAt: true } }),
   ]);
   if (!profile || !global) throw new ApiError(503, 'Risk profili hazır değil.', 'RISK_PROFILE_UNAVAILABLE');
-  return { ...serializeProfile(profile), effectiveMaxOpenPositions: effectiveAutonomousPositionLimits(profile.maxOpenPositions),
+  return { ...serializeProfile(profile), effectiveMaxOpenPositions: effectiveAutonomousPositionLimits(profile.maxOpenPositions, profile.paperMaxOpenPositions),
     globalKillSwitch: global.globalKillSwitch, globalKillSwitchReason: global.reason, globalKillSwitchActivatedAt: global.activatedAt };
 }
 
-export function effectiveAutonomousPositionLimits(configured: number) {
-  const paper = Math.max(1, Math.min(configured, 100));
+export function effectiveAutonomousPositionLimits(configured: number, paperConfigured = 100) {
+  const paper = Math.max(1, Math.min(paperConfigured, 100));
   const testnetLive = Math.max(1, Math.min(configured, 15));
   return { paper, futuresTestnet: testnetLive, live: testnetLive };
 }
@@ -46,6 +46,7 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
   if (input.maxInitialMargin !== undefined) data.maxInitialMargin = input.maxInitialMargin;
   if (input.maxAccountOpenNotional !== undefined) data.maxAccountOpenNotional = input.maxAccountOpenNotional;
   if (input.maxOpenPositions !== undefined) data.maxOpenPositions = input.maxOpenPositions;
+  if (input.paperMaxOpenPositions !== undefined) data.paperMaxOpenPositions = input.paperMaxOpenPositions;
   if (input.maxSymbolPositions !== undefined) data.maxSymbolPositions = input.maxSymbolPositions;
   if (input.maxLeverage !== undefined) data.maxLeverage = input.maxLeverage;
   if (input.minAvailableBalance !== undefined) data.minAvailableBalance = input.minAvailableBalance;

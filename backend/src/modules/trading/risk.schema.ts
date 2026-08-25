@@ -10,6 +10,7 @@ export const updateRiskProfileBodySchema = z.object({
   maxInitialMargin: positiveDecimal.optional(),
   maxAccountOpenNotional: positiveDecimal.optional(),
   maxOpenPositions: z.number().int().min(1).max(100).optional(),
+  paperMaxOpenPositions: z.number().int().min(1).max(100).optional(),
   maxSymbolPositions: z.number().int().min(1).max(20).optional(),
   maxLeverage: z.number().int().min(1).max(125).optional(),
   minAvailableBalance: positiveDecimal.optional(),

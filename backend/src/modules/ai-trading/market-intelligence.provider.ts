@@ -1,7 +1,9 @@
 import { getJson } from '../trading/exchanges/http.js';
 import type { MarketContextQuery } from './market-intelligence.schema.js';
 
-const BINANCE_FUTURES_PUBLIC_URL = 'https://demo-fapi.binance.com';
+// PAPER intelligence follows the real public Binance USD-M market. Demo
+// credentials are only for execution; they must not downgrade price discovery.
+const BINANCE_FUTURES_PUBLIC_URL = 'https://fapi.binance.com';
 
 export type TimedValue<T> = { value: T; observedAt: Date };
 export type MarketCandle = { openTime: Date; open: number; high: number; low: number; close: number; volume: number };
