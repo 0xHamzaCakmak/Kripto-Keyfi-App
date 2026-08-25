@@ -35,8 +35,8 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 	if instance.Type != "AUTONOMOUS" {
 		return EvaluateStrategy(instance, markPrice, referencePrice)
 	}
-	closes := make([]domain.Decimal, 0, len(snapshot.Candles["1m"]))
-	for _, candle := range snapshot.Candles["1m"] {
+	closes := make([]domain.Decimal, 0, len(snapshot.Candles["15m"]))
+	for _, candle := range snapshot.Candles["15m"] {
 		closes = append(closes, candle.Close)
 	}
 	result, err := evaluateAutonomousStrategy(instance, markPrice, referencePrice, closes)
@@ -45,6 +45,12 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 	}
 	if result.HypotheticalOrder == nil && instance.Mode == "PAPER" && booleanConfig(instance.Configuration, "paperAlwaysInMarket") {
 		result, err = paperContinuousTrainingDecision(instance, markPrice, referencePrice, closes)
+		if err != nil {
+			return Decision{}, err
+		}
+	}
+	if result.HypotheticalOrder == nil && instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetContinuousExecution") {
+		result, err = testnetContinuousExecutionDecision(instance, markPrice, referencePrice, closes)
 		if err != nil {
 			return Decision{}, err
 		}
@@ -61,7 +67,8 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 		result.Metrics = make(map[string]any)
 	}
 	result.Metrics["marketRegime"], result.Metrics["higherDirection"], result.Metrics["middleDirection"], result.Metrics["lowerDirection"] = analysis.Regime, analysis.HigherDirection, analysis.MiddleDirection, analysis.LowerDirection
-	result.Metrics["confirmedTimeframes"], result.Metrics["adx1h"], result.Metrics["adx4h"], result.Metrics["atrExpansion"] = analysis.ConfirmedTimeframes, roundFloat(analysis.ADX1H, 4), roundFloat(analysis.ADX4H, 4), roundFloat(analysis.ATRExpansion, 4)
+	result.Metrics["confirmedTimeframes"], result.Metrics["adx15m"], result.Metrics["adx1h"], result.Metrics["atrExpansion"] = analysis.ConfirmedTimeframes, roundFloat(analysis.ADX15M, 4), roundFloat(analysis.ADX1H, 4), roundFloat(analysis.ATRExpansion, 4)
+	result.Metrics["analysisTimeframes"], result.Metrics["directionWindowsHours"] = []string{"15m", "1h"}, []int{24, 48}
 	result.Metrics["atrBps15m"] = roundFloat(analysis.ATRBps15m, 4)
 	result.Metrics["derivativesAvailable"] = !snapshot.DerivativesUnavailable
 	result.Metrics["newsAvailable"], result.Metrics["newsBias"], result.Metrics["newsScore"], result.Metrics["newsConfidence"] = snapshot.News.Available, snapshot.News.Bias, roundFloat(snapshot.News.Score, 4), roundFloat(snapshot.News.Confidence, 4)
@@ -74,9 +81,19 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 	order := result.HypotheticalOrder
 	order["marketRegime"], order["higherTimeframeAligned"], order["confirmedTimeframes"], order["derivativesAligned"] = analysis.Regime, analysis.HigherTimeframeAligned, analysis.ConfirmedTimeframes, analysis.DerivativesAligned
 	order["oiConfirmed"], order["regimeConfidence"] = analysis.OIConfirmed, roundFloat(analysis.RegimeConfidence, 4)
-	latestMinute := snapshot.Candles["1m"][len(snapshot.Candles["1m"])-1]
-	order["signalKey"] = fmt.Sprintf("%s:%d:%s", instance.Symbol, latestMinute.OpenTimeMS, side)
-	result.Metrics["marketDataOpenTimeMs"] = latestMinute.OpenTimeMS
+	latestCandle := snapshot.Candles["15m"][len(snapshot.Candles["15m"])-1]
+	order["signalKey"] = fmt.Sprintf("%s:%d:%s", instance.Symbol, latestCandle.OpenTimeMS, side)
+	result.Metrics["marketDataOpenTimeMs"] = latestCandle.OpenTimeMS
+	if instance.Mode == "DEMO" {
+		if guardedAfter, configured := numberConfig(instance.Configuration, "testnetReentryAfterCandleOpenMs"); configured && latestCandle.OpenTimeMS <= int64(guardedAfter) {
+			result.Kind = "HOLD"
+			result.Summary = "Manuel/borsa kapanışı sonrası aynı 15 dakikalık mumda yeniden giriş engellendi; yeni mum ve piyasa teyidi bekleniyor."
+			result.Metrics["testnetReentryGuardActive"] = true
+			result.Metrics["testnetReentryAfterCandleOpenMs"] = int64(guardedAfter)
+			result.HypotheticalOrder = nil
+			return result, nil
+		}
+	}
 	family := strings.ToUpper(strings.TrimSpace(instance.StrategyFamily))
 	selected, _ := result.Metrics["selectedSubStrategy"].(string)
 	isMeanReversion := family == "RSI_MEAN_REVERSION" || family == "BOLLINGER_MEAN_REVERSION" || (family == "MULTI_AGENT" && selected == "RANGE_MEAN_REVERSION")
@@ -101,6 +118,16 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 			marketConfirmed = analysis.Regime != ""
 		}
 	}
+	if instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetExecutionProfile") && result.Metrics["testnetContinuousEntry"] == true {
+		// Explicit TESTNET training accepts established regimes and guarded
+		// transition regimes. A transition still requires Binance derivatives,
+		// two same-side timeframes and meaningful 15m volatility; low-confidence
+		// leverage reduction and both risk engines remain in force below.
+		var transitionAccepted bool
+		marketConfirmed, transitionAccepted = testnetContinuousMarketConfirmation(instance.Configuration, analysis)
+		result.Metrics["testnetTransitionRegimeAccepted"] = transitionAccepted
+		order["transitionRegimeAccepted"] = transitionAccepted
+	}
 	if !marketConfirmed {
 		result.Kind = "HOLD"
 		result.Summary = "Playbook rejim/çoklu zaman dilimi/funding-OI giriş teyidi tamamlanmadı."
@@ -124,8 +151,11 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 		order["oiSizeMultiplier"] = 1.0
 	}
 	configuredLeverage := int(order["leverage"].(int))
-	if analysis.RegimeConfidence < 0.65 && configuredLeverage > 5 {
-		configuredLeverage = maxInt(5, configuredLeverage/2)
+	minimumLeverage := maxInt(1, int(configNumberOr(instance.Configuration, "leverageMin", 5)))
+	maximumLeverage := maxInt(minimumLeverage, int(configNumberOr(instance.Configuration, "leverageMax", 20)))
+	configuredLeverage = maxInt(minimumLeverage, minInt(maximumLeverage, configuredLeverage))
+	if analysis.RegimeConfidence < 0.65 && configuredLeverage > minimumLeverage {
+		configuredLeverage = maxInt(minimumLeverage, configuredLeverage/2)
 		order["leverage"] = configuredLeverage
 	}
 	if err := applyAdaptiveRiskPlan(instance, markPrice, analysis, order); err != nil {
@@ -152,7 +182,7 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 		maximumBps = math.Min(configNumberOr(instance.Configuration, "stopLossBps", PaperTrainingStopLossBps), PaperTrainingStopLossBps)
 		minimumBps = math.Min(configNumberOr(instance.Configuration, "adaptiveStopMinBps", 75), maximumBps)
 		minimumTakeProfitBps = math.Max(configNumberOr(instance.Configuration, "takeProfitBps", PaperTrainingTakeProfitBps), PaperTrainingTakeProfitBps)
-		minimumMargin := math.Max(20, configNumberOr(instance.Configuration, "minimumInitialMarginUsdt", 20))
+		minimumMargin := math.Max(0.01, configNumberOr(instance.Configuration, "minimumInitialMarginUsdt", 20))
 		maximumRiskPct := math.Max(0.01, math.Min(0.20, configNumberOr(instance.Configuration, "paperMaxRiskPerTradePct", 0.05)))
 		targetNotional := minimumMargin * float64(leverage)
 		if targetNotional <= 0 || minimumMargin > allocation {
@@ -165,6 +195,13 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 		maximumRiskStopBps := allocation * maximumRiskPct * 0.80 / targetNotional * 10_000
 		maximumBps = math.Min(maximumBps, maximumRiskStopBps)
 		minimumBps = math.Min(minimumBps, maximumBps)
+	}
+	if instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetExecutionProfile") {
+		minimumTakeProfitBps = math.Max(configNumberOr(instance.Configuration, "minimumTakeProfitBps", 300), 300)
+		minimumMargin := math.Max(0.01, configNumberOr(instance.Configuration, "minimumInitialMarginUsdt", 20))
+		if minimumMargin > allocation {
+			return errors.New("TESTNET minimum initial margin is outside the bot allocation")
+		}
 	}
 	maximumAllowedStopBps := float64(500)
 	if instance.Mode == "PAPER" {
@@ -186,7 +223,7 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 		}
 	}
 	takeBps := stopBps * riskReward
-	if instance.Mode == "PAPER" {
+	if instance.Mode == "PAPER" || (instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetExecutionProfile")) {
 		takeBps = math.Max(takeBps, minimumTakeProfitBps)
 	}
 	stop, take, err := protectionPrices(markPrice, side, stopBps, takeBps)
@@ -202,7 +239,7 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 		return err
 	}
 	maximumNotionalMultiplier := float64(1)
-	if instance.Mode == "PAPER" {
+	if instance.Mode == "PAPER" || (instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetMarginAllocationMode")) {
 		maximumNotionalMultiplier = float64(leverage)
 	}
 	quantity, err = capQuantityToAllocation(quantity, markPrice, allocation*maximumNotionalMultiplier)
@@ -210,12 +247,22 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 		return err
 	}
 	if instance.Mode == "PAPER" {
-		minimumMargin := math.Max(20, configNumberOr(instance.Configuration, "minimumInitialMarginUsdt", 20))
+		minimumMargin := math.Max(0.01, configNumberOr(instance.Configuration, "minimumInitialMarginUsdt", 20))
 		slippageBps := configNumberOr(instance.Configuration, "paperSlippageBps", DefaultPaperSlippageBps)
-		quantity, err = enforceMinimumPaperMargin(quantity, markPrice, minimumMargin, leverage, slippageBps)
+		quantity, err = enforceMinimumInitialMargin(quantity, markPrice, minimumMargin, leverage, slippageBps)
 		if err != nil {
 			return err
 		}
+		order["initialMarginUsdt"] = minimumMargin
+		order["targetNotionalUsdt"] = minimumMargin * float64(leverage)
+	}
+	if instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetMarginAllocationMode") {
+		minimumMargin := math.Max(0.01, configNumberOr(instance.Configuration, "minimumInitialMarginUsdt", 20))
+		quantity, err = enforceMinimumInitialMargin(quantity, markPrice, minimumMargin, leverage, 0)
+		if err != nil {
+			return err
+		}
+		order["quantity"] = quantity
 		order["initialMarginUsdt"] = minimumMargin
 		order["targetNotionalUsdt"] = minimumMargin * float64(leverage)
 	}
@@ -226,6 +273,9 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 	order["riskPlanVersion"] = "ATR_ADAPTIVE_FIXED_RISK_V1"
 	if instance.Mode == "PAPER" {
 		order["riskPlanVersion"] = "PAPER_TRAINING_20PCT_STOP_V1"
+	}
+	if instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetMarginAllocationMode") {
+		order["riskPlanVersion"] = "TESTNET_MARGIN_ALLOCATION_V1"
 	}
 	order["playbookVersion"] = stringConfigOr(instance.Configuration, "playbookVersion", "TRADING_PLAYBOOK_V1")
 	order["experimentId"] = stringConfigOr(instance.Configuration, "experimentId", "ATR_STOP_WALK_FORWARD_V1")
@@ -238,6 +288,28 @@ func configNumberOr(configuration map[string]any, key string, fallback float64) 
 		return value
 	}
 	return fallback
+}
+
+func testnetContinuousMarketConfirmation(configuration map[string]any, analysis MarketAnalysis) (bool, bool) {
+	if !analysis.DerivativesAligned {
+		return false, false
+	}
+	regime := strings.ToUpper(strings.TrimSpace(analysis.Regime))
+	if (regime == "TREND" || regime == "RANGE" || regime == "HIGH_VOLATILITY") && analysis.ConfirmedTimeframes >= 1 {
+		return true, false
+	}
+
+	// Default-on preserves continuity for TESTNET bots created before this
+	// setting existed. Persisted false remains an explicit admin opt-out.
+	transitionEnabled := true
+	if value, exists := configuration["testnetTransitionRegimeEnabled"]; exists {
+		enabled, valid := value.(bool)
+		transitionEnabled = valid && enabled
+	}
+	minimumTimeframes := maxInt(2, int(configNumberOr(configuration, "testnetTransitionMinConfirmedTimeframes", 2)))
+	minimumATRBps := math.Max(20, configNumberOr(configuration, "testnetTransitionMinAtrBps", 20))
+	transitionAccepted := regime == "UNCERTAIN" && transitionEnabled && analysis.ConfirmedTimeframes >= minimumTimeframes && analysis.ATRBps15m >= minimumATRBps
+	return transitionAccepted, transitionAccepted
 }
 
 func stringConfigOr(configuration map[string]any, key, fallback string) string {
@@ -264,7 +336,7 @@ func capQuantityToAllocation(quantityText, markPrice string, allocation float64)
 	return new(big.Rat).Quo(new(big.Rat).SetInt(units), new(big.Rat).SetInt(scale)).FloatString(18), nil
 }
 
-func enforceMinimumPaperMargin(quantityText, markPrice string, minimumMargin float64, leverage int, slippageBps float64) (string, error) {
+func enforceMinimumInitialMargin(quantityText, markPrice string, minimumMargin float64, leverage int, slippageBps float64) (string, error) {
 	quantity, quantityOK := decimalRat(quantityText)
 	mark, markOK := decimalRat(markPrice)
 	margin, marginOK := decimalRat(strconv.FormatFloat(minimumMargin, 'f', 8, 64))
@@ -319,8 +391,32 @@ func paperContinuousTrainingDecision(instance Instance, markPrice, referencePric
 	return result, nil
 }
 
+func testnetContinuousExecutionDecision(instance Instance, markPrice, referencePrice string, closes []domain.Decimal) (Decision, error) {
+	result, err := paperContinuousTrainingDecision(instance, markPrice, referencePrice, closes)
+	if err != nil {
+		return Decision{}, err
+	}
+	result.Summary = "TESTNET trend-grid profili geÃ§erli EMA yÃ¶nÃ¼nde korumalÄ± giriÅŸ adayÄ± Ã¼retti."
+	result.Metrics["continuousTrainingEntry"] = false
+	result.Metrics["testnetContinuousEntry"] = true
+	result.Metrics["selectedSubStrategy"] = "TESTNET_TREND_GRID"
+	if result.HypotheticalOrder != nil {
+		result.HypotheticalOrder["continuousTrainingEntry"] = false
+		result.HypotheticalOrder["testnetContinuousEntry"] = true
+		result.HypotheticalOrder["testnetTrendGridEnabled"] = booleanConfig(instance.Configuration, "testnetTrendGridEnabled")
+	}
+	return result, nil
+}
+
 func maxInt(left, right int) int {
 	if left > right {
+		return left
+	}
+	return right
+}
+
+func minInt(left, right int) int {
+	if left < right {
 		return left
 	}
 	return right

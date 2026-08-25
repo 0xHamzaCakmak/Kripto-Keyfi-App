@@ -1,29 +1,30 @@
 import { Activity, Bot, BrainCircuit, ChartNoAxesCombined, FlaskConical, Orbit, Plus, Search, ShieldCheck, Trophy } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiErrorMessage } from '../../services/apiClient';
-import { aiTradingApi, recordNumber, type ArenaStatus, type AuditActivity, type AutonomousBot, type AutonomousHealth, type AutonomousLifecycle, type AutonomousOverview, type LeaderboardRow, type MarketContext, type ResearchHypothesis, type TeacherEvaluation, type TradeSummary, type TradingUniverse, type TradingUniverseCandidate } from '../../services/aiTradingService';
+import { aiTradingApi, recordNumber, type ArenaStatus, type AuditActivity, type AutonomousBot, type AutonomousHealth, type AutonomousLifecycle, type AutonomousOverview, type LeaderboardRow, type MarketContext, type PaperAccountingStatus, type ResearchHypothesis, type TeacherEvaluation, type TestnetAccountSummary, type TradeSummary, type TradingUniverse, type TradingUniverseCandidate } from '../../services/aiTradingService';
 import { AITradingPage, EmptyState, ErrorState, formatDate, formatMoney, MetricCard, ModeBadge, RefreshButton, StatusBadge } from './AITradingUI';
 
 type OverviewState = {
   overview: AutonomousOverview | null; arena: ArenaStatus | null; health: AutonomousHealth | null;
   bots: AutonomousBot[]; leaderboard: LeaderboardRow[]; summaries: TradeSummary[]; market: MarketContext | null;
-  teachers: TeacherEvaluation[]; research: ResearchHypothesis[]; activity: AuditActivity[]; universe: TradingUniverse | null; warnings: string[];
+  teachers: TeacherEvaluation[]; research: ResearchHypothesis[]; activity: AuditActivity[]; universe: TradingUniverse | null; accounting: PaperAccountingStatus | null; testnet: TestnetAccountSummary | null; warnings: string[];
 };
 
-const emptyState: OverviewState = { overview: null, arena: null, health: null, bots: [], leaderboard: [], summaries: [], market: null, teachers: [], research: [], activity: [], universe: null, warnings: [] };
+const emptyState: OverviewState = { overview: null, arena: null, health: null, bots: [], leaderboard: [], summaries: [], market: null, teachers: [], research: [], activity: [], universe: null, accounting: null, testnet: null, warnings: [] };
 
 export default function AITradingOverview() {
   const [data, setData] = useState<OverviewState>(emptyState);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [savingSymbol, setSavingSymbol] = useState('');
+  const [resettingAccounting, setResettingAccounting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     const requests = await Promise.allSettled([
       aiTradingApi.overview(), aiTradingApi.arenaStatus(), aiTradingApi.health(), aiTradingApi.bots(),
       aiTradingApi.leaderboard(10), aiTradingApi.tradeSummary('BOT', 100), aiTradingApi.marketContext(),
-      aiTradingApi.teacherEvaluations(5), aiTradingApi.researchHypotheses(5), aiTradingApi.audit(12), aiTradingApi.tradingUniverse(),
+      aiTradingApi.teacherEvaluations(5), aiTradingApi.researchHypotheses(5), aiTradingApi.audit(12), aiTradingApi.tradingUniverse(), aiTradingApi.paperAccounting(), aiTradingApi.testnetAccountSummary(),
     ]);
     const required = requests[0];
     if (required.status === 'rejected') {
@@ -36,13 +37,15 @@ export default function AITradingOverview() {
       overview: required.value.data,
       arena: value<Awaited<ReturnType<typeof aiTradingApi.arenaStatus>> | null>(1, null)?.data ?? null,
       health: value<AutonomousHealth | null>(2, null), bots: value(3, []), leaderboard: value(4, []), summaries: value(5, []),
-      market: value(6, null), teachers: value(7, []), research: value(8, []), activity: value(9, []), universe: value(10, null), warnings,
+      market: value(6, null), teachers: value(7, []), research: value(8, []), activity: value(9, []), universe: value(10, null), accounting: value(11, null)?.data ?? null, testnet: value(12, null)?.data ?? null, warnings,
     });
     setLoading(false);
   }, []);
 
   useEffect(() => { void load(); }, [load]);
   const totals = useMemo(() => aggregateOverview(data.bots, data.summaries, data.leaderboard), [data.bots, data.summaries, data.leaderboard]);
+  const displayedPnl = data.accounting?.active ? Number(data.accounting.active.periodNetPnl) : totals.pnl;
+  const displayedEquity = data.accounting?.active ? Number(data.accounting.active.periodEquity) : totals.equity;
   const counts = useMemo(() => lifecycleCounts(data.bots), [data.bots]);
   const toggleUniverse = async (symbol: string, enabled: boolean) => {
     setSavingSymbol(symbol); setError('');
@@ -62,18 +65,27 @@ export default function AITradingOverview() {
     } catch (reason) { setError(getApiErrorMessage(reason, 'Coin Trading Universe listesine eklenemedi.')); throw reason; }
     finally { setSavingSymbol(''); }
   };
+  const resetAccounting = async () => {
+    if (!window.confirm('PAPER işlem geçmişi korunarak ekrandaki PnL için yeni bir muhasebe dönemi başlatılsın mı? Açık pozisyonlar kapatılmaz.')) return;
+    setResettingAccounting(true); setError('');
+    try { await aiTradingApi.resetPaperAccounting('Admin PAPER PnL dönemi sıfırlama'); await load(); }
+    catch (reason) { setError(getApiErrorMessage(reason, 'PAPER muhasebe dönemi başlatılamadı.')); }
+    finally { setResettingAccounting(false); }
+  };
 
   return <AITradingPage title="AI Trading Operasyon Merkezi" description="Autonomous PAPER ve SHADOW sistemini, risk durumunu ve öğrenme döngüsünü tek güvenli görünümde izleyin." icon={Bot} action={<RefreshButton onClick={() => void load()} busy={loading} />}>
     <div className="flex flex-wrap gap-2"><ModeBadge mode="PAPER" /><ModeBadge mode="SHADOW" /><StatusBadge tone="danger">LIVE KAPALI</StatusBadge><StatusBadge tone={data.overview?.globalKillSwitch ? 'danger' : 'safe'}>Risk Engine · {data.overview?.globalKillSwitch ? 'Emergency stop' : 'Aktif'}</StatusBadge></div>
     {error && <ErrorState message={error} />}
     {data.warnings.length > 0 && <div className="rounded-2xl border border-tertiary/20 bg-tertiary/5 p-4 text-sm text-tertiary">Kısmi veri: {data.warnings.join(' ')}</div>}
+    {data.testnet?.connected && <section className="rounded-[24px] border border-secondary/20 bg-secondary/5 p-5"><div className="mb-4"><p className="text-xs font-black uppercase tracking-[.14em] text-secondary">Binance Demo performansı</p><p className="mt-1 text-xs text-on-surface-variant">Dönem #{data.testnet.accounting?.number ?? 1} · başlangıç {formatDate(data.testnet.accounting?.startedAt)} · bakiye hareketi, komisyon/funding etkisi ve açık PnL dahil</p></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Demo equity" value={formatMoney(Number(data.testnet.equity))} detail={`Cüzdan ${formatMoney(Number(data.testnet.totalBalance))}`} /><MetricCard label="Gerçekleşmiş net" value={formatMoney(Number(data.testnet.walletPnl))} detail="Başlangıçtan beri cüzdan değişimi" tone={Number(data.testnet.walletPnl) >= 0 ? 'safe' : 'danger'} /><MetricCard label="Açık PnL" value={formatMoney(Number(data.testnet.unrealizedPnl))} detail={`${data.testnet.openPositions} açık borsa pozisyonu`} tone={Number(data.testnet.unrealizedPnl) >= 0 ? 'safe' : 'danger'} /><MetricCard label="Toplam Demo net PnL" value={formatMoney(Number(data.testnet.netPnl))} detail={`${(data.testnet.pnlPercent * 100).toLocaleString('tr-TR', { maximumFractionDigits: 2 })}% · başlangıç noktasına göre`} tone={Number(data.testnet.netPnl) >= 0 ? 'safe' : 'danger'} /></div></section>}
+    <section className="flex flex-col gap-4 rounded-[24px] border border-primary/15 bg-primary/5 p-5 md:flex-row md:items-center md:justify-between"><div><p className="text-xs font-black uppercase tracking-[.14em] text-primary">PAPER muhasebe dönemi</p><p className="mt-2 font-headline text-xl font-black text-white">{data.accounting?.active ? `Dönem #${data.accounting.active.number} · ${data.accounting.active.botCount} bot` : 'Henüz dönem başlatılmadı'}</p><p className="mt-1 text-sm text-on-surface-variant">İşlem geçmişi silinmez. Yeni dönem PnL değeri sıfırdan başlar; açık pozisyonlar korunur ve yalnız sonraki parasal değişim yeni döneme yazılır.</p></div><button disabled={resettingAccounting || loading} onClick={() => void resetAccounting()} className="shrink-0 rounded-xl border border-primary/30 bg-primary px-4 py-3 text-sm font-black text-background disabled:opacity-50">{resettingAccounting ? 'Başlatılıyor…' : data.accounting?.active ? 'PnL dönemini sıfırla' : 'Yeni PAPER dönemi başlat'}</button></section>
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <MetricCard label="Sistem" value={data.health?.status ?? (loading ? 'Yükleniyor' : '—')} detail={`Son kontrol ${formatDate(data.health?.checkedAt)}`} help="Node runtime, worker heartbeat ve temel autonomous servis kontrollerinin birleşik sağlık sonucudur. HEALTHY, son kontrolde kritik servis kesintisi görülmediğini belirtir." tone={data.health?.status === 'HEALTHY' ? 'safe' : data.health?.status === 'EMERGENCY_STOPPED' ? 'danger' : 'warning'} />
       <MetricCard label="Aktif bot" value={data.health?.metrics.activeBots ?? data.arena?.states.RUNNING ?? 0} detail={`${data.overview?.bots ?? 0} autonomous bot`} help="Runtime state'i RUNNING olan bot sayısıdır. Botun aktif olması, her kararın emir olacağı anlamına gelmez; HOLD, risk reddi veya mevcut pozisyon nedeniyle işlem açmayabilir." />
       <MetricCard label="Arena" value={`${(data.arena?.throughputPerMinute ?? 0).toLocaleString('tr-TR', { maximumFractionDigits: 1 })}/dk`} detail={`${data.arena?.decisionsLast5m ?? 0} karar · son 5 dk`} help="Botların ürettiği BUY, SELL ve HOLD kararlarının hızıdır. Karar sayısı emir sayısı değildir; yalnız riskten geçen ve entry şartını sağlayan BUY/SELL kararları işleme dönüşür." />
       <MetricCard label="Piyasa rejimi" value={data.market?.market.trend ?? 'UNKNOWN'} detail={`${data.market?.symbol ?? 'BTCUSDT'} · ${data.market?.market.volatility ?? 'Volatilite bilinmiyor'}`} help="OHLCV ve teknik göstergelerden çıkarılan piyasa koşuludur. Router, botun ilgili coin ve rejimdeki geçmiş başarısını bu sınıfla eşleştirir. UNKNOWN veya eski veri yeni entry'yi engelleyebilir." tone={marketFresh(data.market) ? 'safe' : 'warning'} />
-      <MetricCard label="Aggregate PAPER equity" value={formatMoney(totals.equity)} detail="Başlangıç bakiyesi + kapanmış net PnL" help="Tüm PAPER botlarının başlangıç bakiyeleri ile yalnızca kapanmış işlemlerden gelen net PnL toplamıdır. Açık pozisyonların anlık PnL'si dahil değildir." />
-      <MetricCard label="Net PnL" value={formatMoney(totals.pnl)} detail={`${totals.tradeCount} kapanmış PAPER trade`} help="Kapanmış PAPER işlemlerinin ücret, funding ve slippage sonrası birikmiş gerçekleşen sonucudur. Açılış fill'leri kâr sayılmaz." tone={totals.pnl === null ? 'neutral' : totals.pnl >= 0 ? 'safe' : 'danger'} />
+      <MetricCard label="Aggregate PAPER equity" value={formatMoney(displayedEquity)} detail={data.accounting?.active ? `Dönem #${data.accounting.active.number} başlangıcı + dönem PnL` : 'Yaşam boyu başlangıç bakiyesi + net PnL'} help="Aktif muhasebe dönemi varsa değer dönem başlangıcındaki checkpoint'e göre hesaplanır. Eski işlem ve performans kayıtları silinmez." />
+      <MetricCard label="Net PnL" value={formatMoney(displayedPnl)} detail={data.accounting?.active ? `Dönem #${data.accounting.active.number} · geçmiş korunuyor` : `${totals.tradeCount} kapanmış PAPER trade`} help="Yeni PAPER muhasebe dönemi başlatıldığında bu değer sıfır olur; toplam ledger ve eski trade geçmişi değişmeden kalır." tone={displayedPnl === null ? 'neutral' : displayedPnl >= 0 ? 'safe' : 'danger'} />
       <MetricCard label="Max drawdown" value={totals.maxDrawdown === null ? '—' : `${totals.maxDrawdown.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}%`} detail="Leaderboard score evidence" help="İzlenen botlar içindeki en yüksek tepe-dip sermaye kaybıdır. Düşük olması daha iyidir; Challenger kapısının varsayılan üst sınırı %20'dir." tone={totals.maxDrawdown && totals.maxDrawdown > 15 ? 'danger' : 'neutral'} />
       <MetricCard label="Risk durumu" value={data.health?.metrics.emergencyStop ? 'DURDURULDU' : 'FAIL-CLOSED'} detail={`${data.health?.metrics.riskRejectsLast24h ?? 0} reject · son 24 saat`} help="Risk Engine'in güvenlik durumudur. FAIL-CLOSED, veri veya limit kanıtı eksikse emrin varsayılan olarak reddedileceğini ve risk kontrolünün bypass edilmediğini gösterir." tone={data.health?.metrics.emergencyStop ? 'danger' : 'safe'} />
     </div>
@@ -98,7 +110,7 @@ export default function AITradingOverview() {
   </AITradingPage>;
 }
 
-const sectionNames = ['Overview', 'Arena', 'System health', 'Bot', 'Leaderboard', 'Performance', 'Market context', 'Teacher', 'Researcher', 'Audit', 'Trading Universe'];
+const sectionNames = ['Overview', 'Arena', 'System health', 'Bot', 'Leaderboard', 'Performance', 'Market context', 'Teacher', 'Researcher', 'Audit', 'Trading Universe', 'PAPER Accounting', 'Binance Demo Accounting'];
 
 const decisionFactors: Array<{ name: string; effect: string; tone: 'neutral' | 'safe' | 'warning'; description: string }> = [
   { name: 'Binance fiyat ve OHLCV', effect: 'BİRİNCİL', tone: 'safe', description: 'Mark price, mumlar, hacim ve volatilite entry fiyatı ile teknik sinyalin ana kaynağıdır. Eski veya eksik veri yeni işlemi engeller.' },

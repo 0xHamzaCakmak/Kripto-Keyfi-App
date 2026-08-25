@@ -15,23 +15,25 @@ async function main() {
   const confluence = await ensureStrategy(baseline.createdById, CONFLUENCE_NAME, 'MULTI_AGENT', 'Rejime göre trend momentum veya RANGE mean-reversion alt stratejisini seçen birleşik PAPER stratejisi.', baselineVersion);
   const bots = await prisma.tradingBot.findMany({
     where: { userId: baseline.createdById, type: 'AUTONOMOUS', mode: 'PAPER', name: { startsWith: 'AI Momentum G1 #' } },
-    orderBy: { name: 'asc' }, take: 100, select: { id: true, name: true, strategyVersionId: true },
+    orderBy: { name: 'asc' }, take: 1_000, select: { id: true, name: true, strategyVersionId: true },
   });
-  if (bots.length !== 100) throw new Error(`Expected exactly 100 baseline PAPER bots, found ${bots.length}.`);
+  if (bots.length === 0) throw new Error('At least one baseline PAPER bot is required.');
+  const momentumEnd = Math.ceil(bots.length * 0.60);
+  const rangeEnd = Math.ceil(bots.length * 0.80);
   let changed = 0;
   await prisma.$transaction(async (tx) => {
     for (let index = 0; index < bots.length; index += 1) {
-      const target = index >= 80 ? confluence : index >= 60 ? range : baselineVersion;
+      const target = index >= rangeEnd ? confluence : index >= momentumEnd ? range : baselineVersion;
       if (bots[index]!.strategyVersionId === target.id) continue;
       await tx.tradingBot.update({ where: { id: bots[index]!.id }, data: { strategyVersionId: target.id, version: { increment: 1 } } });
       changed += 1;
     }
     await tx.tradingAuditLog.create({ data: {
       userId: baseline.createdById, action: 'AI_PAPER_STRATEGY_ARSENAL_ASSIGNED', entityType: 'GENERATION', entityId: bots[0]!.id,
-      metadata: { momentum: 60, rangeMeanReversion: 20, playbookConfluence: 20, paperOnly: true, productionLive: false },
+      metadata: { momentum: momentumEnd, rangeMeanReversion: rangeEnd - momentumEnd, playbookConfluence: bots.length - rangeEnd, paperOnly: true, productionLive: false },
     } });
   });
-  console.log(JSON.stringify({ changed, population: { momentum: 60, rangeMeanReversion: 20, playbookConfluence: 20 }, productionLive: false }));
+  console.log(JSON.stringify({ changed, population: { momentum: momentumEnd, rangeMeanReversion: rangeEnd - momentumEnd, playbookConfluence: bots.length - rangeEnd }, productionLive: false }));
 }
 
 async function ensureStrategy(userId: string, name: string, family: 'RSI_MEAN_REVERSION' | 'MULTI_AGENT', description: string, source: {

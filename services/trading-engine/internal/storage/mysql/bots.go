@@ -438,6 +438,9 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 		}
 	}
 	if openTrade != nil {
+		retirementPending := boolValue(instance.Configuration["paperFleetRetirementPending"])
+		manualCloseRequested := boolValue(instance.Configuration["paperManualCloseRequested"])
+		manualCloseStopBot := boolValue(instance.Configuration["paperManualCloseStopBot"])
 		legacyOutsideCore, coreErr := paperTradeOutsideCoreUniverse(ctx, tx, instance.UserID, openTrade.Symbol)
 		if coreErr != nil {
 			return nil, coreErr
@@ -486,6 +489,17 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 			// verified mark, then rotate the flat bot into an enabled Core asset.
 			plan.Action = "CLOSE"
 			plan.Reason = "CORE_UNIVERSE_LEGACY_EXIT"
+		}
+		if retirementPending {
+			// Fleet reduction is PAPER-only and always risk reducing. It uses the
+			// same fill, fee, slippage and realized-PnL lifecycle as SL/TP exits;
+			// no trade or performance history is deleted or rewritten.
+			plan.Action = "CLOSE"
+			plan.Reason = "PAPER_FLEET_RETIREMENT"
+		}
+		if manualCloseRequested && !retirementPending {
+			plan.Action = "CLOSE"
+			plan.Reason = "ADMIN_MANUAL_CLOSE"
 		}
 		if plan.Action == "MOVE_STOP" {
 			if _, err = tx.ExecContext(ctx, `UPDATE paper_trades SET stopLoss = ?, maxFavorableExcursion = ?, maxAdverseExcursion = ?, marketContext = JSON_SET(COALESCE(marketContext, JSON_OBJECT()), '$.trailingStopActive', true), updatedAt = UTC_TIMESTAMP(3) WHERE id = ?`, plan.NewStop, favorable, adverse, openTrade.ID); err != nil {
@@ -654,6 +668,15 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 		if err = savePaperPosition(ctx, tx, instance, position, execution, decision.MarkPrice, now, exists); err != nil {
 			return nil, err
 		}
+		if retirementPending {
+			if err = archiveDrainedPaperBot(ctx, tx, instance, now); err != nil {
+				return nil, err
+			}
+		} else if manualCloseRequested {
+			if err = completeManualPaperClose(ctx, tx, instance, manualCloseStopBot, now); err != nil {
+				return nil, err
+			}
+		}
 		if legacyOutsideCore {
 			if err = rotateFlatPaperBotToCore(ctx, tx, instance); err != nil {
 				return nil, err
@@ -711,6 +734,70 @@ VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, 'OPEN', ?, ?, ?, ?, 0, ?, 0, NULLIF(?, '')
 		return nil, err
 	}
 	return &execution, nil
+}
+
+func completeManualPaperClose(ctx context.Context, tx *sql.Tx, instance bot.Instance, stopBot bool, now time.Time) error {
+	query := `UPDATE trading_bots SET
+configuration = JSON_REMOVE(configuration, '$.paperManualCloseRequested', '$.paperManualCloseStopBot', '$.paperManualCloseRequestedAt'),
+version = version + 1, updatedAt = UTC_TIMESTAMP(3)
+WHERE id = ? AND userId = ? AND mode = 'PAPER'`
+	args := []any{instance.ID, instance.UserID}
+	if stopBot {
+		query = `UPDATE trading_bots SET
+configuration = JSON_REMOVE(configuration, '$.paperManualCloseRequested', '$.paperManualCloseStopBot', '$.paperManualCloseRequestedAt'),
+state = 'STOPPED', desiredState = 'STOPPED', schedulerOwner = NULL, leaseExpiresAt = NULL,
+heartbeatAt = ?, stoppedAt = ?, stateReason = 'Admin closed PAPER position and stopped bot.',
+version = version + 1, updatedAt = UTC_TIMESTAMP(3)
+WHERE id = ? AND userId = ? AND mode = 'PAPER'`
+		args = []any{now, now, instance.ID, instance.UserID}
+	}
+	result, err := tx.ExecContext(ctx, query, args...)
+	if err != nil {
+		return fmt.Errorf("complete manual paper close: %w", err)
+	}
+	affected, affectedErr := result.RowsAffected()
+	if affectedErr != nil || affected != 1 {
+		return errors.New("manual paper close state changed concurrently")
+	}
+	metadata, marshalErr := json.Marshal(map[string]any{"reason": "ADMIN_MANUAL_CLOSE", "stopBot": stopBot, "historyDeleted": false, "liveChanged": false})
+	if marshalErr != nil {
+		return marshalErr
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO trading_audit_logs
+(id, userId, exchangeAccountId, action, entityType, entityId, metadata, createdAt)
+VALUES (UUID(), ?, ?, 'AI_PAPER_POSITION_MANUALLY_CLOSED', 'TRADING_BOT', ?, ?, ?)`,
+		instance.UserID, instance.ExchangeAccountID, instance.ID, metadata, now); err != nil {
+		return fmt.Errorf("audit manual paper close: %w", err)
+	}
+	return nil
+}
+
+func archiveDrainedPaperBot(ctx context.Context, tx *sql.Tx, instance bot.Instance, now time.Time) error {
+	result, err := tx.ExecContext(ctx, `UPDATE trading_bots
+SET lifecycleStatus = 'ARCHIVED', state = 'STOPPED', desiredState = 'STOPPED',
+schedulerOwner = NULL, leaseExpiresAt = NULL, heartbeatAt = ?, stoppedAt = ?,
+stateReason = 'PAPER fleet drain completed; full trade and PnL history retained.', version = version + 1
+WHERE id = ? AND userId = ? AND mode = 'PAPER'
+  AND JSON_EXTRACT(configuration, '$.paperFleetRetirementPending') = TRUE`, now, now, instance.ID, instance.UserID)
+	if err != nil {
+		return fmt.Errorf("archive drained paper bot: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected != 1 {
+		return errors.New("drained paper bot retirement state changed concurrently")
+	}
+	metadata, err := json.Marshal(map[string]any{"reason": "PAPER_FLEET_RETIREMENT", "historyDeleted": false, "liveChanged": false})
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO trading_audit_logs
+(id, userId, exchangeAccountId, action, entityType, entityId, metadata, createdAt)
+VALUES (UUID(), ?, ?, 'AI_PAPER_FLEET_BOT_DRAINED', 'TRADING_BOT', ?, ?, ?)`,
+		instance.UserID, instance.ExchangeAccountID, instance.ID, metadata, now)
+	if err != nil {
+		return fmt.Errorf("audit drained paper bot: %w", err)
+	}
+	return nil
 }
 
 func paperTradeOutsideCoreUniverse(ctx context.Context, tx *sql.Tx, userID, symbol string) (bool, error) {

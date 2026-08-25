@@ -4,7 +4,7 @@ const since = new Date(Date.now() - 60_000);
 const [bots, openTrades, recentAudit, riskProfiles, enabledUniverse] = await Promise.all([
   prisma.tradingBot.findMany({
     where: { type: 'AUTONOMOUS', mode: 'PAPER' },
-    select: { id: true, symbol: true, configuration: true, state: true, lastErrorCode: true },
+    select: { id: true, symbol: true, configuration: true, state: true, lifecycleStatus: true, lastErrorCode: true },
   }),
   prisma.paperTrade.findMany({
     where: { tradingBot: { type: 'AUTONOMOUS', mode: 'PAPER' }, status: 'OPEN' },
@@ -29,12 +29,13 @@ for (const event of recentAudit) {
   riskCounts[key] = (riskCounts[key] ?? 0) + 1;
 }
 console.log(JSON.stringify({
-  paperBots: bots.length,
-  botsOutsideCore: bots.filter((bot) => !universe.has(bot.symbol)).length,
-  botsWithContinuousTrainingConfig: bots.filter((bot) => {
+  paperBots: bots.filter((bot) => bot.lifecycleStatus !== 'ARCHIVED').length,
+  retainedPaperBots: bots.filter((bot) => bot.lifecycleStatus === 'ARCHIVED').length,
+  botsOutsideCore: bots.filter((bot) => bot.lifecycleStatus !== 'ARCHIVED' && !universe.has(bot.symbol)).length,
+  botsWithContinuousTrainingConfig: bots.filter((bot) => bot.lifecycleStatus !== 'ARCHIVED' && (() => {
     const value = bot.configuration;
     return value && !Array.isArray(value) && typeof value === 'object' && value.paperAlwaysInMarket === true;
-  }).length,
+  })()).length,
   openTrades: openTrades.length,
   openTradeSymbols: [...new Set(openTrades.map((trade) => trade.symbol))].sort(),
   enabledUniverseSymbols: [...universe].sort(),

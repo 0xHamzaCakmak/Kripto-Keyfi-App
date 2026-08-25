@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { marketRegimes } from './core-domain.js';
 
 export const tradeMemoryQuerySchema = z.object({
+  source: z.enum(['ALL', 'PAPER', 'TESTNET']).default('ALL'),
   botId: z.string().cuid().optional(),
   strategyVersionId: z.string().cuid().optional(),
   symbol: z.string().trim().min(2).max(40).transform((value) => value.toUpperCase()).optional(),

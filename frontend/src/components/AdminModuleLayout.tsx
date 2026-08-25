@@ -82,11 +82,11 @@ export function AdminModuleLayout({ eyebrow, title, description, tabs }: AdminMo
 const tradingTabs: AdminModuleTab[] = [
   { label: 'Genel Bakış', to: '/admin/trading', icon: LayoutDashboard, end: true },
   { label: 'AI Trading', to: '/admin/trading/ai', icon: Sparkles },
+  { label: 'Pozisyonlar', to: '/admin/trading/positions', icon: ChartNoAxesCombined },
   { label: 'Botlarım', to: '/admin/trading/bots', icon: ListChecks, end: true },
   { label: 'Bot Rehberi', to: '/admin/trading/guide', icon: BookOpen, end: true },
   { label: 'Manuel İşlem', to: '/admin/trading/manual', icon: SlidersHorizontal },
   { label: 'Borsa Hesapları', to: '/admin/trading/exchanges', icon: Building2 },
-  { label: 'Pozisyonlar', to: '/admin/trading/positions', icon: ChartNoAxesCombined },
   { label: 'Emirler', to: '/admin/trading/orders', icon: FileClock },
   { label: 'Grid Bot', to: '/admin/trading/grid', icon: Gauge },
   { label: 'Kâr / Zarar', to: '/admin/trading/profit-loss', icon: CircleDollarSign },

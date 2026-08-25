@@ -35,19 +35,19 @@ type NewsContext struct {
 }
 
 type MarketAnalysis struct {
-	Regime, Direction, HigherDirection, MiddleDirection, LowerDirection  string
-	HigherTimeframeAligned, DerivativesAligned, OIConfirmed              bool
-	ConfirmedTimeframes                                                  int
-	RegimeConfidence, ADX1H, ADX4H, ATRExpansion, ATRBps15m, FundingRate float64
+	Regime, Direction, HigherDirection, MiddleDirection, LowerDirection   string
+	HigherTimeframeAligned, DerivativesAligned, OIConfirmed               bool
+	ConfirmedTimeframes                                                   int
+	RegimeConfidence, ADX15M, ADX1H, ATRExpansion, ATRBps15m, FundingRate float64
 }
 
 func AnalyzeMarket(snapshot MarketSnapshot, side string) (MarketAnalysis, error) {
-	required := []string{"1m", "5m", "15m", "1h", "4h"}
+	required := map[string]int{"15m": 193, "1h": 49}
 	series := make(map[string][]float64, len(required))
-	for _, interval := range required {
+	for interval, minimum := range required {
 		candles := snapshot.Candles[interval]
-		if len(candles) < 200 {
-			return MarketAnalysis{}, errors.New("multi-timeframe market history is incomplete")
+		if len(candles) < minimum {
+			return MarketAnalysis{}, errors.New("15m/1h market history is incomplete for the 24h/48h direction windows")
 		}
 		values := make([]float64, len(candles))
 		for index, candle := range candles {
@@ -59,18 +59,18 @@ func AnalyzeMarket(snapshot MarketSnapshot, side string) (MarketAnalysis, error)
 		}
 		series[interval] = values
 	}
+	adx15m, err := adx(snapshot.Candles["15m"], 14)
+	if err != nil {
+		return MarketAnalysis{}, err
+	}
 	adx1h, err := adx(snapshot.Candles["1h"], 14)
 	if err != nil {
 		return MarketAnalysis{}, err
 	}
-	adx4h, err := adx(snapshot.Candles["4h"], 14)
-	if err != nil {
-		return MarketAnalysis{}, err
-	}
-	hourDirection := emaDirection(series["1h"], 50, 200)
-	fourHourDirection := emaDirection(series["4h"], 50, 200)
-	higher := consensus(hourDirection, fourHourDirection)
-	atrExpansion, err := atrExpansion(snapshot.Candles["1h"], 20)
+	direction24h := directionalConsensus(windowDirection(series["15m"], 96, 5), windowDirection(series["1h"], 24, 5))
+	direction48h := directionalConsensus(windowDirection(series["15m"], 192, 5), windowDirection(series["1h"], 48, 5))
+	entryDirection15m := emaDirection(series["15m"], 9, 21)
+	atrExpansion, err := atrExpansion(snapshot.Candles["15m"], 20)
 	if err != nil {
 		return MarketAnalysis{}, err
 	}
@@ -79,22 +79,20 @@ func AnalyzeMarket(snapshot MarketSnapshot, side string) (MarketAnalysis, error)
 		return MarketAnalysis{}, err
 	}
 	regime := "UNCERTAIN"
-	confidence := math.Min(adx1h, adx4h) / 50
+	confidence := math.Min(adx15m, adx1h) / 50
 	if atrExpansion > 1.5 {
 		regime = "HIGH_VOLATILITY"
-	} else if higher != "NEUTRAL" && adx1h > 25 && adx4h > 25 {
+	} else if direction24h != "NEUTRAL" && direction24h == direction48h && adx15m > 25 && adx1h > 25 {
 		regime = "TREND"
-	} else if adx1h < 20 && adx4h < 20 && bandWidth(series["1h"], 50) <= 0.05 {
+	} else if adx15m < 20 && adx1h < 20 && bandWidth(series["1h"], 24) <= 0.05 {
 		regime = "RANGE"
 	}
-	middle := emaDirection(series["15m"], 9, 21)
-	lower := consensus(emaDirection(series["5m"], 9, 21), emaDirection(series["1m"], 9, 21))
 	direction := "BUY"
 	if strings.ToUpper(side) == "SELL" {
 		direction = "SELL"
 	}
 	confirmed := 0
-	for _, vote := range []string{higher, middle, lower} {
+	for _, vote := range []string{direction48h, direction24h, entryDirection15m} {
 		if vote == direction {
 			confirmed++
 		}
@@ -106,10 +104,41 @@ func AnalyzeMarket(snapshot MarketSnapshot, side string) (MarketAnalysis, error)
 	if derivativesAligned && ((direction == "BUY" && funding > 0.001) || (direction == "SELL" && funding < -0.001)) {
 		derivativesAligned = false
 	}
-	return MarketAnalysis{Regime: regime, Direction: direction, HigherDirection: higher, MiddleDirection: middle, LowerDirection: lower,
-		HigherTimeframeAligned: higher == direction, ConfirmedTimeframes: confirmed, DerivativesAligned: derivativesAligned,
+	return MarketAnalysis{Regime: regime, Direction: direction, HigherDirection: direction48h, MiddleDirection: direction24h, LowerDirection: entryDirection15m,
+		HigherTimeframeAligned: direction48h == direction, ConfirmedTimeframes: confirmed, DerivativesAligned: derivativesAligned,
 		OIConfirmed: derivativesAligned && oi > previousOI, RegimeConfidence: math.Max(0, math.Min(1, confidence)),
-		ADX1H: adx1h, ADX4H: adx4h, ATRExpansion: atrExpansion, ATRBps15m: atrBps15m, FundingRate: funding}, nil
+		ADX15M: adx15m, ADX1H: adx1h, ATRExpansion: atrExpansion, ATRBps15m: atrBps15m, FundingRate: funding}, nil
+}
+
+func windowDirection(values []float64, bars int, neutralBps float64) string {
+	if bars < 1 || len(values) <= bars {
+		return "NEUTRAL"
+	}
+	start, end := values[len(values)-1-bars], values[len(values)-1]
+	if start <= 0 {
+		return "NEUTRAL"
+	}
+	changeBps := (end - start) / start * 10_000
+	if changeBps > neutralBps {
+		return "BUY"
+	}
+	if changeBps < -neutralBps {
+		return "SELL"
+	}
+	return "NEUTRAL"
+}
+
+func directionalConsensus(left, right string) string {
+	if left == right {
+		return left
+	}
+	if left == "NEUTRAL" {
+		return right
+	}
+	if right == "NEUTRAL" {
+		return left
+	}
+	return "NEUTRAL"
 }
 
 func normalizedATRBps(candles []domain.MarketCandle, period int) (float64, error) {

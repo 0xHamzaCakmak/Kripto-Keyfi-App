@@ -22,6 +22,7 @@ const envSchema = z.object({
   TRADING_ENGINE_SHADOW_COMPARE_ENABLED: booleanString.default('false'),
   TRADING_ENGINE_EXECUTION_ENABLED: booleanString.default('false'),
   AUTONOMOUS_TESTNET_EXECUTION_ENABLED: booleanString.default('false'),
+  AI_TRADING_FIXED_FLEET_SIZE: z.coerce.number().int().min(1).max(100).default(20),
   AI_TRADING_EVOLUTION_ENABLED: booleanString.default('true'),
   AI_TRADING_EVOLUTION_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(2),
   AI_TRADING_EVOLUTION_MIN_TRADES: z.coerce.number().int().min(50).max(1_000_000).default(50),

@@ -141,16 +141,30 @@ async function loadResearchDatasets(userId: string, family?: StrategyFamily) {
       COALESCE(SUM(CASE WHEN t.realizedPnl < 0 THEN t.realizedPnl ELSE 0 END), 0) AS grossLoss,
       AVG(t.funding) AS averageFunding, AVG(t.holdingSeconds) AS averageHoldingSeconds
     FROM trading_strategies s LEFT JOIN trading_strategy_versions v ON v.strategyId = s.id
-    LEFT JOIN paper_trades t ON t.strategyVersionId = v.id AND t.status IN ('CLOSED', 'LIQUIDATED')
+    LEFT JOIN (
+      SELECT strategyVersionId, realizedPnl, funding, holdingSeconds FROM paper_trades WHERE status IN ('CLOSED', 'LIQUIDATED')
+      UNION ALL
+      SELECT strategyVersionId, SUM(netRealizedPnl) AS realizedPnl, 0 AS funding, NULL AS holdingSeconds
+      FROM testnet_execution_fills WHERE reduceOnly = true AND strategyVersionId IS NOT NULL GROUP BY strategyVersionId, tradingBotId, exchangeOrderId
+    ) t ON t.strategyVersionId = v.id
     WHERE s.createdById = ${userId} ${family ? Prisma.sql`AND s.family = ${family}` : Prisma.empty}
     GROUP BY s.family
   `);
   const regimes = await prisma.$queryRaw<RegimeRow[]>(Prisma.sql`
-    SELECT s.family AS strategyFamily, COALESCE(r.regime, 'UNKNOWN') AS regime, COUNT(*) AS trades, SUM(t.realizedPnl) AS totalPnl
-    FROM paper_trades t JOIN trading_strategy_versions v ON v.id = t.strategyVersionId JOIN trading_strategies s ON s.id = v.strategyId
-    LEFT JOIN market_regime_snapshots r ON r.id = t.marketRegimeSnapshotId
-    WHERE s.createdById = ${userId} AND t.status IN ('CLOSED', 'LIQUIDATED') ${family ? Prisma.sql`AND s.family = ${family}` : Prisma.empty}
-    GROUP BY s.family, COALESCE(r.regime, 'UNKNOWN')
+    SELECT combined.strategyFamily, combined.regime, COUNT(*) AS trades, SUM(combined.realizedPnl) AS totalPnl
+    FROM (
+      SELECT s.family AS strategyFamily, COALESCE(r.regime, 'UNKNOWN') AS regime, t.realizedPnl
+      FROM paper_trades t JOIN trading_strategy_versions v ON v.id = t.strategyVersionId JOIN trading_strategies s ON s.id = v.strategyId
+      LEFT JOIN market_regime_snapshots r ON r.id = t.marketRegimeSnapshotId
+      WHERE s.createdById = ${userId} AND t.status IN ('CLOSED', 'LIQUIDATED') ${family ? Prisma.sql`AND s.family = ${family}` : Prisma.empty}
+      UNION ALL
+      SELECT s.family AS strategyFamily, 'UNKNOWN' AS regime, grouped.realizedPnl
+      FROM (
+        SELECT strategyVersionId, tradingBotId, exchangeOrderId, SUM(netRealizedPnl) AS realizedPnl
+        FROM testnet_execution_fills WHERE reduceOnly = true AND strategyVersionId IS NOT NULL GROUP BY strategyVersionId, tradingBotId, exchangeOrderId
+      ) grouped JOIN trading_strategy_versions v ON v.id = grouped.strategyVersionId JOIN trading_strategies s ON s.id = v.strategyId
+      WHERE s.createdById = ${userId} ${family ? Prisma.sql`AND s.family = ${family}` : Prisma.empty}
+    ) combined GROUP BY combined.strategyFamily, combined.regime
   `);
   const scores = await prisma.$queryRaw<ScoreRow[]>(Prisma.sql`
     SELECT s.family AS strategyFamily, AVG(m.score) AS averageBotScore

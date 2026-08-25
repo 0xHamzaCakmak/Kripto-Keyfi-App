@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 const evolutionConfigObject = z.object({
-  populationSize: z.number().int().min(1).max(1000).default(100),
-  survivorCount: z.number().int().min(1).max(500).default(20),
-  mutationCount: z.number().int().min(0).max(1000).default(60),
-  crossoverCount: z.number().int().min(0).max(1000).default(20),
+  populationSize: z.number().int().min(1).max(1000).default(20),
+  survivorCount: z.number().int().min(1).max(500).default(4),
+  mutationCount: z.number().int().min(0).max(1000).default(12),
+  crossoverCount: z.number().int().min(0).max(1000).default(4),
   researcherCandidateCount: z.number().int().min(0).max(1000).default(0),
   maxGenerations: z.number().int().min(1).max(1000).default(20),
   minimumTrades: z.number().int().min(1).max(1_000_000).default(50),

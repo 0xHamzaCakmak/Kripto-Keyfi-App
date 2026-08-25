@@ -59,3 +59,36 @@ func TestContinuousPaperTrainingRelaxesOnlyMarketConfluence(t *testing.T) {
 		t.Fatalf("continuous PAPER must keep exposure limits mandatory: %#v", result)
 	}
 }
+
+func TestTestnetTrainingKeepsRegimeTimeframeRiskAndPositionLimits(t *testing.T) {
+	input := Input{Regime: "TREND", ConfirmedTimeframes: 1, DerivativesAligned: true, TestnetTraining: true, RiskRewardSatisfied: true, PositionLimitSatisfied: true}
+	if result := ValidateTestnetTraining(input); !result.Passed {
+		t.Fatalf("explicit TESTNET training evidence rejected: %#v", result)
+	}
+	input.ConfirmedTimeframes = 0
+	if result := ValidateTestnetTraining(input); result.Passed || result.Failed[0] != "MARKET_TIMEFRAME_CONFIRMATION" {
+		t.Fatalf("TESTNET training bypassed market evidence: %#v", result)
+	}
+}
+
+func TestTestnetTrainingAllowsConfirmedHighVolatilityButNotUncertain(t *testing.T) {
+	input := Input{Regime: "HIGH_VOLATILITY", ConfirmedTimeframes: 1, DerivativesAligned: true, TestnetTraining: true, RiskRewardSatisfied: true, PositionLimitSatisfied: true}
+	if result := ValidateTestnetTraining(input); !result.Passed {
+		t.Fatalf("confirmed high-volatility TESTNET evidence rejected: %#v", result)
+	}
+
+	input.Regime = "UNCERTAIN"
+	if result := ValidateTestnetTraining(input); result.Passed {
+		t.Fatalf("raw uncertain TESTNET evidence must remain blocked: %#v", result)
+	}
+
+	input.ConfirmedTimeframes = 2
+	input.TransitionRegimeAccepted = true
+	if result := ValidateTestnetTraining(input); !result.Passed {
+		t.Fatalf("guarded TESTNET transition evidence was rejected: %#v", result)
+	}
+	input.DerivativesAligned = false
+	if result := ValidateTestnetTraining(input); result.Passed {
+		t.Fatalf("guarded transition bypassed derivatives evidence: %#v", result)
+	}
+}

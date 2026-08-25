@@ -15,7 +15,7 @@ import { assertCentralRiskExecution } from './execution-safety.js';
 const PREVIEW_TTL_MS = 2 * 60 * 1000;
 
 export async function listSymbols(userId: string, exchangeAccountId: string) {
-  const account = await tradingAccount(userId, exchangeAccountId);
+  const account = await readableTradingAccount(userId, exchangeAccountId);
   const symbols = await readExchangeState(account.executionEngine,
     async () => (await getTradingEngineSnapshot(account)).symbols,
     () => exchangeCall(() => adapterFor(account).getSymbols()));
@@ -176,7 +176,7 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
 }
 
 export async function listOpenOrders(userId: string, exchangeAccountId: string) {
-  const account = await tradingAccount(userId, exchangeAccountId);
+  const account = await readableTradingAccount(userId, exchangeAccountId);
   const orders = await readExchangeState(account.executionEngine,
     async () => (await getTradingEngineSnapshot(account)).orders,
     () => exchangeCall(() => adapterFor(account).getOpenOrders()));
@@ -231,7 +231,7 @@ export async function cancelOpenOrder(userId: string, exchangeOrderId: string, i
 }
 
 export async function listPositions(userId: string, exchangeAccountId: string) {
-  const account = await tradingAccount(userId, exchangeAccountId);
+  const account = await readableTradingAccount(userId, exchangeAccountId);
   const positions = await readExchangeState(account.executionEngine,
     async () => (await getTradingEngineSnapshot(account)).positions,
     () => exchangeCall(() => adapterFor(account).getPositions()));
@@ -255,8 +255,10 @@ export async function closePosition(userId: string, positionKey: string, input: 
     payload: { positionKey, symbol: position.symbol, status: 'CLOSING' } });
   const preview = await createOrderPreview(userId, {
     exchangeAccountId: input.exchangeAccountId, symbol: position.symbol, side: position.side === 'LONG' ? 'SELL' : 'BUY',
-    type: 'MARKET', quantity, leverage: Math.max(1, Math.trunc(Number(position.leverage))), marginMode: position.marginMode, reduceOnly: true,
+    type: input.type, quantity, ...(input.type === 'LIMIT' && input.price ? { price: input.price } : {}),
+    leverage: Math.max(1, Math.trunc(Number(position.leverage))), marginMode: position.marginMode, reduceOnly: true,
   });
+  await guardAutonomousReentryAfterManualClose(userId, input.exchangeAccountId, position.symbol, positionKey, input.type, ipAddress);
   let result;
   try {
     result = await submitOrder(userId, { previewId: preview.id, idempotencyKey: input.idempotencyKey }, ipAddress);
@@ -267,18 +269,58 @@ export async function closePosition(userId: string, positionKey: string, input: 
     throw error;
   }
   await prisma.tradingAuditLog.create({ data: {
-    userId, exchangeAccountId: input.exchangeAccountId, action: quantity === position.quantity ? 'POSITION_CLOSED' : 'POSITION_PARTIALLY_CLOSED',
-    entityType: 'EXCHANGE_POSITION', entityId: positionKey, metadata: { symbol: position.symbol, quantity }, ...(ipAddress ? { ipAddress } : {}),
+    userId, exchangeAccountId: input.exchangeAccountId,
+    action: input.type === 'LIMIT' ? 'POSITION_LIMIT_CLOSE_SUBMITTED' : quantity === position.quantity ? 'POSITION_CLOSED' : 'POSITION_PARTIALLY_CLOSED',
+    entityType: 'EXCHANGE_POSITION', entityId: positionKey, metadata: { symbol: position.symbol, quantity, type: input.type, price: input.price ?? null, reduceOnly: true }, ...(ipAddress ? { ipAddress } : {}),
   } });
+  const finalStatus = input.type === 'LIMIT' ? 'CLOSE_ORDER_OPEN' : 'CLOSED';
   await emitTradingState({ userId, exchangeAccountId: input.exchangeAccountId, provider: account.provider,
     eventType: 'POSITION_STATE_CHANGED', aggregateType: 'POSITION', aggregateId: positionKey,
-    payload: { positionKey, symbol: position.symbol, status: 'CLOSED' } });
+    payload: { positionKey, symbol: position.symbol, status: finalStatus, closeType: input.type } });
   return result;
+}
+
+async function guardAutonomousReentryAfterManualClose(
+  userId: string,
+  exchangeAccountId: string,
+  symbol: string,
+  positionKey: string,
+  closeType: 'MARKET' | 'LIMIT',
+  ipAddress?: string,
+) {
+  const currentCandleOpenMs = Math.floor(Date.now() / 900_000) * 900_000;
+  const bots = await prisma.tradingBot.findMany({
+    where: { userId, exchangeAccountId, type: 'AUTONOMOUS', mode: 'DEMO', symbol, lifecycleStatus: { not: 'ARCHIVED' } },
+    select: { id: true, configuration: true },
+  });
+  const updates = bots.map((bot) => {
+    const configuration = bot.configuration && !Array.isArray(bot.configuration) && typeof bot.configuration === 'object'
+      ? { ...(bot.configuration as Prisma.JsonObject) }
+      : {};
+    configuration.testnetReentryAfterCandleOpenMs = currentCandleOpenMs;
+    configuration.testnetReentryGuardReason = `MANUAL_${closeType}_CLOSE`;
+    configuration.testnetReentryGuardedAt = new Date().toISOString();
+    return prisma.tradingBot.update({ where: { id: bot.id }, data: { configuration: configuration as Prisma.InputJsonValue, version: { increment: 1 } } });
+  });
+  await prisma.$transaction([
+    ...updates,
+    prisma.tradingAuditLog.create({ data: {
+      userId, exchangeAccountId, action: 'AUTONOMOUS_REENTRY_GUARD_SET', entityType: 'EXCHANGE_POSITION', entityId: positionKey,
+      metadata: { symbol, closeType, botCount: bots.length, currentCandleOpenMs, nextEvaluationTimeframe: '15m', productionLive: false },
+      ...(ipAddress ? { ipAddress } : {}),
+    } }),
+  ]);
 }
 
 async function tradingAccount(userId: string, exchangeAccountId: string) {
   const account = await ownedAccount(userId, exchangeAccountId);
   assertTradableAccount(account);
+  return account;
+}
+
+async function readableTradingAccount(userId: string, exchangeAccountId: string) {
+  const account = await ownedAccount(userId, exchangeAccountId);
+  if (!account.isActive) throw new ApiError(409, 'Pasif borsa hesabı okunamaz.', 'EXCHANGE_ACCOUNT_DISABLED');
   return account;
 }
 

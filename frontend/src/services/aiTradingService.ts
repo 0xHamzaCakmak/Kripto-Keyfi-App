@@ -32,6 +32,18 @@ export type ArenaStatus = {
   executionMode: 'SIMULATION_ONLY';
 };
 
+export type PaperAccountingPeriod = {
+  id: string; number: number; status: string; botCount: number; note: string | null;
+  startedAt: string; closedAt: string | null; startingCapital: string;
+  periodNetPnl: string; periodEquity: string; tradeHistoryPreserved: true;
+};
+export type PaperAccountingStatus = {
+  active: PaperAccountingPeriod | null;
+  currentWithoutPeriod: { startingCapital: string; realizedPnl: string; unrealizedPnl: string; fees: string; netPnl: string } | null;
+  periods: Array<{ id: string; number: number; status: string; botCount: number; note: string | null; startedAt: string; closedAt: string | null }>;
+  tradeHistoryPreserved: true;
+};
+
 export type TradingUniverseAsset = {
   id: string; symbol: string; baseAsset: string; displayName: string; enabled: boolean; sortOrder: number;
   marketCap: string | null; volume24h: string | null; marketRank: number | null; volumeChange24h: string | null;
@@ -123,7 +135,28 @@ export type TestnetBotOperation = {
   botId: string; name: string; symbol: string; state: string; desiredState: string; allocationUsdt: number;
   configuredLeverage: number | null; position: TestnetPosition | null; stopLoss: string | null; takeProfit: string | null;
   realizedPnl: string; commission: string; netRealizedPnl: string; totalFills: number; entryFills: number; closedFills: number;
-  wins: number; losses: number; fills?: TestnetFill[];
+  wins: number; losses: number; fillHistoryFresh?: boolean; latestDecisionKind?: 'BUY' | 'SELL' | 'HOLD' | null; latestDecisionSummary?: string | null;
+  decisionsLastHour?: { buy: number; sell: number; hold: number }; fills?: TestnetFill[];
+};
+
+export type TestnetAccountSummary = {
+  connected: boolean;
+  accountId: string | null;
+  totalBalance: string;
+  availableBalance: string;
+  unrealizedPnl: string;
+  equity: string;
+  activeMargin: string;
+  activeNotional: string;
+  activeBots: number;
+  openPositions: number;
+  activeEntryOrders: number;
+  walletPnl: string;
+  openPnlChange: string;
+  netPnl: string;
+  pnlPercent: number;
+  accounting?: { number: number; startedAt: string; baselineWalletBalance: string; baselineUnrealizedPnl: string; note: string | null };
+  collateralAssets?: Array<{ asset: string; walletBalance: string; availableBalance: string; marginAvailable: boolean }>;
 };
 
 export type LeaderboardRow = {
@@ -208,21 +241,24 @@ export type BotCrossover = {
   parentA: { name: string }; parentB: { name: string }; child: { name: string; lifecycleStatus: AutonomousLifecycle; mode: SafeTradingMode }; generation: { number: number; status: string };
 };
 export type TradeMemory = {
+  executionMode?: 'PAPER' | 'TESTNET';
   id: string; tradingBotId: string; strategyVersionId: string | null; symbol: string; side: 'BUY' | 'SELL'; status: 'CLOSED' | 'LIQUIDATED';
   entryPrice: string; exitPrice: string | null; quantity: string; leverage: number; fees: string; funding: string; slippageCost: string; realizedPnl: string;
-  stopLoss: string | null; takeProfit: string | null; maxFavorableExcursion: string; maxAdverseExcursion: string; holdingSeconds: number | null;
+  grossRealizedPnl?: string; stopLoss: string | null; takeProfit: string | null; maxFavorableExcursion: string | null; maxAdverseExcursion: string | null; holdingSeconds: number | null;
   marketContext: unknown; closeReason: string | null; aiConfidence: string | null; decisionSummary: string | null; openedAt: string; closedAt: string | null;
   tradingBot: { id: string; name: string };
   strategyVersion: { id: string; version: number; strategy: { id: string; name: string; family: string } } | null;
   marketRegimeSnapshot: { id: string; regime: MarketRegime; confidence: string | number; timeframe: string; features: unknown; observedAt: string } | null;
 };
-export type TradeMemoryQuery = { botId?: string; strategyVersionId?: string; symbol?: string; regime?: MarketRegime; side?: 'BUY' | 'SELL'; outcome?: 'ALL' | 'BEST' | 'FAILURE'; limit?: number };
+export type TradeMemoryQuery = { source?: 'ALL' | 'PAPER' | 'TESTNET'; botId?: string; strategyVersionId?: string; symbol?: string; regime?: MarketRegime; side?: 'BUY' | 'SELL'; outcome?: 'ALL' | 'BEST' | 'FAILURE'; limit?: number };
 export type TradeMemoryStats = { tradeCount: number; wins: number; losses: number; netPnl: string; fees: string; funding: string; slippage: string };
 export type BotCapitalResult = { bot: AutonomousBot; allocationUsdt: number; maximumAllocationUsdt: number; sharedTestnetQuota: boolean };
+export type TestnetFleetActivationResult = { botCount: number; bots: Array<{ botId: string; name: string; symbol: string; mode: 'DEMO'; desiredState: 'RUNNING' }>; environment: 'TESTNET'; productionLive: false };
+export type PaperFleetActivationResult = { botCount: number; mode: 'PAPER'; submittedToExchange: false; productionLive: false };
 export type TradingRiskProfile = {
   id: string; exchangeAccountId: string; enabled: boolean; accountKillSwitch: boolean; killSwitchReason: string | null;
   globalKillSwitch: boolean; globalKillSwitchReason: string | null; globalKillSwitchActivatedAt: string | null;
-  maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string; maxOpenPositions: number; paperMaxOpenPositions: number; maxSymbolPositions: number; maxLeverage: number;
+  maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string; maxOpenPositions: number; paperMaxOpenPositions: number; botAllocationUsdt: string; minInitialMarginUsdt: string; testnetBotAllocationUsdt: string; testnetMinInitialMarginUsdt: string; maxSymbolPositions: number; minLeverage: number; maxLeverage: number;
   minAvailableBalance: string; maxOrdersPerMinute: number; maxDailyOrders: number; maxDailyLoss: string | null;
   maxRiskPerTradePct: string; maxDailyLossPct: string; maxWeeklyLossPct: string; maxDrawdownPct: string; maxSymbolOpenNotional: string;
   minRiskRewardRatio: string; stopLossRequired: true; marginModePolicy: 'ISOLATED_ONLY' | 'ALLOW_CROSS'; cooldownSeconds: number; maxConsecutiveLosses: number;
@@ -326,6 +362,10 @@ async function getAutonomousData<T>(path: string, params?: Record<string, unknow
 export const aiTradingApi = {
   overview: () => getAutonomousData<AutonomousOverview>('/admin/trading/autonomous/overview'),
   arenaStatus: () => getAutonomousData<ArenaStatus>('/admin/trading/autonomous/arena-status'),
+  paperAccounting: () => getAutonomousData<PaperAccountingStatus>('/admin/trading/autonomous/paper-accounting'),
+  resetPaperAccounting: (note: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<PaperAccountingPeriod>>>('/admin/trading/autonomous/paper-accounting/reset', { confirmation: 'RESET PAPER PNL', note })
+      .then((response) => response.data.data.data),
   tradingUniverse: () => getData<TradingUniverse>('/admin/trading/autonomous/trading-universe'),
   searchTradingUniverse: (q: string, limit = 20) => getData<TradingUniverseSearch>('/admin/trading/autonomous/trading-universe/search', { q, limit }),
   addTradingUniverseAsset: (symbol: string) =>
@@ -339,6 +379,10 @@ export const aiTradingApi = {
   champions: () => getData<ChampionCandidate[]>('/admin/trading/champions'),
   liveEligibility: () => getAutonomousData<LiveEligibilityStatus[]>('/admin/trading/autonomous/live-eligibility'),
   testnetOperations: () => getAutonomousData<TestnetBotOperation[]>('/admin/trading/autonomous/testnet-operations'),
+  testnetAccountSummary: () => getAutonomousData<TestnetAccountSummary>('/admin/trading/autonomous/testnet-account-summary'),
+  resetTestnetAccounting: (note: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<unknown>>>('/admin/trading/autonomous/testnet-accounting/reset', { confirmation: 'RESET TESTNET PNL', note })
+      .then((response) => response.data.data.data),
   testnetBotOperation: (botId: string) => getAutonomousData<TestnetBotOperation>(`/admin/trading/autonomous/testnet-operations/${encodeURIComponent(botId)}`),
   promotionReview: (botId: string, decision: 'APPROVE' | 'REJECT', note: string) =>
     api.post<ResponseEnvelope<AutonomousEnvelope<unknown>>>(`/admin/trading/autonomous/bots/${encodeURIComponent(botId)}/promotion-review`, { decision, note }).then((response) => {
@@ -351,6 +395,24 @@ export const aiTradingApi = {
       const envelope = response.data.data;
       if (envelope.apiVersion !== 'v1' || envelope.liveTradingEnabled !== false) throw new Error('TESTNET activation güvenlik sözleşmesi doğrulanamadı.');
       return envelope;
+    }),
+  activateTestnetFleet: (note: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<TestnetFleetActivationResult>>>(
+      '/admin/trading/autonomous/testnet-fleet/activate',
+      { confirmation: 'ENABLE 20 BINANCE TESTNET BOTS', note },
+    ).then((response) => {
+      const envelope = response.data.data;
+      if (envelope.apiVersion !== 'v1' || envelope.liveTradingEnabled !== false || envelope.data.productionLive !== false) throw new Error('TESTNET fleet activation güvenlik sözleşmesi doğrulanamadı.');
+      return envelope.data;
+    }),
+  activatePaperFleet: (note: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<PaperFleetActivationResult>>>(
+      '/admin/trading/autonomous/paper-fleet/activate',
+      { confirmation: 'RUN 20 PAPER BOTS', note },
+    ).then((response) => {
+      const envelope = response.data.data;
+      if (envelope.apiVersion !== 'v1' || envelope.liveTradingEnabled !== false || envelope.data.submittedToExchange !== false) throw new Error('PAPER fleet activation güvenlik sözleşmesi doğrulanamadı.');
+      return envelope.data;
     }),
   generations: (limit = 100) => getAutonomousData<Generation[]>('/admin/trading/autonomous/generations', { limit }),
   evolutionRuns: (limit = 100) => getData<EvolutionRun[]>('/admin/trading/evolution/runs', { limit }),
@@ -369,6 +431,20 @@ export const aiTradingApi = {
         if (envelope.apiVersion !== 'v1' || envelope.liveTradingEnabled !== false) throw new Error('Bot sermaye güvenlik sözleşmesi doğrulanamadı.');
         return envelope.data;
       }),
+  closePaperPosition: (botId: string, stopBot = false, note?: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<{ botId: string; tradeId: string; symbol: string; stopBot: boolean; status: 'QUEUED' }>>>(
+      `/admin/trading/autonomous/bots/${encodeURIComponent(botId)}/close-paper-position`,
+      { stopBot, ...(note ? { note } : {}) },
+    ).then((response) => response.data.data.data),
+  pauseBot: (botId: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<AutonomousBot>>>(`/admin/trading/autonomous/bots/${encodeURIComponent(botId)}/pause`)
+      .then((response) => response.data.data.data),
+  startBot: (botId: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<AutonomousBot>>>(`/admin/trading/autonomous/bots/${encodeURIComponent(botId)}/start`)
+      .then((response) => response.data.data.data),
+  resumeBot: (botId: string) =>
+    api.post<ResponseEnvelope<AutonomousEnvelope<AutonomousBot>>>(`/admin/trading/autonomous/bots/${encodeURIComponent(botId)}/resume`)
+      .then((response) => response.data.data.data),
   teacherEvaluations: (limit = 10) => getData<TeacherEvaluation[]>('/admin/trading/teacher/evaluations', { limit }),
   researchHypotheses: (limit = 10) => getData<ResearchHypothesis[]>('/admin/trading/research/hypotheses', { limit }),
   audit: (limit = 20) => getData<AuditActivity[]>('/admin/trading/system-health/audit', { limit }),

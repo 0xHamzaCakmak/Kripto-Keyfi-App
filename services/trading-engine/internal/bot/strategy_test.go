@@ -179,6 +179,25 @@ func TestAutonomousMarketEntryCarriesCompletePlaybookEvidence(t *testing.T) {
 	}
 }
 
+func TestTestnetReentryGuardWaitsForFreshFifteenMinuteCandle(t *testing.T) {
+	instance := autonomousMomentumInstance("DEMO")
+	instance.Configuration["signalThresholdBps"] = float64(5)
+	snapshot := trendingSnapshot(1)
+	last := len(snapshot.Candles["15m"]) - 1
+	snapshot.Candles["15m"][last].OpenTimeMS = 1_777_000_000_000
+	instance.Configuration["testnetReentryAfterCandleOpenMs"] = float64(1_777_000_000_000)
+	decision, err := EvaluateStrategyWithMarket(instance, "209.5", "209", snapshot)
+	if err != nil || decision.Kind != "HOLD" || decision.HypotheticalOrder != nil || decision.Metrics["testnetReentryGuardActive"] != true {
+		t.Fatalf("same-candle TESTNET reentry was not guarded: %#v err=%v", decision, err)
+	}
+
+	snapshot.Candles["15m"][last].OpenTimeMS += 15 * 60 * 1000
+	decision, err = EvaluateStrategyWithMarket(instance, "209.5", "209", snapshot)
+	if err != nil || decision.Kind != "BUY" || decision.HypotheticalOrder == nil {
+		t.Fatalf("fresh 15m candle did not release the guard: %#v err=%v", decision, err)
+	}
+}
+
 func TestContinuousPaperTrainingEntryCarriesIsolatedRiskContract(t *testing.T) {
 	instance := autonomousMomentumInstance("PAPER")
 	closes := make([]domain.Decimal, 30)
@@ -192,6 +211,72 @@ func TestContinuousPaperTrainingEntryCarriesIsolatedRiskContract(t *testing.T) {
 	order := result.HypotheticalOrder
 	if order["marginMode"] != "ISOLATED" || order["continuousTrainingEntry"] != true || order["martingaleAllowed"] != false {
 		t.Fatalf("continuous PAPER risk contract is incomplete: %#v", order)
+	}
+}
+
+func TestExplicitTestnetProfileTurnsHoldIntoProtectedTrendGridCandidate(t *testing.T) {
+	instance := autonomousMomentumInstance("DEMO")
+	instance.StrategyFamily = "RSI_MEAN_REVERSION"
+	instance.Configuration["testnetExecutionProfile"] = true
+	instance.Configuration["testnetContinuousExecution"] = true
+	instance.Configuration["testnetTrendGridEnabled"] = true
+	instance.Configuration["minimumTakeProfitBps"] = float64(300)
+	instance.Configuration["adaptiveStopMaxBps"] = float64(300)
+	result, err := EvaluateStrategyWithMarket(instance, "209.5", "209", trendingSnapshot(1))
+	if err != nil || result.HypotheticalOrder == nil || result.Metrics["testnetContinuousEntry"] != true {
+		t.Fatalf("explicit TESTNET profile did not produce an entry candidate: %#v err=%v", result, err)
+	}
+	if result.HypotheticalOrder["takeProfitBps"].(float64) < 300 || result.HypotheticalOrder["marginMode"] != "ISOLATED" {
+		t.Fatalf("TESTNET candidate lost protection contract: %#v", result.HypotheticalOrder)
+	}
+}
+
+func TestTestnetContinuousMarketConfirmationAcceptsOnlyGuardedTransition(t *testing.T) {
+	configuration := map[string]any{
+		"testnetTransitionRegimeEnabled":          true,
+		"testnetTransitionMinConfirmedTimeframes": float64(2),
+		"testnetTransitionMinAtrBps":              float64(20),
+	}
+	transition := MarketAnalysis{Regime: "UNCERTAIN", ConfirmedTimeframes: 2, ATRBps15m: 38, DerivativesAligned: true}
+	accepted, transitionAccepted := testnetContinuousMarketConfirmation(configuration, transition)
+	if !accepted || !transitionAccepted {
+		t.Fatalf("guarded TESTNET transition was rejected: accepted=%v transition=%v", accepted, transitionAccepted)
+	}
+
+	for name, rejected := range map[string]MarketAnalysis{
+		"missing derivatives": {Regime: "UNCERTAIN", ConfirmedTimeframes: 2, ATRBps15m: 38, DerivativesAligned: false},
+		"single timeframe":    {Regime: "UNCERTAIN", ConfirmedTimeframes: 1, ATRBps15m: 38, DerivativesAligned: true},
+		"low volatility":      {Regime: "UNCERTAIN", ConfirmedTimeframes: 2, ATRBps15m: 19, DerivativesAligned: true},
+	} {
+		if accepted, _ := testnetContinuousMarketConfirmation(configuration, rejected); accepted {
+			t.Fatalf("unsafe TESTNET transition %q was accepted", name)
+		}
+	}
+
+	configuration["testnetTransitionRegimeEnabled"] = false
+	if accepted, _ := testnetContinuousMarketConfirmation(configuration, transition); accepted {
+		t.Fatal("explicitly disabled TESTNET transition regime was accepted")
+	}
+}
+
+func TestExplicitTestnetProfileEnforcesMinimumInitialMarginBeforeLeverage(t *testing.T) {
+	instance := autonomousMomentumInstance("DEMO")
+	instance.Configuration["allocationUsdt"] = float64(500)
+	instance.Configuration["minimumInitialMarginUsdt"] = float64(100)
+	instance.Configuration["testnetExecutionProfile"] = true
+	instance.Configuration["testnetContinuousExecution"] = true
+	instance.Configuration["testnetMarginAllocationMode"] = true
+	result, err := EvaluateStrategyWithMarket(instance, "209.5", "209", trendingSnapshot(1))
+	if err != nil || result.HypotheticalOrder == nil {
+		t.Fatalf("TESTNET margin-sized candidate failed: %#v err=%v", result, err)
+	}
+	order := result.HypotheticalOrder
+	quantity, _ := decimalRat(order["quantity"].(string))
+	mark, _ := decimalRat("209.5")
+	notional := new(big.Rat).Mul(quantity, mark)
+	margin := new(big.Rat).Quo(notional, big.NewRat(int64(order["leverage"].(int)), 1))
+	if margin.Cmp(big.NewRat(100, 1)) < 0 || order["riskPlanVersion"] != "TESTNET_MARGIN_ALLOCATION_V1" {
+		t.Fatalf("TESTNET entry did not reserve 100 USDT initial margin: %#v", order)
 	}
 }
 

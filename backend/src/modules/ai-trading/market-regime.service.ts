@@ -10,7 +10,7 @@ export async function getRegimeLeaderboard(userId: string, regime: MarketRegime,
     FROM bot_metrics m
     JOIN trading_bots b ON b.id = m.tradingBotId
     JOIN market_regime_snapshots snapshot ON snapshot.id = m.marketRegimeSnapshotId
-    WHERE b.userId = ${userId} AND b.type = 'AUTONOMOUS' AND snapshot.regime = ${regime}
+    WHERE b.userId = ${userId} AND b.type = 'AUTONOMOUS' AND b.lifecycleStatus <> 'ARCHIVED' AND snapshot.regime = ${regime}
       AND m.score IS NOT NULL
       AND m.id = (
         SELECT latest.id

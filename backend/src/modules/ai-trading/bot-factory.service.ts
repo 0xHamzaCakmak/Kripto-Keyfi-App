@@ -1,4 +1,5 @@
 import { Prisma, type AutonomousTradingStatus, type BotCreationMethod, type TradingBotMode } from '@prisma/client';
+import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import type {
@@ -69,7 +70,10 @@ export function mergeParameterVariant(
 export async function listFactoryBots(userId: string) {
   const [bots, evidence] = await Promise.all([
     prisma.tradingBot.findMany({
-      where: { userId, type: 'AUTONOMOUS' },
+      // Arena is the current runtime view. Retired bots keep their immutable
+      // trades, metrics and lineage in Memory/Evolution, but must not inflate
+      // the active fleet or appear as runnable rows here.
+      where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } },
       select: botFactorySelect,
       orderBy: { createdAt: 'desc' },
     }),
@@ -287,6 +291,10 @@ async function persistFactoryBot(userId: string, data: FactoryCreateData, ipAddr
 
   try {
     return await prisma.$transaction(async (tx) => {
+      const fleetCount = await tx.tradingBot.count({ where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } } });
+      if (fleetCount >= env.AI_TRADING_FIXED_FLEET_SIZE) {
+        throw new ApiError(409, `Autonomous fleet is fixed at ${env.AI_TRADING_FIXED_FLEET_SIZE} active bots. Archive or remove a bot before creating another.`, 'AUTONOMOUS_FIXED_FLEET_LIMIT');
+      }
       const bot = await tx.tradingBot.create({ data: {
         userId,
         exchangeAccountId: data.exchangeAccountId,

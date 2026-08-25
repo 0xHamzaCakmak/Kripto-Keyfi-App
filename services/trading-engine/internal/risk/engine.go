@@ -12,12 +12,12 @@ import (
 )
 
 type Profile struct {
-	Enabled, GlobalKillSwitch, AccountKillSwitch               bool
-	MaxOrderNotional, MaxInitialMargin, MaxAccountOpenNotional domain.Decimal
-	MaxOpenPositions, MaxSymbolPositions, MaxLeverage          int
-	MinAvailableBalance                                        domain.Decimal
-	MaxOrdersPerMinute, MaxDailyOrders                         int
-	AllowedSymbols, BlockedSymbols                             []string
+	Enabled, GlobalKillSwitch, AccountKillSwitch                   bool
+	MaxOrderNotional, MaxInitialMargin, MaxAccountOpenNotional     domain.Decimal
+	MaxOpenPositions, MaxSymbolPositions, MinLeverage, MaxLeverage int
+	MinAvailableBalance                                            domain.Decimal
+	MaxOrdersPerMinute, MaxDailyOrders                             int
+	AllowedSymbols, BlockedSymbols                                 []string
 }
 
 type Usage struct{ OrdersLastMinute, OrdersToday int }
@@ -79,8 +79,11 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 	if contains(profile.BlockedSymbols, order.Symbol) {
 		return e.reject(ctx, resolved, order, "SYMBOL_BLOCKED", "Parite risk profili tarafından engellendi.", nil)
 	}
-	if len(profile.AllowedSymbols) > 0 && !contains(profile.AllowedSymbols, order.Symbol) {
+	if len(profile.AllowedSymbols) > 0 && !containsTradingSymbol(profile.AllowedSymbols, order.Symbol) {
 		return e.reject(ctx, resolved, order, "SYMBOL_NOT_ALLOWED", "Parite izin verilen risk listesinin dışında.", nil)
+	}
+	if order.Leverage < maxInt(profile.MinLeverage, 1) {
+		return e.reject(ctx, resolved, order, "RISK_MIN_LEVERAGE_NOT_MET", "Seçilen kaldıraç hesap asgari kaldıraç sınırının altında.", map[string]any{"requestedLeverage": order.Leverage, "minLeverage": maxInt(profile.MinLeverage, 1)})
 	}
 	if order.Leverage > profile.MaxLeverage {
 		return e.reject(ctx, resolved, order, "RISK_MAX_LEVERAGE_EXCEEDED", "Seçilen kaldıraç hesap risk limitini aşıyor.", map[string]any{"requestedLeverage": order.Leverage, "maxLeverage": profile.MaxLeverage})
@@ -153,6 +156,17 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 		if balance.WalletType == domain.WalletUSDMFutures && balance.Asset == "USDT" {
 			available, _ = add(available, balance.AvailableBalance)
 		}
+		if balance.WalletType == domain.WalletUSDMFutures && balance.Asset == "USDC" && (balance.MarginAvailable || strings.HasSuffix(order.Symbol, "USDC")) {
+			price := balance.PriceUSDT
+			if price == "" {
+				price = "1"
+			}
+			value, valid := multiply(balance.AvailableBalance, price)
+			if !valid {
+				return e.block(ctx, resolved, order, "RISK_BALANCE_INVALID", "USDC teminat değeri hesaplanamadı.", metrics, errors.New("invalid USDC collateral value"))
+			}
+			available, _ = add(available, value)
+		}
 	}
 	remaining, ok := subtract(available, initialMargin)
 	if !ok {
@@ -182,6 +196,13 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 		return Decision{}, err
 	}
 	return decision, nil
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }
 
 func (e *Engine) reject(ctx context.Context, resolved account.Resolved, order OrderInput, code, message string, metrics map[string]any) (Decision, error) {
@@ -216,6 +237,16 @@ func contains(values []string, value string) bool {
 		if strings.EqualFold(item, value) {
 			return true
 		}
+	}
+	return false
+}
+
+func containsTradingSymbol(values []string, value string) bool {
+	if contains(values, value) {
+		return true
+	}
+	if strings.HasSuffix(value, "USDC") {
+		return contains(values, strings.TrimSuffix(value, "USDC")+"USDT")
 	}
 	return false
 }

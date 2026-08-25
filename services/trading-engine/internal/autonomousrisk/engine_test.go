@@ -77,6 +77,11 @@ func TestConsecutiveLossesKeepPaperLearningAndLockTestnet(t *testing.T) {
 }
 
 func TestEnforcesExposureLeverageMarginAndPositionCount(t *testing.T) {
+	policy := safePolicy()
+	policy.MinLeverage = 3
+	if decision := Evaluate(policy, safeIntent(), safeSnapshot()); decision.Code != "RISK_MIN_LEVERAGE_NOT_MET" {
+		t.Fatal(decision.Code)
+	}
 	intent := safeIntent()
 	intent.Leverage = 6
 	if decision := Evaluate(safePolicy(), intent, safeSnapshot()); decision.Code != "RISK_MAX_LEVERAGE_EXCEEDED" {

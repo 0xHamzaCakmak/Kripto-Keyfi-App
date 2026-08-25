@@ -12,6 +12,7 @@ export type ExchangeBalance = {
   availableBalance: string;
   lockedBalance?: string;
   unrealizedPnl: string;
+  marginAvailable?: boolean;
   priceUsdt?: string;
   valueUsdt?: string;
 };

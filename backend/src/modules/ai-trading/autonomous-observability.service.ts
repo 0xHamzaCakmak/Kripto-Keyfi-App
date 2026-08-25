@@ -27,7 +27,7 @@ export type AutonomousHealthMetrics = {
 export async function getAutonomousSystemHealth(userId: string, now = new Date()) {
   const fiveMinutesAgo = new Date(now.getTime() - WINDOW_MINUTES * 60_000);
   const dayAgo = new Date(now.getTime() - DAY_MS);
-  const autonomousBot = { userId, type: 'AUTONOMOUS' as const };
+  const autonomousBot = { userId, type: 'AUTONOMOUS' as const, lifecycleStatus: { not: 'ARCHIVED' as const } };
   const [
     activeBots, decisionsLast5m, latestMarket, latestDecision, latencyRows, paperTradesTotal, paperTradesLast24h,
     riskRejectsLast24h, exchangeErrorsLast24h, aiProviderErrorsLast24h, generations,

@@ -8,5 +8,7 @@ coverage/
 *.log
 *.exe~
 .tmp-go-cache/
+services/trading-engine/.gocache/
+services/trading-engine/.gotmp/
 .tmp/
 .runtime/

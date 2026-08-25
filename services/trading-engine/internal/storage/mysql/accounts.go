@@ -48,6 +48,16 @@ func Open(ctx context.Context, databaseURL string, vault *credential.Vault) (*Ac
 func (s *AccountStore) Close() error { return s.database.Close() }
 
 func (s *AccountStore) Resolve(ctx context.Context, userID, accountID string) (account.Resolved, error) {
+	return s.resolveAccount(ctx, userID, accountID, false)
+}
+
+// ResolveReadOnly permits an active DEGRADED account to expose its exchange
+// state while order writes remain fail-closed through Resolve.
+func (s *AccountStore) ResolveReadOnly(ctx context.Context, userID, accountID string) (account.Resolved, error) {
+	return s.resolveAccount(ctx, userID, accountID, true)
+}
+
+func (s *AccountStore) resolveAccount(ctx context.Context, userID, accountID string, allowDegraded bool) (account.Resolved, error) {
 	if s.vault == nil {
 		return account.Resolved{}, errors.New("credential vault is unavailable")
 	}
@@ -89,7 +99,7 @@ FROM exchange_accounts WHERE id = ? AND userId = ? LIMIT 1`
 			return account.Resolved{}, errors.New("decrypt exchange credentials: passphrase authentication failed")
 		}
 	}
-	if referenceStatus != "CONNECTED" {
+	if referenceStatus != "CONNECTED" && !(allowDegraded && referenceStatus == "DEGRADED") {
 		return account.Resolved{}, fmt.Errorf("exchange account is not write-ready: %s", referenceStatus)
 	}
 	return account.Resolved{Reference: reference, Credentials: credentials, Engine: engine, ConnectionStatus: referenceStatus}, nil

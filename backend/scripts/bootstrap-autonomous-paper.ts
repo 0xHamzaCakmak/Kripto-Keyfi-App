@@ -2,10 +2,11 @@ import { prisma } from '../src/database/prisma.js';
 import { createStrategy, createStrategyVersion } from '../src/modules/ai-trading/strategy-registry.service.js';
 import { createFactoryBot, transitionFactoryBot } from '../src/modules/ai-trading/bot-factory.service.js';
 import { startAutonomousBot, triggerPaperGeneration } from '../src/modules/ai-trading/autonomous-admin.service.js';
+import { paperTrainingConfiguration } from '../src/modules/ai-trading/universe.worker.js';
 
 const STRATEGY_NAME = 'AI Momentum Baseline';
 const BOT_PREFIX = 'AI Momentum G1';
-const POPULATION = 100;
+const POPULATION = 20;
 
 const parameterSchema = { parameters: {
   signalThresholdBps: { type: 'number' as const, min: 5, max: 100, step: 5, default: 25 },
@@ -168,27 +169,17 @@ async function main() {
     const configuredAllocation = Number((currentConfiguration as Record<string, unknown>).allocationUsdt);
     const preservedAllocation = Number.isFinite(configuredAllocation) && configuredAllocation >= 10 && configuredAllocation <= 10_000 ? configuredAllocation : 100;
     const desiredLeverage = 5 + (index % 16);
-    if (bot.intervalSeconds !== 15 || bot.strategyVersionId !== strategyVersion.id || bot.generationId !== generation.id
-      || (currentConfiguration as Record<string, unknown>).leverage !== desiredLeverage
-      || (currentConfiguration as Record<string, unknown>).positionNotionalPct !== 0.10
-      || (currentConfiguration as Record<string, unknown>).fixedRiskPct !== 0.0075
-      || (currentConfiguration as Record<string, unknown>).atrStopMultiplier !== atrMultiplier
-      || (currentConfiguration as Record<string, unknown>).signalExperimentId !== 'PAPER_SIGNAL_SENSITIVITY_V1'
-      || (currentConfiguration as Record<string, unknown>).signalExperimentVariant !== signalExperimentVariant
-      || (currentConfiguration as Record<string, unknown>).newsFilterEnabled !== (index % 2 === 0)
-      || (currentConfiguration as Record<string, unknown>).pyramidingEnabled !== true) {
-      bot = await prisma.tradingBot.update({
-        where: { id: bot.id },
-        data: { strategyVersionId: strategyVersion.id, generationId: generation.id, intervalSeconds: 15,
-          configuration: { ...currentConfiguration, leverage: desiredLeverage, allocationUsdt: preservedAllocation, positionNotionalPct: 0.10, pyramidingEnabled: true,
-            stopLossBps: 75, takeProfitBps: 125, fixedRiskPct: 0.0075, atrStopMultiplier: atrMultiplier,
-            adaptiveStopMinBps: 75, adaptiveStopMaxBps: 300, riskRewardRatio: 1.5,
-            maintenanceMarginBps: 50, liquidationReserveFraction: 0.2, newsFilterEnabled: index % 2 === 0,
-            playbookVersion: 'TRADING_PLAYBOOK_V1', experimentId: 'ATR_STOP_WALK_FORWARD_V1', experimentVariant,
-            signalExperimentId: 'PAPER_SIGNAL_SENSITIVITY_V1', signalExperimentVariant },
-        },
-      });
-    }
+    bot = await prisma.tradingBot.update({
+      where: { id: bot.id },
+      data: { strategyVersionId: strategyVersion.id, generationId: generation.id, intervalSeconds: 5,
+        configuration: paperTrainingConfiguration(bot.configuration, desiredLeverage, {
+          allocationUsdt: preservedAllocation, fixedRiskPct: 0.0075, atrStopMultiplier: atrMultiplier,
+          maintenanceMarginBps: 50, liquidationReserveFraction: 0.2, newsFilterEnabled: index % 2 === 0,
+          playbookVersion: 'TRADING_PLAYBOOK_V1', experimentId: 'ATR_STOP_WALK_FORWARD_V1', experimentVariant,
+          signalExperimentId: 'PAPER_SIGNAL_SENSITIVITY_V1', signalExperimentVariant,
+        }),
+      },
+    });
     if (bot.state === 'ERROR' && bot.desiredState === 'RUNNING') {
       bot = await prisma.tradingBot.update({
         where: { id: bot.id },

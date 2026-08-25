@@ -59,7 +59,7 @@ func TestPaperTrainingPolicyIsSeparateFromTestnetAndSupportsOneHundredPositions(
 	if got := autonomousPolicyForMode(base, "PAPER", 100).MaxConcurrentPositions; got != 100 {
 		t.Fatalf("paper maximum: %d", got)
 	}
-	if got := autonomousPolicyForMode(base, "DEMO", 100).MaxConcurrentPositions; got != 15 {
+	if got := autonomousPolicyForMode(base, "DEMO", 100).MaxConcurrentPositions; got != 20 {
 		t.Fatalf("testnet maximum changed: %d", got)
 	}
 	base.MaxConcurrentPositions = 5
@@ -78,7 +78,7 @@ func TestPaperTrainingExposureCapacityIsSeparateFromTestnet(t *testing.T) {
 		t.Fatalf("paper fleet exposure was not sized for 100 independent allocations: %#v", training)
 	}
 	testnet := autonomousPolicyForMode(base, "DEMO", 100)
-	if testnet.MaxConcurrentPositions != 15 || testnet.MaxTotalExposure != "1500" || testnet.MaxSymbolExposure != "1500" {
+	if testnet.MaxConcurrentPositions != 20 || testnet.MaxTotalExposure != "1500" || testnet.MaxSymbolExposure != "1500" {
 		t.Fatalf("testnet policy was changed by PAPER training capacity: %#v", testnet)
 	}
 }

@@ -2,22 +2,23 @@ import { prisma } from '../src/database/prisma.js';
 
 async function main() {
   const since = new Date(Date.now() - 5 * 60_000);
-  const [paperBots, demoBots, states, decisions, fills, openTrades, closedTrades, metricBots, latest, errors, blocked, accounts, missingStrategies, leases] = await Promise.all([
-    prisma.tradingBot.count({ where: { type: 'AUTONOMOUS', mode: 'PAPER' } }),
+  const [paperBots, retainedPaperBots, demoBots, states, decisions, fills, openTrades, closedTrades, metricBots, latest, errors, blocked, accounts, missingStrategies, leases] = await Promise.all([
+    prisma.tradingBot.count({ where: { type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: { not: 'ARCHIVED' } } }),
+    prisma.tradingBot.count({ where: { type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: 'ARCHIVED' } }),
     prisma.tradingBot.count({ where: { type: 'AUTONOMOUS', mode: 'DEMO' } }),
-    prisma.tradingBot.groupBy({ by: ['mode', 'state'], where: { type: 'AUTONOMOUS' }, _count: { _all: true } }),
+    prisma.tradingBot.groupBy({ by: ['mode', 'state'], where: { type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } }, _count: { _all: true } }),
     prisma.tradingBotDecision.count({ where: { type: 'AUTONOMOUS', mode: 'PAPER', occurredAt: { gte: since } } }),
     prisma.tradingBotPaperFill.count({ where: { tradingBot: { type: 'AUTONOMOUS', mode: 'PAPER' } } }),
     prisma.paperTrade.count({ where: { tradingBot: { type: 'AUTONOMOUS', mode: 'PAPER' }, status: 'OPEN' } }),
     prisma.paperTrade.count({ where: { tradingBot: { type: 'AUTONOMOUS', mode: 'PAPER' }, status: { in: ['CLOSED', 'LIQUIDATED'] } } }),
-    prisma.botMetric.groupBy({ by: ['tradingBotId'], where: { tradingBot: { type: 'AUTONOMOUS', mode: 'PAPER' }, score: { not: null } } }),
+    prisma.botMetric.groupBy({ by: ['tradingBotId'], where: { tradingBot: { type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: { not: 'ARCHIVED' } }, score: { not: null } } }),
     prisma.botMetric.findMany({
-      where: { tradingBot: { type: 'AUTONOMOUS', mode: 'PAPER' }, score: { not: null } },
+      where: { tradingBot: { type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: { not: 'ARCHIVED' } }, score: { not: null } },
       orderBy: [{ snapshotAt: 'desc' }, { id: 'desc' }], take: 5,
       select: { tradingBotId: true, score: true, currentEquity: true, totalTrades: true, snapshotAt: true },
     }),
     prisma.tradingBot.findMany({
-      where: { type: 'AUTONOMOUS', mode: 'PAPER', state: 'ERROR' }, take: 10,
+      where: { type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: { not: 'ARCHIVED' }, state: 'ERROR' }, take: 10,
       select: { id: true, name: true, strategyVersionId: true, strategyVersion: { select: { strategy: { select: { family: true } } } }, lastErrorCode: true, lastErrorMessage: true, stateReason: true, lastDecisionAt: true },
     }),
     prisma.tradingBot.groupBy({
@@ -29,14 +30,14 @@ async function main() {
       where: { isActive: true },
       select: { id: true, name: true, provider: true, environment: true, connectionStatus: true, executionEngine: true, canTrade: true },
     }),
-    prisma.tradingBot.count({ where: { type: 'AUTONOMOUS', mode: 'PAPER', strategyVersionId: null } }),
+    prisma.tradingBot.count({ where: { type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: { not: 'ARCHIVED' }, strategyVersionId: null } }),
     prisma.tradingBot.findMany({
       where: { type: 'AUTONOMOUS', schedulerOwner: { not: null } }, orderBy: { leaseExpiresAt: 'desc' }, take: 12,
       select: { name: true, mode: true, state: true, schedulerOwner: true, leaseExpiresAt: true, heartbeatAt: true, lastDecisionAt: true },
     }),
   ]);
   console.log(JSON.stringify({
-    paperBots, demoBots,
+    paperBots, retainedPaperBots, demoBots,
     states: states.map((item) => ({ mode: item.mode, state: item.state, count: item._count._all })),
     decisionsLast5m: decisions, decisionsPerMinute: decisions / 5,
     fills, openTrades, closedTrades, botsWithScoredMetrics: metricBots.length,

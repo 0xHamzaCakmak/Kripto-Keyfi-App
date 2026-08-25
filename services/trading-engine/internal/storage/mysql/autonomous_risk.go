@@ -17,7 +17,7 @@ import (
 
 const (
 	paperTrainingMaxConcurrentPositions = 100
-	testnetLiveMaxConcurrentPositions   = 15
+	testnetMaxConcurrentPositions       = 20
 )
 
 func evaluateAutonomousPaperRisk(ctx context.Context, tx *sql.Tx, instance bot.Instance, decision bot.Decision, now time.Time) (autonomousrisk.Decision, error) {
@@ -25,7 +25,7 @@ func evaluateAutonomousPaperRisk(ctx context.Context, tx *sql.Tx, instance bot.I
 	intent := autonomousrisk.Intent{Mode: instance.Mode, Side: textValue(order["side"]), MarginMode: textValue(order["marginMode"]), EntryPrice: decision.MarkPrice,
 		StopLoss: textValue(order["stopLoss"]), TakeProfit: textValue(order["takeProfit"]), Quantity: textValue(order["quantity"]), Leverage: intValue(order["leverage"]),
 		EntryEvidence: entrycheck.Input{Regime: textValue(order["marketRegime"]), HigherTimeframeAligned: boolValue(order["higherTimeframeAligned"]),
-			ConfirmedTimeframes: intValue(order["confirmedTimeframes"]), DerivativesAligned: boolValue(order["derivativesAligned"]), ContinuousTraining: boolValue(order["continuousTrainingEntry"])},
+			ConfirmedTimeframes: intValue(order["confirmedTimeframes"]), DerivativesAligned: boolValue(order["derivativesAligned"]), ContinuousTraining: boolValue(order["continuousTrainingEntry"]), TestnetTraining: boolValue(order["testnetContinuousEntry"]), TransitionRegimeAccepted: boolValue(order["transitionRegimeAccepted"])},
 		ExecutionMode: instance.Mode, ObservationApproved: boolValue(instance.Configuration["observationApproved"])}
 	// DEMO is the persisted marker for explicitly activated TESTNET execution.
 	// The immutable autonomous policy is evaluated with PAPER semantics first;
@@ -39,7 +39,7 @@ func evaluateAutonomousPaperRisk(ctx context.Context, tx *sql.Tx, instance bot.I
 	var lastFill sql.NullTime
 	err := tx.QueryRowContext(ctx, `SELECT p.enabled, c.globalKillSwitch, p.accountKillSwitch,
 CAST(p.maxRiskPerTradePct AS CHAR), CAST(p.maxDailyLossPct AS CHAR), CAST(p.maxWeeklyLossPct AS CHAR), CAST(p.maxDrawdownPct AS CHAR),
-p.maxLeverage, p.maxOpenPositions, p.paperMaxOpenPositions, CAST(p.maxAccountOpenNotional AS CHAR), CAST(p.maxSymbolOpenNotional AS CHAR),
+p.minLeverage, p.maxLeverage, p.maxOpenPositions, p.paperMaxOpenPositions, CAST(p.maxAccountOpenNotional AS CHAR), CAST(p.maxSymbolOpenNotional AS CHAR),
 CAST(p.maxOrderNotional AS CHAR), CAST(p.minRiskRewardRatio AS CHAR), p.stopLossRequired, p.marginModePolicy,
 p.cooldownSeconds, p.maxConsecutiveLosses, CAST(b.startingPaperBalance AS CHAR),
 COALESCE(CAST(pos.netQuantity AS CHAR), '0'), COALESCE(CAST(pos.realizedPnl AS CHAR), '0'),
@@ -52,7 +52,7 @@ LEFT JOIN trading_bot_paper_positions pos ON pos.tradingBotId = b.id
 WHERE b.id = ? AND b.userId = ? FOR UPDATE`, instance.ID, instance.UserID).Scan(
 		&policy.Enabled, &policy.GlobalKillSwitch, &policy.AccountKillSwitch,
 		&policy.MaxRiskPerTradePct, &policy.MaxDailyLossPct, &policy.MaxWeeklyLossPct, &policy.MaxDrawdownPct,
-		&policy.MaxLeverage, &policy.MaxConcurrentPositions, &paperMaxOpenPositions, &policy.MaxTotalExposure, &policy.MaxSymbolExposure,
+		&policy.MinLeverage, &policy.MaxLeverage, &policy.MaxConcurrentPositions, &paperMaxOpenPositions, &policy.MaxTotalExposure, &policy.MaxSymbolExposure,
 		&policy.MaxPositionSize, &policy.MinRiskReward, &policy.StopLossRequired, &policy.MarginModePolicy,
 		&policy.CooldownSeconds, &policy.MaxConsecutiveLosses, &starting, &netQuantity, &realized, &unrealized, &fees, &lastMark, &lastFill)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -75,17 +75,32 @@ FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, instance.ID
 			lastFill = sql.NullTime{}
 		}
 	}
-	// A bot's configured allocation is the cash allocation boundary. PAPER
-	// stores leveraged notional, so its position-size boundary is allocation x
-	// leverage; TESTNET/live continue to use the stricter persisted boundary.
+	// A bot's configured PAPER/TESTNET allocation is cash margin. Its position
+	// boundary is allocation x leverage; TESTNET also remains capped by the
+	// persisted admin risk profile and the exchange-aware central Risk Engine.
 	if allocation, ok := numericBotConfiguration(instance.Configuration["allocationUsdt"]); ok && allocation > 0 {
 		configuredLimit := allocation
-		if instance.Mode == "PAPER" {
+		if instance.Mode == "PAPER" || (instance.Mode == "DEMO" && instance.Configuration["testnetMarginAllocationMode"] == true) {
 			configuredLimit *= float64(maxIntValue(intent.Leverage, 1))
-			policy.MaxPositionSize = ratText(new(big.Rat).SetFloat64(configuredLimit))
-			policy.CooldownSeconds = 0
+			configured := ratText(new(big.Rat).SetFloat64(configuredLimit))
+			if instance.Mode == "PAPER" {
+				policy.MaxPositionSize = configured
+			} else if current, currentOK := decimalRat(policy.MaxPositionSize); currentOK {
+				limit, _ := decimalRat(configured)
+				if current.Cmp(limit) > 0 {
+					policy.MaxPositionSize = configured
+				}
+			}
+			if instance.Mode == "PAPER" {
+				policy.CooldownSeconds = 0
+			}
 			if configuredRisk, riskOK := numericBotConfiguration(instance.Configuration["paperMaxRiskPerTradePct"]); riskOK && configuredRisk >= 0.01 && configuredRisk <= 0.20 {
 				policy.MaxRiskPerTradePct = ratText(new(big.Rat).SetFloat64(configuredRisk))
+			}
+			if instance.Mode == "DEMO" {
+				if configuredRisk, riskOK := numericBotConfiguration(instance.Configuration["testnetMaxRiskPerTradePct"]); riskOK && configuredRisk >= 0.01 && configuredRisk <= 0.20 {
+					policy.MaxRiskPerTradePct = ratText(new(big.Rat).SetFloat64(configuredRisk))
+				}
 			}
 		} else {
 			configured := ratText(new(big.Rat).SetFloat64(configuredLimit))
@@ -115,7 +130,11 @@ FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, instance.ID
 	intent.OpensNewPosition = net.Sign() == 0
 	if !intent.RiskReducing {
 		var universeEnabled bool
-		universeErr := tx.QueryRowContext(ctx, `SELECT enabled FROM trading_universe_assets WHERE userId = ? AND symbol = ? LIMIT 1`, instance.UserID, instance.Symbol).Scan(&universeEnabled)
+		universeSymbol := instance.Symbol
+		if strings.HasSuffix(universeSymbol, "USDC") {
+			universeSymbol = strings.TrimSuffix(universeSymbol, "USDC") + "USDT"
+		}
+		universeErr := tx.QueryRowContext(ctx, `SELECT enabled FROM trading_universe_assets WHERE userId = ? AND symbol = ? LIMIT 1`, instance.UserID, universeSymbol).Scan(&universeEnabled)
 		if universeErr != nil && !errors.Is(universeErr, sql.ErrNoRows) {
 			return autonomousrisk.Decision{}, fmt.Errorf("load Core Trading Universe policy: %w", universeErr)
 		}
@@ -259,8 +278,8 @@ func autonomousPolicyForMode(policy autonomousrisk.Policy, mode string, paperCon
 	}
 	// A shared account profile must not raise TESTNET/LIVE autonomous
 	// concurrency when PAPER is configured aggressively.
-	if policy.MaxConcurrentPositions > testnetLiveMaxConcurrentPositions {
-		policy.MaxConcurrentPositions = testnetLiveMaxConcurrentPositions
+	if policy.MaxConcurrentPositions > testnetMaxConcurrentPositions {
+		policy.MaxConcurrentPositions = testnetMaxConcurrentPositions
 	}
 	return policy
 }

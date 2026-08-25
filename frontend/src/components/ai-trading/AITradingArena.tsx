@@ -1,7 +1,8 @@
-import { Bot, ChevronRight, SlidersHorizontal, X } from 'lucide-react';
+import { Bot, ChevronRight, CircleX, Pause, Play, SlidersHorizontal, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiErrorMessage } from '../../services/apiClient';
-import { aiTradingApi, botSymbols, recordNumber, type AutonomousBot, type ChampionCandidate, type LeaderboardRow, type MarketRegime, type PaperPerformance, type TestnetBotOperation, type TradeSummary } from '../../services/aiTradingService';
+import { aiTradingApi, botSymbols, recordNumber, type AutonomousBot, type ChampionCandidate, type LeaderboardRow, type MarketRegime, type PaperPerformance, type TestnetAccountSummary, type TestnetBotOperation, type TradeSummary } from '../../services/aiTradingService';
+import { closeOpenPosition, type OpenPosition } from '../../services/tradingService';
 import { AITradingPage, EmptyState, ErrorState, formatDate, formatMoney, formatPercent, MetricCard, ModeBadge, RefreshButton, StatusBadge } from './AITradingUI';
 
 type ArenaRow = {
@@ -16,10 +17,14 @@ export default function AITradingArena() {
   const [bots, setBots] = useState<AutonomousBot[]>([]); const [scores, setScores] = useState<LeaderboardRow[]>([]);
   const [summaries, setSummaries] = useState<TradeSummary[]>([]); const [champions, setChampions] = useState<ChampionCandidate[]>([]);
   const [operations, setOperations] = useState<TestnetBotOperation[]>([]);
+  const [testnetAccount, setTestnetAccount] = useState<TestnetAccountSummary | null>(null);
   const [regimeIds, setRegimeIds] = useState<Set<string> | null>(null); const [selected, setSelected] = useState<ArenaRow | null>(null);
   const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  const [fleetBusy, setFleetBusy] = useState(false); const [fleetNotice, setFleetNotice] = useState('');
+  const [accountingBusy, setAccountingBusy] = useState(false);
   const [filters, setFilters] = useState({ status: 'ALL', strategy: 'ALL', generation: 'ALL', regime: 'ALL' as 'ALL' | MarketRegime, minScore: '', minPnl: '' });
   const [sort, setSort] = useState<SortKey>('pnl');
+  const [pageSize, setPageSize] = useState<10 | 'ALL'>(10); const [page, setPage] = useState(1);
 
   const load = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true); setError('');
@@ -28,10 +33,15 @@ export default function AITradingArena() {
         .catch((reason) => { setError(getApiErrorMessage(reason, 'Skor verileri geçici olarak alınamadı; botlar skor olmadan gösteriliyor.')); return null; });
       const operationRequest = aiTradingApi.testnetOperations()
         .catch((reason) => { setError(getApiErrorMessage(reason, 'TESTNET operasyon verileri geçici olarak alınamadı; PAPER ve skor verileri gösteriliyor.')); return null; });
+      const accountRequest = aiTradingApi.testnetAccountSummary()
+        .catch((reason) => { setError(getApiErrorMessage(reason, 'TESTNET bakiye bilgisi geçici olarak alınamadı.')); return null; });
       const [botRows, summaryRows, championRows] = await Promise.all([aiTradingApi.bots(), aiTradingApi.tradeSummary('BOT', 100), aiTradingApi.champions()]);
-      setBots(botRows); setSummaries(summaryRows); setChampions(championRows);
+      // Defense in depth: archived/retired bots retain their financial history
+      // in the database but must never reappear in the active Arena fleet.
+      setBots(botRows.filter((bot) => bot.lifecycleStatus !== 'ARCHIVED')); setSummaries(summaryRows); setChampions(championRows);
       void scoreRequest.then((scoreRows) => { if (scoreRows) setScores(scoreRows); });
       void operationRequest.then((operationRows) => { if (operationRows) setOperations(operationRows.data); });
+      void accountRequest.then((accountRow) => { if (accountRow) setTestnetAccount(accountRow.data); });
     } catch (reason) { setError(getApiErrorMessage(reason, 'Arena verileri alınamadı.')); }
     finally { if (showSpinner) setLoading(false); }
   }, []);
@@ -47,6 +57,44 @@ export default function AITradingArena() {
     return () => { active = false; };
   }, [filters.regime]);
 
+  async function activateTestnetFleet() {
+    const confirmation = window.prompt('20 botun tamamını Binance Futures TESTNET üzerinde başlatmak için tam olarak ENABLE 20 BINANCE TESTNET BOTS yazın.');
+    if (confirmation !== 'ENABLE 20 BINANCE TESTNET BOTS') return;
+    const note = window.prompt('Audit notu:', 'Admin approved the fixed 20-bot Binance TESTNET fleet.');
+    if (!note || note.trim().length < 3) return;
+    setFleetBusy(true); setError(''); setFleetNotice('');
+    try {
+      const result = await aiTradingApi.activateTestnetFleet(note.trim());
+      setFleetNotice(`${result.botCount} bot Binance TESTNET kuyruğuna alındı. Tarayıcı kapatılsa da Go Engine çalışmayı sürdürecek.`);
+      await load(false);
+    } catch (reason) { setError(getApiErrorMessage(reason, 'Toplu TESTNET aktivasyonu tamamlanamadı.')); }
+    finally { setFleetBusy(false); }
+  }
+
+  async function activatePaperFleet() {
+    const confirmation = window.prompt('20 botu yalnız simülasyon PAPER modunda başlatmak için tam olarak RUN 20 PAPER BOTS yazın. TESTNET pozisyonu veya emri varsa geçiş engellenir.');
+    if (confirmation !== 'RUN 20 PAPER BOTS') return;
+    const note = window.prompt('Audit notu:', 'Admin started the fixed 20-bot PAPER fleet.');
+    if (!note || note.trim().length < 3) return;
+    setFleetBusy(true); setError(''); setFleetNotice('');
+    try {
+      const result = await aiTradingApi.activatePaperFleet(note.trim());
+      setFleetNotice(`${result.botCount} bot PAPER simülasyon kuyruğuna alındı; borsaya emir gönderilmeyecek.`);
+      await load(false);
+    } catch (reason) { setError(getApiErrorMessage(reason, 'Toplu PAPER başlatma tamamlanamadı.')); }
+    finally { setFleetBusy(false); }
+  }
+
+  async function resetTestnetPnl() {
+    if (!window.confirm('Binance Demo işlem geçmişi silinmeden, toplam kâr/zarar bu andan itibaren sıfırdan izlensin mi? Açık pozisyonlar kapanmaz.')) return;
+    setAccountingBusy(true); setError('');
+    try {
+      await aiTradingApi.resetTestnetAccounting('Admin Binance Demo PnL başlangıç noktasını yeniledi.');
+      await load(false);
+    } catch (reason) { setError(getApiErrorMessage(reason, 'TESTNET PnL başlangıç noktası yenilenemedi.')); }
+    finally { setAccountingBusy(false); }
+  }
+
   const rows = useMemo(() => buildArenaRows(bots, scores, summaries, champions, operations), [bots, scores, summaries, champions, operations]);
   const strategies = useMemo(() => [...new Set(bots.map((bot) => bot.strategyVersion?.strategy.family).filter(Boolean))] as string[], [bots]);
   const generations = useMemo(() => [...new Set(bots.map((bot) => bot.generationId).filter((id): id is string => Boolean(id)))], [bots]);
@@ -60,11 +108,16 @@ export default function AITradingArena() {
       && (minimumScore === null || (row.score?.score ?? Number.NEGATIVE_INFINITY) >= minimumScore)
       && (minimumPnl === null || (row.pnl ?? Number.NEGATIVE_INFINITY) >= minimumPnl);
   }).sort((left, right) => compareRows(left, right, sort)), [rows, filters, regimeIds, sort]);
+  const pageCount = pageSize === 'ALL' ? 1 : Math.max(1, Math.ceil(visibleRows.length / pageSize));
+  const pagedRows = pageSize === 'ALL' ? visibleRows : visibleRows.slice((page - 1) * pageSize, page * pageSize);
+  useEffect(() => { setPage(1); }, [filters, regimeIds, sort, pageSize]);
+  useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
 
-  return <AITradingPage title="Bot Arena" description="Tüm autonomous PAPER ve Binance TESTNET botlarını gerçek backend kanıtlarıyla izleyin; bot satırına tıklayarak işlem geçmişini ve sermaye kotasını yönetin." icon={Bot} action={<RefreshButton onClick={() => void load()} busy={loading} />}>
+  return <AITradingPage title="Bot Arena" description="Tüm autonomous PAPER ve Binance TESTNET botlarını gerçek backend kanıtlarıyla izleyin; bot satırına tıklayarak işlem geçmişini ve sermaye kotasını yönetin." icon={Bot} action={<div className="flex flex-wrap items-center justify-end gap-2"><button type="button" disabled={fleetBusy || bots.length !== 20} onClick={() => void activatePaperFleet()} className="rounded-xl border border-primary/40 px-4 py-3 text-xs font-black text-primary disabled:cursor-not-allowed disabled:opacity-40">{fleetBusy ? 'Hazırlanıyor…' : '20 botu PAPER başlat'}</button><button type="button" disabled={fleetBusy || bots.length !== 20 || bots.every((bot) => bot.mode === 'DEMO')} onClick={() => void activateTestnetFleet()} className="rounded-xl bg-error px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{fleetBusy ? 'TESTNET hazırlanıyor…' : '20 botu TESTNET başlat'}</button><RefreshButton onClick={() => void load()} busy={loading} /></div>}>
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><MetricCard label="Toplam bot" value={bots.length} detail="PAPER + TESTNET" /><MetricCard label="Score üretilen" value={scores.length} /><MetricCard label="PAPER" value={bots.filter((bot) => bot.mode === 'PAPER').length} tone="warning" /><MetricCard label="TESTNET" value={operations.length} tone="safe" /><MetricCard label="Açık TESTNET pozisyon" value={operations.filter((item) => item.position).length} tone="safe" /></div>
     {error && <ErrorState message={error} />}
-    <section className="rounded-[24px] border border-outline/10 bg-surface p-5"><div className="flex items-center gap-2 text-sm font-black text-white"><SlidersHorizontal size={18} className="text-primary" /> Filtreler ve sıralama</div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+    {fleetNotice && <div className="rounded-2xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-sm font-bold text-secondary">{fleetNotice}</div>}
+    <section className="rounded-[24px] border border-outline/10 bg-surface p-5"><div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between"><div className="flex items-center gap-2 text-sm font-black text-white"><SlidersHorizontal size={18} className="text-primary" /> Filtreler ve sıralama</div><div className="flex flex-wrap items-center justify-end gap-2"><TestnetBalanceStrip summary={testnetAccount} /><button type="button" disabled={accountingBusy || !testnetAccount?.connected} onClick={() => void resetTestnetPnl()} className="rounded-xl border border-primary/25 px-3 py-2 text-[11px] font-black text-primary disabled:opacity-40">{accountingBusy ? 'Sıfırlanıyor…' : 'Demo PnL başlangıcını yenile'}</button></div></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
       <Select label="Status" value={filters.status} onChange={(status) => setFilters((value) => ({ ...value, status }))} options={['ALL', ...statuses]} />
       <Select label="Strategy" value={filters.strategy} onChange={(strategy) => setFilters((value) => ({ ...value, strategy }))} options={['ALL', ...strategies]} />
       <Select label="Generation" value={filters.generation} onChange={(generation) => setFilters((value) => ({ ...value, generation }))} options={['ALL', ...generations]} />
@@ -73,16 +126,17 @@ export default function AITradingArena() {
       <NumberFilter label="Min PnL" value={filters.minPnl} onChange={(minPnl) => setFilters((value) => ({ ...value, minPnl }))} />
       <Select label="Sırala" value={sort} onChange={(value) => setSort(value as SortKey)} options={['score', 'pnl', 'profitFactor', 'drawdown', 'trades']} />
     </div></section>
-    {loading ? <div className="h-72 animate-pulse rounded-[24px] bg-surface" /> : visibleRows.length === 0 ? <EmptyState title="Eşleşen bot yok" description="Backend henüz bot üretmemiş olabilir veya seçilen filtrelere uyan kanıt bulunmuyor." /> : <section className="overflow-hidden rounded-[24px] border border-outline/10 bg-surface"><div className="overflow-x-auto"><table className="w-full min-w-[1760px] text-left text-xs"><thead className="bg-surface-high uppercase text-outline"><tr>{['Bot', 'Pozisyon ve işlem özeti', 'Score', 'Toplam PnL', 'Açık PnL', 'ROI', 'PF', 'Max DD', 'Win rate', 'Strategy', 'Status', 'Equity', ''].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{visibleRows.map((row, index) => {
+    {loading ? <div className="h-72 animate-pulse rounded-[24px] bg-surface" /> : visibleRows.length === 0 ? <EmptyState title="Eşleşen bot yok" description="Backend henüz bot üretmemiş olabilir veya seçilen filtrelere uyan kanıt bulunmuyor." /> : <section className="overflow-hidden rounded-[24px] border border-outline/10 bg-surface"><div className="overflow-x-auto"><table className="w-full min-w-[1760px] text-left text-xs"><thead className="bg-surface-high uppercase text-outline"><tr>{['Bot', 'Pozisyon ve işlem özeti', 'Score', 'Toplam PnL', 'Açık PnL', 'ROI', 'PF', 'Max DD', 'Win rate', 'Strategy', 'Status', 'Equity', ''].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{pagedRows.map((row, index) => {
       const snapshot = positionSnapshot(row);
       const openPnl = snapshot.openPnl;
       const equity = row.pnl === null ? null : Number(row.bot.startingPaperBalance) + row.pnl;
       return <tr key={row.bot.id} className="cursor-pointer border-t border-outline/10 hover:bg-surface-high/40" onClick={() => setSelected(row)}>
-        <td className="p-3"><div className="flex items-start gap-2"><span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-black text-primary">{index + 1}</span><div><p className="font-bold text-white">{row.bot.name}</p><div className="mt-1"><ModeBadge mode={row.bot.mode} /></div></div></div></td>
+        <td className="p-3"><div className="flex items-start gap-2"><span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-primary/15 text-[10px] font-black text-primary">{pageSize === 'ALL' ? index + 1 : (page - 1) * pageSize + index + 1}</span><div><p className="font-bold text-white">{row.bot.name}</p><div className="mt-1"><ModeBadge mode={row.bot.mode} /></div></div></div></td>
         <PositionSummaryCell snapshot={snapshot} trades={row.trades} />
         <Cell value={number(row.score?.score)} strong /><Cell value={formatMoney(row.pnl)} tone={row.pnl} /><Cell value={formatMoney(openPnl)} tone={openPnl} /><Cell value={formatPercent(row.roi)} tone={row.roi} /><Cell value={number(row.profitFactor)} /><Cell value={formatPercent(row.drawdown)} tone={row.drawdown === null ? null : -row.drawdown} /><Cell value={formatPercent(row.winRate)} /><Cell value={row.bot.strategyVersion?.strategy.family ?? '—'} /><td className="p-3"><StatusBadge tone={statusTone(row.bot.lifecycleStatus)}>{row.bot.lifecycleStatus}</StatusBadge></td><Cell value={formatMoney(equity)} tone={row.pnl} /><td className="p-3"><button type="button" onClick={(event) => { event.stopPropagation(); setSelected(row); }} className="rounded-lg p-2 text-primary hover:bg-primary/10" aria-label={`${row.bot.name} detayını aç`}><ChevronRight size={18} /></button></td>
       </tr>;
     })}</tbody></table></div></section>}
+    {!loading && visibleRows.length > 0 && <div className="flex flex-col gap-3 rounded-2xl border border-outline/10 bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2 text-xs font-bold text-on-surface-variant"><span>Göster:</span><button type="button" onClick={() => setPageSize(10)} className={`rounded-lg px-3 py-2 ${pageSize === 10 ? 'bg-primary text-background' : 'bg-surface-high text-white'}`}>10</button><button type="button" onClick={() => setPageSize('ALL')} className={`rounded-lg px-3 py-2 ${pageSize === 'ALL' ? 'bg-primary text-background' : 'bg-surface-high text-white'}`}>Tümü</button><span>{visibleRows.length} bot</span></div>{pageSize !== 'ALL' && <div className="flex items-center justify-end gap-2"><button type="button" disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg bg-surface-high px-3 py-2 text-xs font-black text-white disabled:opacity-30">Önceki</button><span className="px-2 text-xs font-black text-primary">{page} / {pageCount}</span><button type="button" disabled={page >= pageCount} onClick={() => setPage((current) => Math.min(pageCount, current + 1))} className="rounded-lg bg-surface-high px-3 py-2 text-xs font-black text-white disabled:opacity-30">Sonraki</button></div>}</div>}
     {selected && <BotDrawer row={selected} onClose={() => setSelected(null)} onActivated={load} />}
   </AITradingPage>;
 }
@@ -116,7 +170,24 @@ function number(value: number | null | undefined) { return value === null || val
 function Cell({ value, strong = false, compact = false, tone = null }: { value: string; strong?: boolean; compact?: boolean; tone?: number | null }) { return <td className={`p-3 ${strong ? 'font-black text-primary' : tone === null ? 'text-on-surface-variant' : tone >= 0 ? 'font-bold text-secondary' : 'font-bold text-error'} ${compact ? 'max-w-32 truncate' : ''}`} title={compact ? value : undefined}>{value}</td>; }
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: readonly string[] }) { return <label className="text-xs font-bold text-on-surface-variant">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/40 p-2.5 text-xs text-white">{options.map((option) => <option key={option}>{option}</option>)}</select></label>; }
 function NumberFilter({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="text-xs font-bold text-on-surface-variant">{label}<input type="number" value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/40 p-2.5 text-xs text-white" placeholder="Tümü" /></label>; }
-type PositionSnapshot = { symbol: string; entryPrice: number | null; side: 'LONG' | 'SHORT' | null; leverage: number | null; openPnl: number | null; active: boolean };
+function TestnetBalanceStrip({ summary }: { summary: TestnetAccountSummary | null }) {
+  if (!summary) return <div className="text-xs font-bold text-outline">TESTNET bakiyesi yükleniyor…</div>;
+  if (!summary.connected) return <div className="rounded-xl border border-outline/15 bg-background/30 px-3 py-2 text-xs font-bold text-outline">TESTNET hesabı bağlı değil</div>;
+  const assets = summary.collateralAssets?.map((item) => `${item.asset}: ${formatMoney(Number(item.walletBalance))}`).join(' · ') || 'USDT';
+  return <div className="flex max-w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-secondary/20 bg-secondary/5 px-3 py-2 text-xs" title={`Teminat: ${assets} · Açık notional: ${formatMoney(Number(summary.activeNotional))}`}>
+    <BalanceDatum label="TESTNET toplam" value={formatMoney(Number(summary.totalBalance))} />
+    <BalanceDatum label="Boşta" value={formatMoney(Number(summary.availableBalance))} />
+    <BalanceDatum label="İşlemde" value={formatMoney(Number(summary.activeMargin))} />
+    <BalanceDatum label="Açık aktivite" value={`${summary.activeBots} bot · ${summary.activeEntryOrders} işlem`} />
+    <BalanceDatum label="Gerçekleşmiş net" value={formatMoney(Number(summary.walletPnl))} tone={Number(summary.walletPnl)} />
+    <BalanceDatum label="Açık PnL" value={formatMoney(Number(summary.unrealizedPnl))} tone={Number(summary.unrealizedPnl)} />
+    <BalanceDatum label="Toplam net PnL" value={`${formatMoney(Number(summary.netPnl))} · ${formatPercent(summary.pnlPercent)}`} tone={Number(summary.netPnl)} />
+  </div>;
+}
+function BalanceDatum({ label, value, tone = null }: { label: string; value: string; tone?: number | null }) {
+  return <span className="whitespace-nowrap"><span className="text-on-surface-variant">{label}: </span><strong className={tone === null || tone >= 0 ? 'text-secondary' : 'text-error'}>{value}</strong></span>;
+}
+type PositionSnapshot = { symbol: string; entryPrice: number | null; side: 'LONG' | 'SHORT' | null; leverage: number | null; openPnl: number | null; active: boolean; idleReason?: string | null };
 function positionSnapshot(row: ArenaRow): PositionSnapshot {
   const testnetPosition = row.operation?.position;
   if (testnetPosition) return {
@@ -146,7 +217,7 @@ function positionSnapshot(row: ArenaRow): PositionSnapshot {
     side: null,
     leverage: null,
     openPnl: null,
-    active: false,
+    active: false, idleReason: row.operation?.latestDecisionSummary,
   };
 }
 function finiteNumber(value: string | number | null | undefined) { const parsed = Number(value); return value === null || value === undefined || !Number.isFinite(parsed) ? null : parsed; }
@@ -164,12 +235,16 @@ function PositionSummaryCell({ snapshot, trades }: { snapshot: PositionSnapshot;
     <PositionDatum label="Yön / kaldıraç" value={snapshot.side ? `${snapshot.side} · ${snapshot.leverage === null ? '—' : `${number(snapshot.leverage)}x`}` : '—'} valueClass={directionTone} />
     <PositionDatum label="Anlık PnL" value={snapshot.active ? formatMoney(snapshot.openPnl) : '—'} valueClass={pnlTone} />
     <PositionDatum label="İşlem" value={trades.toLocaleString('tr-TR')} />
-  </div></td>;
+  </div>{!snapshot.active && snapshot.idleReason && <p className="mt-1.5 max-w-[540px] truncate text-[10px] text-outline" title={snapshot.idleReason}>Bekliyor: {snapshot.idleReason}</p>}</td>;
 }
 function PositionDatum({ label, value, valueClass = 'text-white' }: { label: string; value: string; valueClass?: string }) { return <div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-wide text-outline">{label}</p><p className={`mt-0.5 truncate font-black ${valueClass}`} title={value}>{value}</p></div>; }
 function BotDrawer({ row, onClose, onActivated }: { row: ArenaRow; onClose: () => void; onActivated: () => Promise<void> }) {
   const [busy, setBusy] = useState(false); const [actionError, setActionError] = useState('');
+  const [actionNotice, setActionNotice] = useState('');
   const [operation, setOperation] = useState<TestnetBotOperation | null>(row.operation);
+  const [closeType, setCloseType] = useState<'MARKET' | 'LIMIT'>('MARKET');
+  const [closeQuantity, setCloseQuantity] = useState(row.operation?.position?.quantity ?? '');
+  const [closePrice, setClosePrice] = useState(row.operation?.position?.markPrice ?? '');
   const [paperPerformance, setPaperPerformance] = useState<PaperPerformance | null>(row.bot.paperPosition ? { position: row.bot.paperPosition, fills: [] } : null);
   const [detailLoading, setDetailLoading] = useState(row.bot.mode === 'DEMO' || row.bot.mode === 'PAPER');
   const initialAllocation = row.operation?.allocationUsdt ?? recordNumber(row.bot.configuration, ['allocationUsdt']) ?? Number(row.bot.startingPaperBalance);
@@ -178,7 +253,7 @@ function BotDrawer({ row, onClose, onActivated }: { row: ArenaRow; onClose: () =
   useEffect(() => {
     let active = true; setDetailLoading(true);
     const request = row.bot.mode === 'DEMO'
-      ? aiTradingApi.testnetBotOperation(row.bot.id).then((value) => { if (active) setOperation(value.data); })
+      ? aiTradingApi.testnetBotOperation(row.bot.id).then((value) => { if (active) { setOperation(value.data); setCloseQuantity(value.data.position?.quantity ?? ''); setClosePrice(value.data.position?.markPrice ?? ''); } })
       : row.bot.mode === 'PAPER'
         ? aiTradingApi.paperPerformance(row.bot.id).then((value) => { if (active) setPaperPerformance(value); })
         : Promise.resolve();
@@ -205,6 +280,66 @@ function BotDrawer({ row, onClose, onActivated }: { row: ArenaRow; onClose: () =
     finally { setBusy(false); }
   }
   const paperPosition = paperPerformance?.position ?? row.bot.paperPosition;
+  const hasOpenPaperPosition = row.bot.mode === 'PAPER' && Boolean(paperPosition && Number(paperPosition.netQuantity) !== 0);
+  const hasOpenTestnetPosition = row.bot.mode === 'DEMO' && Boolean(operation?.position);
+  async function closePaper(stopBot: boolean) {
+    const message = stopBot
+      ? 'Açık PAPER işlemi normal fill/fee/PnL akışıyla kapatılacak ve bot durdurulacak. Devam edilsin mi?'
+      : 'Açık PAPER işlemi normal fill/fee/PnL akışıyla kapatılacak. Bot çalışmaya devam edip daha sonra yeni işlem açabilir. Devam edilsin mi?';
+    if (!window.confirm(message)) return;
+    setBusy(true); setActionError(''); setActionNotice('');
+    try {
+      await aiTradingApi.closePaperPosition(row.bot.id, stopBot, stopBot ? 'Admin pozisyonu kapattı ve botu durdurdu.' : 'Admin PAPER pozisyonunu manuel kapattı.');
+      setActionNotice(stopBot ? 'Kapanış kuyruğa alındı; işlem kapanınca bot duracak.' : 'PAPER kapanışı kuyruğa alındı.');
+      await onActivated();
+    } catch (reason) { setActionError(getApiErrorMessage(reason, 'PAPER pozisyonu kapatılamadı.')); }
+    finally { setBusy(false); }
+  }
+  async function closeTestnetPosition() {
+    const position = operation?.position;
+    if (!position) { setActionError('Bu bot için açık Binance TESTNET pozisyonu bulunamadı.'); return; }
+    const quantity = closeQuantity.trim();
+    const price = closePrice.trim();
+    if (!quantity || Number(quantity) <= 0) { setActionError('Geçerli bir kapatma miktarı girin.'); return; }
+    if (closeType === 'LIMIT' && (!price || Number(price) <= 0)) { setActionError('LIMIT kapatma için geçerli bir fiyat girin.'); return; }
+    const confirmation = closeType === 'MARKET'
+      ? `${position.symbol} pozisyonundan ${quantity} miktar reduce-only MARKET emriyle kapatılsın mı?`
+      : `${position.symbol} pozisyonundan ${quantity} miktar ${price} fiyatından reduce-only LIMIT emriyle kapatılsın mı?`;
+    if (!window.confirm(confirmation)) return;
+    setBusy(true); setActionError(''); setActionNotice('');
+    try {
+      await closeOpenPosition(row.bot.exchangeAccountId, position as OpenPosition, { type: closeType, quantity, ...(closeType === 'LIMIT' ? { price } : {}) });
+      setActionNotice(closeType === 'MARKET'
+        ? 'MARKET kapatma emri Binance TESTNET’e iletildi. Bot yeni 15 dakikalık piyasa değerlendirmesini bekleyecek.'
+        : 'LIMIT kapatma emri Binance TESTNET’e iletildi. Gerçekleşene kadar bot bu pozisyonu büyütmeyecek.');
+      const refreshed = await aiTradingApi.testnetBotOperation(row.bot.id);
+      setOperation(refreshed.data);
+      setCloseQuantity(refreshed.data.position?.quantity ?? '');
+      setClosePrice(refreshed.data.position?.markPrice ?? '');
+      await onActivated();
+    } catch (reason) { setActionError(getApiErrorMessage(reason, 'TESTNET pozisyonu kapatılamadı.')); }
+    finally { setBusy(false); }
+  }
+  async function stopBot() {
+    if (hasOpenPaperPosition) { await closePaper(true); return; }
+    const message = hasOpenTestnetPosition
+      ? 'Bot duraklatılsın mı? Yeni TESTNET girişi yapılmaz; Binance üzerindeki mevcut pozisyon ve reduce-only SL/TP emirleri korunur.'
+      : 'Bot durdurulsun mu? Açık pozisyon bulunmuyor.';
+    if (!window.confirm(message)) return;
+    setBusy(true); setActionError(''); setActionNotice('');
+    try { await aiTradingApi.pauseBot(row.bot.id); setActionNotice('Bot durduruldu.'); await onActivated(); }
+    catch (reason) { setActionError(getApiErrorMessage(reason, 'Bot durdurulamadı.')); }
+    finally { setBusy(false); }
+  }
+  async function runBot() {
+    setBusy(true); setActionError(''); setActionNotice('');
+    try {
+      if (row.bot.state === 'PAUSED') await aiTradingApi.resumeBot(row.bot.id);
+      else await aiTradingApi.startBot(row.bot.id);
+      setActionNotice('Bot çalışma kuyruğuna alındı.'); await onActivated();
+    } catch (reason) { setActionError(getApiErrorMessage(reason, 'Bot başlatılamadı.')); }
+    finally { setBusy(false); }
+  }
   const openPnl = operation?.position ? Number(operation.position.unrealizedPnl) : paperPosition ? Number(paperPosition.unrealizedPnl) : null;
   const realizedNet = operation ? Number(operation.netRealizedPnl) : paperPerformance?.closedSummary
     ? Number(paperPerformance.closedSummary.netPnl)
@@ -216,9 +351,17 @@ function BotDrawer({ row, onClose, onActivated }: { row: ArenaRow; onClose: () =
       <div className="flex items-start justify-between gap-3"><div><ModeBadge mode={row.bot.mode} /><h2 className="mt-4 font-headline text-2xl font-black text-white">{row.bot.name}</h2><p className="mt-1 text-sm text-on-surface-variant">{operation?.symbol ?? (botSymbols(row.bot.symbols).join(', ') || 'Sembol yok')} · {row.bot.timeframe ?? 'Timeframe yok'}</p></div><button type="button" onClick={onClose} className="rounded-xl bg-surface-high p-2 text-white" aria-label="Detayı kapat"><X /></button></div>
       {row.bot.mode === 'PAPER' && row.bot.lifecycleStatus === 'PAPER' && <div className="mt-5 rounded-2xl border border-error/30 bg-error/5 p-4"><p className="text-sm text-on-surface-variant">Yalnız bağlı Binance TESTNET hesabında, 5x–20x isolated ve merkezi Risk Engine korumalı yürütme.</p><button type="button" disabled={busy} onClick={() => void activate()} className="mt-3 rounded-xl bg-error px-4 py-2 text-sm font-black text-white disabled:opacity-50">{busy ? 'Etkinleştiriliyor…' : 'Binance TESTNET canary etkinleştir'}</button></div>}
       {actionError && <ErrorState message={actionError} />}
+      {actionNotice && <div className="mt-4 rounded-2xl border border-secondary/30 bg-secondary/5 p-4 text-sm font-bold text-secondary">{actionNotice}</div>}
+      {row.bot.mode === 'DEMO' && <section className="mt-5 rounded-[22px] border border-secondary/20 bg-secondary/5 p-5"><h3 className="font-headline font-black text-white">TESTNET bot kontrolü</h3><p className="mt-1 text-xs leading-5 text-outline">Duraklatma yeni girişleri ve pozisyon büyütmeyi keser. Binance üzerindeki mevcut pozisyon ile reduce-only stop-loss/take-profit emirleri yerinde kalır ve borsa tarafında tetiklenebilir. Açık pozisyon varsa hemen aşağıdaki MARKET/LIMIT kapatma alanı görünür.</p><div className="mt-4 flex flex-wrap gap-3">{row.bot.state === 'PAUSED' ? <button type="button" disabled={busy} onClick={() => void runBot()} className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-black text-background disabled:opacity-50"><Play size={17} />Botu devam ettir</button> : <button type="button" disabled={busy} onClick={() => void stopBot()} className="inline-flex items-center gap-2 rounded-xl bg-error px-4 py-2.5 text-sm font-black text-white disabled:opacity-50"><Pause size={17} />Botu duraklat</button>}</div></section>}
+      {row.bot.mode === 'DEMO' && operation?.position && <section className="mt-5 rounded-[22px] border border-error/25 bg-error/5 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-headline font-black text-white">Açık TESTNET işlemini sonlandır</h3><p className="mt-1 text-xs leading-5 text-outline">MARKET anında, LIMIT seçtiğiniz fiyat gerçekleştiğinde Binance TESTNET pozisyonunu reduce-only kapatır.</p></div><span className="rounded-lg bg-surface-high px-3 py-2 text-xs font-black text-primary">{operation.position.symbol} · {operation.position.side}</span></div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><label className="text-xs font-bold text-on-surface-variant">Emir tipi<select value={closeType} onChange={(event) => setCloseType(event.target.value as 'MARKET' | 'LIMIT')} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/70 p-3 text-white"><option value="MARKET">MARKET</option><option value="LIMIT">LIMIT</option></select></label><label className="text-xs font-bold text-on-surface-variant">Kapatılacak miktar<input inputMode="decimal" value={closeQuantity} onChange={(event) => setCloseQuantity(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/70 p-3 text-white" /></label>{closeType === 'LIMIT' && <label className="text-xs font-bold text-on-surface-variant">Limit fiyatı<input inputMode="decimal" value={closePrice} onChange={(event) => setClosePrice(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/70 p-3 text-white" /></label>}<button type="button" disabled={busy || !closeQuantity || (closeType === 'LIMIT' && !closePrice)} onClick={() => void closeTestnetPosition()} className="self-end rounded-xl bg-error px-4 py-3 text-sm font-black text-white disabled:opacity-40"><CircleX className="mr-2 inline" size={17}/>{busy ? 'İletiliyor…' : `${closeType} kapat`}</button></div>
+        <p className="mt-3 text-xs leading-5 text-outline">Miktarı azaltarak kısmi kapatma yapabilirsiniz. Tamamını kapatmak için mevcut miktarı değiştirmeyin. Kapanış sonrası aynı 15 dakikalık mumda otomatik yeniden giriş engellenir.</p>
+      </section>}
+      {row.bot.mode === 'PAPER' && <section className="mt-5 rounded-[22px] border border-outline/15 bg-surface p-5"><h3 className="font-headline font-black text-white">PAPER işlem ve bot kontrolü</h3><p className="mt-1 text-xs leading-5 text-outline">Manuel kapanış gerçek piyasa mark fiyatını kullanır; slippage, komisyon ve net PnL kaydı korunur. Botu durdurmak açık pozisyon varsa önce güvenli kapanış yapar.</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={busy || !hasOpenPaperPosition} onClick={() => void closePaper(false)} className="inline-flex items-center gap-2 rounded-xl border border-error/35 px-4 py-2.5 text-sm font-black text-error disabled:cursor-not-allowed disabled:opacity-35"><CircleX size={17} />Açık işlemi kapat</button>{['STOPPED', 'PAUSED', 'DRAFT'].includes(row.bot.state) ? <button type="button" disabled={busy} onClick={() => void runBot()} className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-sm font-black text-background disabled:opacity-50"><Play size={17} />Botu çalıştır</button> : <button type="button" disabled={busy} onClick={() => void stopBot()} className="inline-flex items-center gap-2 rounded-xl bg-error px-4 py-2.5 text-sm font-black text-white disabled:opacity-50"><Pause size={17} />Botu durdur</button>}</div></section>}
       <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4"><MetricCard label="Toplam net PnL" value={formatMoney(totalNet)} /><MetricCard label="Gerçekleşmiş net" value={formatMoney(realizedNet)} /><MetricCard label="Açık PnL" value={formatMoney(openPnl)} /><MetricCard label="ROI" value={formatPercent(operation?.position?.roi ?? roi)} /><MetricCard label="Giriş fill" value={operation?.entryFills ?? (paperPerformance?.fills.filter((fill) => Number(fill.realizedPnl) === 0).length ?? '—')} /><MetricCard label="Toplam fill" value={operation?.totalFills ?? row.bot._count.paperFills} /><MetricCard label="Kapanış" value={operation?.closedFills ?? row.summary?.tradeCount ?? 0} /><MetricCard label="Komisyon" value={operation ? formatMoney(Number(operation.commission)) : paperPosition ? formatMoney(Number(paperPosition.totalFees)) : '—'} /></div>
       <section className="mt-5 rounded-[22px] border border-primary/20 bg-primary/5 p-5"><h3 className="font-headline font-black text-white">Bot sermayesi ve işlem kotası</h3><div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto_auto]"><label className="text-xs font-bold text-on-surface-variant">USDT<input type="number" min="1" max={maximumCapital} step="1" value={capitalAmount} onChange={(event) => setCapitalAmount(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/70 p-3 text-white" /></label><button type="button" disabled={busy} onClick={() => void changeCapital('SET')} className="self-end rounded-xl border border-primary/30 px-4 py-3 text-sm font-black text-primary disabled:opacity-50">Kotayı ayarla</button><button type="button" disabled={busy} onClick={() => void changeCapital('ADD')} className="self-end rounded-xl bg-primary px-4 py-3 text-sm font-black text-background disabled:opacity-50">Bakiye ekle</button></div><p className="mt-3 text-xs leading-5 text-outline">Mevcut kota {formatMoney(operation?.allocationUsdt ?? initialAllocation)}; bot başına sınır {formatMoney(maximumCapital)}. “Kotayı ayarla” yazdığınız tutarı toplam kota yapar; “Bakiye ekle” yazdığınız tutarı mevcut kotanın üzerine ekler. PAPER için simülasyon sermayesidir. TESTNET için Binance Demo ortak cüzdan bakiyesini değiştirmez; yalnız bu botun kullanabileceği uygulama kotasını artırır.</p></section>
-      {operation && <section className="mt-5 rounded-[22px] border border-outline/10 bg-surface p-5"><h3 className="font-headline font-black text-white">Aktif Binance TESTNET pozisyonu</h3>{operation.position ? <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Detail label="Yön" value={`${operation.position.side} · ${operation.position.leverage}x`} /><Detail label="Miktar" value={operation.position.quantity} /><Detail label="Giriş" value={operation.position.entryPrice} /><Detail label="Mark" value={operation.position.markPrice} /><Detail label="Kullanılan kota" value={`${formatMoney(Number(operation.position.notional))} / ${formatMoney(operation.allocationUsdt)}`} /><Detail label="Kota kullanımı" value={formatPercent(Math.min(Number(operation.position.notional) / operation.allocationUsdt, 1))} /><Detail label="Margin" value={formatMoney(Number(operation.position.margin))} /><Detail label="Stop-loss trigger" value={operation.stopLoss ?? 'Onarılıyor'} /><Detail label="Take-profit trigger" value={operation.takeProfit ?? 'Onarılıyor'} /></div> : <p className="mt-3 text-sm text-on-surface-variant">Açık pozisyon yok; bot uygun grafik sinyali arıyor.</p>}<p className="mt-4 text-xs leading-5 text-outline">Aynı yönde yeni grafik sinyali oluşursa bot, {formatMoney(operation.allocationUsdt)} toplam notional kotasına kadar MARKET ek giriş yapabilir. Her ek girişten sonra SL/TP toplam pozisyon miktarına göre yeniden kurulur. Ters sinyal pozisyonu büyütmez.</p></section>}
+      {operation && <section className="mt-5 rounded-[22px] border border-outline/10 bg-surface p-5"><h3 className="font-headline font-black text-white">Aktif Binance TESTNET pozisyonu</h3>{operation.position ? <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Detail label="Yön" value={`${operation.position.side} · ${operation.position.leverage}x`} /><Detail label="Miktar" value={operation.position.quantity} /><Detail label="Giriş" value={operation.position.entryPrice} /><Detail label="Mark" value={operation.position.markPrice} /><Detail label="Kullanılan teminat kotası" value={`${formatMoney(Number(operation.position.margin))} / ${formatMoney(operation.allocationUsdt)}`} /><Detail label="Kota kullanımı" value={formatPercent(Math.min(Number(operation.position.margin) / operation.allocationUsdt, 1))} /><Detail label="Notional" value={formatMoney(Number(operation.position.notional))} /><Detail label="Stop-loss trigger" value={operation.stopLoss ?? 'Onarılıyor'} /><Detail label="Take-profit trigger" value={operation.takeProfit ?? 'Onarılıyor'} /></div> : <p className="mt-3 text-sm text-on-surface-variant">Açık pozisyon yok; bot uygun grafik sinyali arıyor.</p>}<p className="mt-4 text-xs leading-5 text-outline">Aynı yönde yeni grid seviyesi oluşursa bot, {formatMoney(operation.allocationUsdt)} başlangıç teminatı kotasına kadar MARKET ek giriş yapabilir. Notional tutar bu kotanın kaldıraçla çarpılmış halidir. Her ek girişten sonra SL/TP toplam pozisyona göre yeniden kurulur.</p></section>}
       {row.bot.mode === 'PAPER' && <section className="mt-5 rounded-[22px] border border-tertiary/20 bg-tertiary/5 p-5"><h3 className="font-headline font-black text-white">Aktif PAPER pozisyonu</h3>{paperPosition && Number(paperPosition.netQuantity) !== 0 ? <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Detail label="Yön" value={Number(paperPosition.netQuantity) > 0 ? 'LONG' : 'SHORT'} /><Detail label="Miktar" value={paperPosition.netQuantity} /><Detail label="Ort. giriş" value={paperPosition.avgEntryPrice} /><Detail label="Son mark" value={paperPosition.lastMarkPrice} /><Detail label="Gerçekleşmemiş PnL" value={formatMoney(Number(paperPosition.unrealizedPnl))} /><Detail label="Toplam ücret" value={formatMoney(Number(paperPosition.totalFees))} /><Detail label="Son fill" value={formatDate(paperPosition.lastFilledAt ?? undefined)} /><Detail label="Ledger güncelleme" value={formatDate(paperPosition.updatedAt)} /></div> : <p className="mt-3 text-sm text-on-surface-variant">Açık PAPER pozisyonu yok; bot uygun sinyal arıyor.</p>}</section>}
       <div className="mt-5 space-y-3 rounded-[22px] border border-outline/10 bg-surface p-5"><Detail label="Lifecycle" value={row.bot.lifecycleStatus} /><Detail label="Runtime state" value={`${row.bot.state} → ${row.bot.desiredState}`} /><Detail label="Strategy" value={row.bot.strategyVersion ? `${row.bot.strategyVersion.strategy.name} v${row.bot.strategyVersion.version}` : '—'} /><Detail label="Strategy family" value={row.bot.strategyVersion?.strategy.family ?? '—'} /><Detail label="Generation" value={row.bot.generationId ?? '—'} /><Detail label="Snapshot" value={formatDate(row.score?.snapshotAt)} /></div>
       <section className={`${row.bot.mode === 'DEMO' ? 'mt-5' : 'hidden'} overflow-hidden rounded-[22px] border border-outline/10 bg-surface`}><div className="p-5"><h3 className="font-headline font-black text-white">Gerçekleşmiş Binance TESTNET işlemleri</h3><p className="mt-1 text-xs text-outline">Yalnız Binance tarafından fill edilmiş işlemler; açık conditional emirler bu tabloda gösterilmez.</p></div>{detailLoading ? <div className="h-32 animate-pulse bg-surface-high" /> : !operation?.fills?.length ? <div className="px-5 pb-5 text-sm text-on-surface-variant">Henüz gerçekleşmiş fill yok.</div> : <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-xs"><thead className="bg-surface-high uppercase text-outline"><tr>{['Zaman', 'Sembol', 'İşlem', 'Yön', 'Fiyat', 'Miktar', 'Notional', 'Realized PnL', 'Komisyon', 'Net'].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{operation.fills.map((fill) => <tr key={`${fill.symbol}-${fill.tradeId}`} className="border-t border-outline/10"><td className="p-3 text-on-surface-variant">{formatDate(fill.occurredAt)}</td><td className="p-3 font-bold text-white">{fill.symbol}</td><td className="p-3 text-on-surface-variant">{fill.reduceOnly ? 'KAPANIŞ' : 'GİRİŞ'} · {fill.orderType}</td><td className={`p-3 font-bold ${fill.side === 'BUY' ? 'text-secondary' : 'text-error'}`}>{fill.side}</td><td className="p-3 text-white">{fill.price}</td><td className="p-3 text-on-surface-variant">{fill.quantity}</td><td className="p-3 text-on-surface-variant">{formatMoney(Number(fill.quoteQuantity))}</td><td className={`p-3 font-bold ${Number(fill.realizedPnl) >= 0 ? 'text-secondary' : 'text-error'}`}>{formatMoney(Number(fill.realizedPnl))}</td><td className="p-3 text-on-surface-variant">{fill.commission} {fill.commissionAsset}</td><td className={`p-3 font-black ${fill.netRealizedPnl >= 0 ? 'text-secondary' : 'text-error'}`}>{formatMoney(fill.netRealizedPnl)}</td></tr>)}</tbody></table></div>}</section>

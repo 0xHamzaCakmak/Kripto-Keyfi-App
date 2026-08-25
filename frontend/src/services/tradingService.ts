@@ -29,6 +29,10 @@ export type OpenPosition = {
   liquidationPrice?: string; unrealizedPnl: string; leverage: string; marginMode: MarginMode;
   lifecycleStatus?: 'CLOSING' | 'CLOSE_FAILED';
 };
+export type TradingExecutionProfile = {
+  minLeverage: number; maxLeverage: number; botAllocationUsdt: string; minInitialMarginUsdt: string;
+  maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string;
+};
 export type TradingBotState = 'DRAFT' | 'VALIDATING' | 'STARTING' | 'RUNNING' | 'PAUSED' | 'STOPPED' | 'RISK_BLOCKED' | 'RECONCILING' | 'EMERGENCY_STOPPED' | 'ERROR';
 export type TradingBot = {
   id: string; exchangeAccountId: string; name: string; type: 'SCALPING' | 'GRID'; mode: 'SHADOW' | 'PAPER' | 'DEMO';
@@ -102,8 +106,22 @@ export async function cancelOrder(exchangeAccountId: string, order: OpenOrder) {
 export async function getOpenPositions(exchangeAccountId: string) {
   return (await api.get<{ data: OpenPosition[] }>('/admin/trading/positions', { params: { exchangeAccountId } })).data.data;
 }
-export async function closeOpenPosition(exchangeAccountId: string, position: OpenPosition) {
-  return api.post(`/admin/trading/positions/${encodeURIComponent(position.positionKey)}/close`, { exchangeAccountId, idempotencyKey: crypto.randomUUID() });
+export async function getTradingExecutionProfile(exchangeAccountId: string) {
+  return (await api.get<{ data: TradingExecutionProfile }>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`)).data.data;
+}
+export async function updateTradingExecutionProfile(exchangeAccountId: string, input: TradingExecutionProfile) {
+  return (await api.patch<{ data: TradingExecutionProfile }>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`, input)).data.data;
+}
+export async function closeOpenPosition(
+  exchangeAccountId: string,
+  position: OpenPosition,
+  options: { type: 'MARKET' | 'LIMIT'; quantity?: string; price?: string },
+) {
+  return api.post(`/admin/trading/positions/${encodeURIComponent(position.positionKey)}/close`, {
+    exchangeAccountId,
+    idempotencyKey: crypto.randomUUID(),
+    ...options,
+  });
 }
 export async function getTradingBots() {
   return (await api.get<{ data: TradingBot[] }>('/admin/trading/bots')).data.data;

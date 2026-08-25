@@ -142,12 +142,15 @@ func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision,
 	}
 	if instance.Type == "AUTONOMOUS" {
 		snapshot := MarketSnapshot{Candles: make(map[string][]domain.MarketCandle)}
-		for _, interval := range []string{"1m", "5m", "15m", "1h", "4h"} {
-			candles, marketErr := r.getRecentCandles(ctx, factory, account, instance.Mode, instance.Symbol, interval, 220)
+		for _, request := range []struct {
+			interval string
+			limit    int
+		}{{"15m", 193}, {"1h", 49}} {
+			candles, marketErr := r.getRecentCandles(ctx, factory, account, instance.Mode, instance.Symbol, request.interval, request.limit)
 			if marketErr != nil {
-				return Decision{}, fmt.Errorf("load autonomous %s market context: %w", interval, marketErr)
+				return Decision{}, fmt.Errorf("load autonomous %s market context: %w", request.interval, marketErr)
 			}
-			snapshot.Candles[interval] = candles
+			snapshot.Candles[request.interval] = candles
 		}
 		derivatives, marketErr := r.getDerivativesContext(ctx, factory, account, instance.Mode, instance.Symbol)
 		if marketErr != nil {

@@ -40,8 +40,14 @@ export const closePositionParamsSchema = z.object({ id: z.string().trim().min(3)
 export const closePositionBodySchema = z.object({
   exchangeAccountId: z.string().cuid(),
   quantity: decimal.optional(),
+  type: z.enum(['MARKET', 'LIMIT']).default('MARKET'),
+  price: decimal.optional(),
   idempotencyKey: z.string().trim().min(16).max(80).regex(/^[A-Za-z0-9_-]+$/),
-}).strict();
+}).strict().superRefine((value, context) => {
+  if (value.type === 'LIMIT' && !value.price) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['price'], message: 'Limit kapatma emrinde fiyat zorunludur' });
+  }
+});
 
 export type PreviewOrderInput = z.infer<typeof previewOrderBodySchema>;
 export type SubmitOrderInput = z.infer<typeof submitOrderBodySchema>;

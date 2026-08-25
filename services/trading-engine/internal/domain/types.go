@@ -59,6 +59,7 @@ type Balance struct {
 	AvailableBalance Decimal    `json:"availableBalance"`
 	LockedBalance    Decimal    `json:"lockedBalance,omitempty"`
 	UnrealizedPnL    Decimal    `json:"unrealizedPnl"`
+	MarginAvailable  bool       `json:"marginAvailable,omitempty"`
 	PriceUSDT        Decimal    `json:"priceUsdt,omitempty"`
 	ValueUSDT        Decimal    `json:"valueUsdt,omitempty"`
 }

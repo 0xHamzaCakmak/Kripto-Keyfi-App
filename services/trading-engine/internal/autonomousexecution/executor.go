@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tradingv1 "github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/api/v1"
@@ -21,6 +22,7 @@ type Store interface {
 	CreateAutonomousOrder(context.Context, bot.Instance, mysqlstore.AutonomousOrderInput, time.Time) error
 	MarkAutonomousExecution(context.Context, int64, bool, string) error
 	MarkAutonomousExecutionFailure(context.Context, int64, string) error
+	MarkAutonomousReentryGuard(context.Context, bot.Instance, int64, string, time.Time) error
 }
 
 type ExecutionService interface {
@@ -33,12 +35,16 @@ type ExecutionService interface {
 }
 
 type Executor struct {
-	store     Store
-	execution ExecutionService
+	store           Store
+	execution       ExecutionService
+	locksMu         sync.Mutex
+	locks           map[string]*sync.Mutex
+	positionMu      sync.Mutex
+	positionWasOpen map[string]bool
 }
 
 func New(store Store, service *execution.Service) *Executor {
-	return &Executor{store: store, execution: service}
+	return &Executor{store: store, execution: service, locks: make(map[string]*sync.Mutex), positionWasOpen: make(map[string]bool)}
 }
 
 // RecordFailure persists a scheduler-visible execution outcome. Without this,
@@ -69,6 +75,10 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	if side != domain.SideBuy && side != domain.SideSell {
 		return errors.New("invalid autonomous side")
 	}
+	executionKey := instance.ExchangeAccountID + ":" + instance.Symbol
+	executionLock := e.lockFor(executionKey)
+	executionLock.Lock()
+	defer executionLock.Unlock()
 	reference := domain.ExchangeAccountRef{ID: instance.ExchangeAccountID, UserID: instance.UserID, Provider: domain.ProviderBinance, Environment: domain.EnvironmentTestnet, AccountType: domain.AccountTypeUSDTM}
 	allocation, allocationOK := numericConfiguration(instance.Configuration["allocationUsdt"])
 	var sizingRule domain.SymbolRule
@@ -95,17 +105,49 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 			break
 		}
 	}
+	if e.observePosition(executionKey, current != nil) {
+		candleOpenMS := metricInt64(decision.Metrics, "marketDataOpenTimeMs")
+		if candleOpenMS > 0 {
+			if err := e.store.MarkAutonomousReentryGuard(ctx, instance, candleOpenMS, "EXCHANGE_POSITION_CLOSED", now); err != nil {
+				return fmt.Errorf("persist TESTNET external-close reentry guard: %w", err)
+			}
+		}
+		return e.store.MarkAutonomousExecution(ctx, decisionID, false, "exchange position closed outside this execution cycle; waiting for a fresh 15m market signal")
+	}
 	if current != nil {
 		if !positionProtectionComplete(*current, openOrders, botClientPrefix(instance.ID)) {
 			return e.ensurePositionProtection(ctx, instance, decisionID, *current, openOrders, reference, now)
 		}
+		if manualLimitClosePending(openOrders, instance.Symbol) {
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "manual reduce-only LIMIT close is open; autonomous additions are suspended")
+		}
 		if instance.Configuration["pyramidingEnabled"] != true || !samePositionDirection(*current, side) {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "existing TESTNET position is already protected; no additional entry allowed")
+		}
+		if instance.Configuration["testnetTrendGridEnabled"] == true {
+			stepBps, stepOK := numericConfiguration(instance.Configuration["testnetGridStepBps"])
+			if !stepOK || stepBps < 10 || stepBps > 500 {
+				return errors.New("TESTNET trend-grid step is invalid")
+			}
+			if !favorableTrendGridStepReached(*current, sizingMark, stepBps) {
+				return e.store.MarkAutonomousExecution(ctx, decisionID, false, "TESTNET trend-grid is waiting for the next favorable price level")
+			}
 		}
 		if !allocationOK || allocation <= 0 {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "existing TESTNET position is already protected; pyramiding allocation is unavailable")
 		}
-		remaining, remainingErr := remainingAllocation(allocation, *current, sizingMark)
+		// The TESTNET allocation is cash/initial-margin capital. Binance position
+		// exposure is leveraged notional, so compare the open position against
+		// allocation x the exchange position's actual leverage.
+		positionLeverage, parseErr := strconv.Atoi(string(current.Leverage))
+		if parseErr != nil || positionLeverage < 1 {
+			return errors.New("open TESTNET position leverage could not be verified")
+		}
+		positionAllocation := allocation
+		if instance.Configuration["testnetMarginAllocationMode"] == true {
+			positionAllocation *= float64(positionLeverage)
+		}
+		remaining, remainingErr := remainingAllocation(positionAllocation, *current, sizingMark)
 		if remainingErr != nil {
 			return remainingErr
 		}
@@ -119,17 +161,27 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		if err != nil {
 			return err
 		}
-		// Binance does not permit changing leverage while an isolated position is
-		// open. Preserve the exchange position's leverage for same-side additions;
-		// the configured 5-20x leverage remains applicable to fresh positions.
-		positionLeverage, parseErr := strconv.Atoi(string(current.Leverage))
-		if parseErr != nil || positionLeverage < 1 {
-			return errors.New("open TESTNET position leverage could not be verified")
+		quantityText, err = enforceConfiguredMinimumMargin(quantityText, remaining, positionLeverage, instance.Configuration, sizingRule, sizingMark)
+		if errors.Is(err, errAllocationExhausted) {
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "remaining TESTNET allocation is below the configured minimum initial margin")
 		}
+		if err != nil {
+			return err
+		}
+		// Binance does not permit changing leverage while an isolated position is
+		// open. Preserve the exchange position's leverage for same-side additions.
 		return e.pyramidPosition(ctx, instance, decisionID, side, quantityText, positionLeverage, *current, openOrders, reference, order, now)
 	}
 	if allocationOK && allocation > 0 {
-		quantityText, err = alignApprovedQuantity(quantityText, allocation, sizingRule, sizingMark)
+		positionAllocation := allocation
+		if instance.Configuration["testnetMarginAllocationMode"] == true {
+			positionAllocation *= float64(leverage)
+		}
+		quantityText, err = alignApprovedQuantity(quantityText, positionAllocation, sizingRule, sizingMark)
+		if err != nil {
+			return err
+		}
+		quantityText, err = enforceConfiguredMinimumMargin(quantityText, positionAllocation, leverage, instance.Configuration, sizingRule, sizingMark)
 		if err != nil {
 			return err
 		}
@@ -170,6 +222,7 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	if placed.Status != domain.OrderFilled && placed.Status != domain.OrderPartiallyFilled {
 		return errors.New("autonomous TESTNET market entry was not filled")
 	}
+	e.setPositionOpen(executionKey)
 	stopNow := time.Now().UTC()
 	stop, stopCommand := build(instance, decisionID, "stop", exitSide, domain.OrderStopMarket, domain.Decimal(quantityText), domain.Decimal(stopPrice), true, leverage, stopNow, reference)
 	if err := e.store.CreateAutonomousOrder(ctx, instance, stop, stopNow); err != nil {
@@ -201,6 +254,65 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		return err
 	}
 	return nil
+}
+
+func (e *Executor) lockFor(key string) *sync.Mutex {
+	e.locksMu.Lock()
+	defer e.locksMu.Unlock()
+	if e.locks == nil {
+		e.locks = make(map[string]*sync.Mutex)
+	}
+	if existing := e.locks[key]; existing != nil {
+		return existing
+	}
+	created := &sync.Mutex{}
+	e.locks[key] = created
+	return created
+}
+
+func (e *Executor) observePosition(key string, open bool) bool {
+	e.positionMu.Lock()
+	defer e.positionMu.Unlock()
+	if e.positionWasOpen == nil {
+		e.positionWasOpen = make(map[string]bool)
+	}
+	wasOpen := e.positionWasOpen[key]
+	e.positionWasOpen[key] = open
+	return wasOpen && !open
+}
+
+func (e *Executor) setPositionOpen(key string) {
+	e.positionMu.Lock()
+	defer e.positionMu.Unlock()
+	if e.positionWasOpen == nil {
+		e.positionWasOpen = make(map[string]bool)
+	}
+	e.positionWasOpen[key] = true
+}
+
+func metricInt64(metrics map[string]any, key string) int64 {
+	if metrics == nil {
+		return 0
+	}
+	switch value := metrics[key].(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
+}
+
+func manualLimitClosePending(orders []domain.Order, symbol string) bool {
+	for _, order := range orders {
+		if order.Symbol == symbol && order.ReduceOnly && order.Type == domain.OrderLimit && strings.HasPrefix(order.ClientOrderID, "kk_") {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Executor) pyramidPosition(ctx context.Context, instance bot.Instance, decisionID int64, side domain.OrderSide, quantityText string, leverage int, previous domain.Position, oldOrders []domain.Order, reference domain.ExchangeAccountRef, plan map[string]any, now time.Time) error {
@@ -405,6 +517,23 @@ func samePositionDirection(position domain.Position, side domain.OrderSide) bool
 	return (position.Side == domain.PositionLong && side == domain.SideBuy) || (position.Side == domain.PositionShort && side == domain.SideSell)
 }
 
+func favorableTrendGridStepReached(position domain.Position, markText domain.Decimal, stepBps float64) bool {
+	entry, entryOK := new(big.Rat).SetString(string(position.EntryPrice))
+	mark, markOK := new(big.Rat).SetString(string(markText))
+	step, stepOK := new(big.Rat).SetString(strconv.FormatFloat(stepBps/10_000, 'f', 8, 64))
+	if !entryOK || !markOK || !stepOK || entry.Sign() <= 0 || mark.Sign() <= 0 || step.Sign() <= 0 {
+		return false
+	}
+	one := big.NewRat(1, 1)
+	if position.Side == domain.PositionLong {
+		return mark.Cmp(new(big.Rat).Mul(entry, new(big.Rat).Add(one, step))) >= 0
+	}
+	if position.Side == domain.PositionShort {
+		return mark.Cmp(new(big.Rat).Mul(entry, new(big.Rat).Sub(one, step))) <= 0
+	}
+	return false
+}
+
 func (e *Executor) placeProtection(ctx context.Context, instance bot.Instance, decisionID int64, suffix string, orderType domain.OrderType, side domain.OrderSide, quantity, trigger domain.Decimal, leverage int, reference domain.ExchangeAccountRef, now time.Time) error {
 	if _, err := e.execution.Preview(ctx, tradingv1.PreviewOrderRequest{Account: reference, Symbol: instance.Symbol, Side: side, Type: orderType, Quantity: quantity, StopPrice: trigger, Leverage: leverage, MarginMode: domain.MarginIsolated, ReduceOnly: true}); err != nil {
 		return err
@@ -531,6 +660,27 @@ func alignApprovedQuantity(approvedText string, maximumNotional float64, rule do
 		decimals = len(strings.TrimRight(strings.SplitN(text, ".", 2)[1], "0"))
 	}
 	return quantity.FloatString(decimals), nil
+}
+
+func enforceConfiguredMinimumMargin(quantityText string, maximumNotional float64, leverage int, configuration map[string]any, rule domain.SymbolRule, markValue domain.Decimal) (string, error) {
+	if configuration["testnetMarginAllocationMode"] != true {
+		return quantityText, nil
+	}
+	minimumMargin, ok := numericConfiguration(configuration["minimumInitialMarginUsdt"])
+	if !ok || minimumMargin <= 0 || leverage < 1 {
+		return "", errors.New("TESTNET minimum initial margin configuration is invalid")
+	}
+	quantity, quantityOK := new(big.Rat).SetString(quantityText)
+	mark, markOK := new(big.Rat).SetString(string(markValue))
+	minimumNotional := minimumMargin * float64(leverage)
+	target, targetOK := new(big.Rat).SetString(strconv.FormatFloat(minimumNotional, 'f', 8, 64))
+	if !quantityOK || !markOK || !targetOK {
+		return "", errors.New("TESTNET minimum initial margin sizing is invalid")
+	}
+	if new(big.Rat).Mul(quantity, mark).Cmp(target) >= 0 {
+		return quantityText, nil
+	}
+	return allocatedQuantityForNotional(minimumNotional, maximumNotional, rule, markValue)
 }
 
 func allocatedQuantity(allocation, positionPct float64, rule domain.SymbolRule, markValue domain.Decimal) (string, error) {

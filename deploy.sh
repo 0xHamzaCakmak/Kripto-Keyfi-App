@@ -170,6 +170,8 @@ NODE
     "TRADING_ENGINE_LIQUIDATION_STREAM_ENABLED=true"
     "TRADING_ENGINE_EXECUTION_ENABLED=true"
     "AUTONOMOUS_TESTNET_EXECUTION_ENABLED=true"
+    "AI_TRADING_FIXED_FLEET_SIZE=20"
+    "AI_TRADING_EVOLUTION_ENABLED=false"
   )
   local pair name expected actual
   for pair in "${expected_flags[@]}"; do

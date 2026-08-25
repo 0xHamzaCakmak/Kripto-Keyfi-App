@@ -31,6 +31,34 @@ func TestAnalyzeMarketRejectsMissingDerivativesEvidence(t *testing.T) {
 	}
 }
 
+func TestAnalyzeMarketUsesOnly15mAnd1hWith24hAnd48hWindows(t *testing.T) {
+	source := trendingSnapshot(1)
+	snapshot := MarketSnapshot{
+		Candles: map[string][]domain.MarketCandle{
+			"15m": source.Candles["15m"][:193],
+			"1h":  source.Candles["1h"][:49],
+		},
+		Derivatives: source.Derivatives,
+	}
+	analysis, err := AnalyzeMarket(snapshot, "BUY")
+	if err != nil || analysis.HigherDirection != "BUY" || analysis.MiddleDirection != "BUY" || analysis.LowerDirection != "BUY" || analysis.ConfirmedTimeframes != 3 {
+		t.Fatalf("15m/1h 24h/48h analysis failed: %#v err=%v", analysis, err)
+	}
+}
+
+func TestWindowDirectionUsesExactHistoricalWindow(t *testing.T) {
+	values := make([]float64, 193)
+	for index := range values {
+		values[index] = 100 + float64(index)*0.1
+	}
+	if direction := windowDirection(values, 96, 5); direction != "BUY" {
+		t.Fatalf("24h 15m window direction mismatch: %s", direction)
+	}
+	if direction := windowDirection(values, 192, 5); direction != "BUY" {
+		t.Fatalf("48h 15m window direction mismatch: %s", direction)
+	}
+}
+
 func TestAnalyzeMarketTreatsFlatQuantizedSeriesAsRange(t *testing.T) {
 	series := make([]domain.MarketCandle, 220)
 	for index := range series {

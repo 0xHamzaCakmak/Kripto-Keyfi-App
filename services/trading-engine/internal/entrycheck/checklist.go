@@ -5,13 +5,42 @@ import "strings"
 // Input contains independently established evidence for every mandatory
 // Playbook section 4 entry criterion. Missing evidence fails closed.
 type Input struct {
-	Regime                 string
-	HigherTimeframeAligned bool
-	ConfirmedTimeframes    int
-	RiskRewardSatisfied    bool
-	PositionLimitSatisfied bool
-	DerivativesAligned     bool
-	ContinuousTraining     bool
+	Regime                   string
+	HigherTimeframeAligned   bool
+	ConfirmedTimeframes      int
+	RiskRewardSatisfied      bool
+	PositionLimitSatisfied   bool
+	DerivativesAligned       bool
+	ContinuousTraining       bool
+	TestnetTraining          bool
+	TransitionRegimeAccepted bool
+}
+
+// ValidateTestnetTraining is available only to an explicitly activated
+// Binance TESTNET profile. It relaxes directional funding/OI confluence so a
+// demo fleet can collect execution evidence, while retaining a clear regime,
+// Binance OHLCV confirmation, risk/reward and position limits.
+func ValidateTestnetTraining(input Input) Result {
+	failed := make([]string, 0, 5)
+	regime := strings.ToUpper(strings.TrimSpace(input.Regime))
+	establishedRegime := regime == "TREND" || regime == "RANGE" || regime == "HIGH_VOLATILITY"
+	guardedTransition := regime == "UNCERTAIN" && input.TransitionRegimeAccepted && input.ConfirmedTimeframes >= 2 && input.DerivativesAligned
+	if !establishedRegime && !guardedTransition {
+		failed = append(failed, "REGIME_CLEAR")
+	}
+	if input.ConfirmedTimeframes < 1 || (regime == "UNCERTAIN" && input.ConfirmedTimeframes < 2) {
+		failed = append(failed, "MARKET_TIMEFRAME_CONFIRMATION")
+	}
+	if !input.DerivativesAligned {
+		failed = append(failed, "FUNDING_OPEN_INTEREST_ALIGNMENT")
+	}
+	if !input.RiskRewardSatisfied {
+		failed = append(failed, "MINIMUM_RISK_REWARD")
+	}
+	if !input.PositionLimitSatisfied {
+		failed = append(failed, "POSITION_LIMIT")
+	}
+	return Result{Passed: len(failed) == 0, Failed: failed}
 }
 
 type Result struct {

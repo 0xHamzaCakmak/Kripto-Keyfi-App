@@ -14,9 +14,19 @@ export const PAPER_TRAINING_MAX_OPEN_POSITIONS = 100;
 export const PAPER_TRAINING_STOP_LOSS_BPS = 2_000;
 export const PAPER_TRAINING_TAKE_PROFIT_BPS = 300;
 export const PAPER_TRAINING_MIN_NET_PROFIT_BPS = 300;
-export const PAPER_TRAINING_INTERVAL_SECONDS = 5;
+// Strategies use 15m/1h candles, so evaluating every five seconds only creates
+// duplicate decisions and bursts Binance private API reads. One cycle per bot
+// per minute keeps execution responsive while leaving ample request-weight
+// headroom for reconciliation and protective orders.
+export const PAPER_TRAINING_INTERVAL_SECONDS = 60;
 export const PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT = 20;
 export const PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT = 0.05;
+export const TESTNET_TREND_GRID_STEP_BPS = 25;
+export const TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES = 2;
+export const TESTNET_TRANSITION_MIN_ATR_BPS = 20;
+export const TESTNET_MIN_TAKE_PROFIT_BPS = 300;
+export const TESTNET_MAX_ADAPTIVE_STOP_BPS = 300;
+export const TESTNET_DEFAULT_MIN_INITIAL_MARGIN_USDT = 20;
 
 export function universeCandidate(symbols: string[], slot: number, index: number, cohortSize: number) {
   if (symbols.length === 0) throw new Error('Futures universe is empty.');
@@ -24,9 +34,11 @@ export function universeCandidate(symbols: string[], slot: number, index: number
   return symbols[(offset + index) % symbols.length]!;
 }
 
-export function fleetLeverage(index: number, population: number) {
-  if (population <= 1) return 5;
-  return 5 + Math.round(index * 15 / (population - 1));
+export function fleetLeverage(index: number, population: number, minimum = 5, maximum = 20) {
+  const min = Math.max(1, Math.min(20, Math.round(minimum)));
+  const max = Math.max(min, Math.min(20, Math.round(maximum)));
+  if (population <= 1) return min;
+  return min + Math.round(index * (max - min) / (population - 1));
 }
 
 export function staleAutonomousProtection(order: ExchangeOrder, occupiedSymbols: Set<string>) {
@@ -46,12 +58,13 @@ export function paperTrainingConfiguration(value: Prisma.JsonValue, leverage: nu
   const configuredTarget = Number(source.takeProfitBps);
   const stopLossBps = Number.isFinite(configuredStop) && configuredStop > 0 ? Math.min(configuredStop, PAPER_TRAINING_STOP_LOSS_BPS) : PAPER_TRAINING_STOP_LOSS_BPS;
   const takeProfitBps = Number.isFinite(configuredTarget) && configuredTarget > 0 ? Math.max(configuredTarget, PAPER_TRAINING_TAKE_PROFIT_BPS) : PAPER_TRAINING_TAKE_PROFIT_BPS;
+  const configuredMinimumMargin = Number(extra.minimumInitialMarginUsdt ?? source.minimumInitialMarginUsdt);
   return {
     ...source, ...extra, paperTrainingMode: true,
     signalThresholdBps: Number.isFinite(configuredThreshold) ? Math.min(configuredThreshold, 10) : 10,
     stopLossBps, takeProfitBps,
     minimumNetProfitBps: PAPER_TRAINING_MIN_NET_PROFIT_BPS,
-    minimumInitialMarginUsdt: PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT,
+    minimumInitialMarginUsdt: Number.isFinite(configuredMinimumMargin) && configuredMinimumMargin > 0 ? configuredMinimumMargin : PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT,
     paperMaxRiskPerTradePct: PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT,
     paperAlwaysInMarket: true,
     adaptiveStopMinBps: 75, adaptiveStopMaxBps: stopLossBps,
@@ -60,10 +73,42 @@ export function paperTrainingConfiguration(value: Prisma.JsonValue, leverage: nu
   };
 }
 
+export function testnetExecutionConfiguration(value: Prisma.JsonValue, leverage: number, extra: Prisma.InputJsonObject = {}): Prisma.InputJsonObject {
+  const source = configuration(value, leverage);
+  const configuredThreshold = Number(source.signalThresholdBps);
+  const configuredMinimumMargin = Number(extra.minimumInitialMarginUsdt ?? source.minimumInitialMarginUsdt);
+  return {
+    ...source, ...extra,
+    paperTrainingMode: false,
+    paperAlwaysInMarket: false,
+    independentPaperTrades: false,
+    testnetExecutionProfile: true,
+    testnetContinuousExecution: true,
+    testnetTrendGridEnabled: true,
+    testnetGridStepBps: TESTNET_TREND_GRID_STEP_BPS,
+    testnetTransitionRegimeEnabled: true,
+    testnetTransitionMinConfirmedTimeframes: TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES,
+    testnetTransitionMinAtrBps: TESTNET_TRANSITION_MIN_ATR_BPS,
+    analysisTimeframes: ['15m', '1h'],
+    directionWindowsHours: [24, 48],
+    signalThresholdBps: Number.isFinite(configuredThreshold) ? Math.min(configuredThreshold, 10) : 10,
+    stopLossBps: TESTNET_MAX_ADAPTIVE_STOP_BPS,
+    takeProfitBps: TESTNET_MIN_TAKE_PROFIT_BPS,
+    minimumTakeProfitBps: TESTNET_MIN_TAKE_PROFIT_BPS,
+    minimumInitialMarginUsdt: Number.isFinite(configuredMinimumMargin) && configuredMinimumMargin > 0 ? configuredMinimumMargin : TESTNET_DEFAULT_MIN_INITIAL_MARGIN_USDT,
+    testnetMarginAllocationMode: true,
+    testnetMaxRiskPerTradePct: 0.20,
+    adaptiveStopMinBps: 75,
+    adaptiveStopMaxBps: TESTNET_MAX_ADAPTIVE_STOP_BPS,
+    riskRewardRatio: 1.5,
+    pyramidingEnabled: true,
+  };
+}
+
 export function botAllocationUsdt(value: Prisma.JsonValue, fallback = 100) {
   if (!value || Array.isArray(value) || typeof value !== 'object') return fallback;
   const candidate = Number((value as Prisma.JsonObject).allocationUsdt);
-  return Number.isFinite(candidate) && candidate >= 10 && candidate <= 200 ? candidate : fallback;
+  return Number.isFinite(candidate) && candidate >= 10 && candidate <= 10_000 ? candidate : fallback;
 }
 
 export function automaticCapitalScaleTarget(allocation: number, startingBalance: number, totalTrades: number, currentEquity: number) {
@@ -125,11 +170,20 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
     const paperAllowed = new Set(publicRules.map((rule) => rule.symbol));
     const paperSymbols = configuredSymbols.filter((symbol) => paperAllowed.has(symbol));
     if (paperSymbols.length === 0) throw new Error('Core Trading Universe has no enabled Binance USDT perpetual symbol for PAPER training.');
-    const demoAllowed = new Set(privateRules.filter((rule) => rule.maxLeverage >= 20).map((rule) => rule.symbol));
-    const demoSymbols = configuredSymbols.filter((symbol) => demoAllowed.has(symbol));
+    const demoAllowed = new Set(privateRules.filter((rule) => rule.maxLeverage >= 20 && ['USDT', 'USDC'].includes(rule.quoteAsset)).map((rule) => rule.symbol));
+    // The admin universe is coin-based and persisted with its canonical USDT
+    // symbol. TESTNET may route alternating bots to that coin's USDC perpetual
+    // when Binance lists it, allowing both native stablecoin balances to train.
+    const demoSymbols = configuredSymbols.map((symbol, index) => {
+      const base = symbol.endsWith('USDT') ? symbol.slice(0, -4) : symbol;
+      const preferred = `${base}${index % 2 === 0 ? 'USDT' : 'USDC'}`;
+      return demoAllowed.has(preferred) ? preferred : symbol;
+    }).filter((symbol) => demoAllowed.has(symbol));
     const occupied = new Set(positions.filter((position) => Number(position.quantity) !== 0).map((position) => position.symbol));
     const paper = bots.filter((bot) => bot.mode === 'PAPER');
     const demo = privateExecutionReady ? bots.filter((bot) => bot.mode === 'DEMO') : [];
+    const leverageMinimum = account.riskProfile.minLeverage;
+    const leverageMaximum = account.riskProfile.maxLeverage;
     const slot = Math.floor(now.getTime() / (env.AI_TRADING_UNIVERSE_INTERVAL_MINUTES * 60_000));
     const updates: Array<ReturnType<typeof prisma.tradingBot.updateMany>> = [];
     let rotatedPaper = 0;
@@ -141,10 +195,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
 
     const scaleTarget = new Map(bots.map((bot) => {
       const allocation = botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber());
-      const latest = bot.metrics[0];
-      const target = automaticCapitalScaleTarget(allocation, bot.startingPaperBalance.toNumber(), latest?.totalTrades ?? 0, latest?.currentEquity.toNumber() ?? 0);
-      if (target > allocation) autoScaledCapital += 1;
-      return [bot.id, target] as const;
+      return [bot.id, allocation] as const;
     }));
 
     for (const order of snapshot.orders.filter((item) => staleAutonomousProtection(item, occupied))) {
@@ -158,9 +209,9 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
     for (let index = 0; index < demo.length; index += 1) {
       const bot = demo[index]!;
       const position = positions.find((item) => item.symbol === bot.symbol && Number(item.quantity) !== 0);
-      const leverage = fleetLeverage(index, demo.length);
+      const leverage = fleetLeverage(index, demo.length, leverageMinimum, leverageMaximum);
       const currentLeverage = Number(position?.leverage ?? 0);
-      if (position && (currentLeverage < 5 || currentLeverage > 20)) {
+      if (position && (currentLeverage < leverageMinimum || currentLeverage > leverageMaximum)) {
         await adapter.configurePosition(bot.symbol, leverage, 'ISOLATED');
         adjustedPositions += 1;
       }
@@ -168,7 +219,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
 
     for (let index = 0; index < paper.length; index += 1) {
       const bot = paper[index]!;
-      const leverage = fleetLeverage(index % 16, 16);
+      const leverage = fleetLeverage(index % 16, 16, leverageMinimum, leverageMaximum);
       const flat = !bot.paperPosition || bot.paperPosition.netQuantity.isZero();
       const target = flat ? universeCandidate(paperSymbols, slot, index, paper.length) : bot.symbol;
       if (!paperAllowed.has(target)) continue;
@@ -180,7 +231,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       // without mutating the market of an active position.
       updates.push(prisma.tradingBot.updateMany({ where: { id: bot.id, mode: 'PAPER' }, data: {
         intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS,
-        configuration: paperTrainingConfiguration(bot.configuration, leverage, { allocationUsdt: allocation }),
+        configuration: paperTrainingConfiguration(bot.configuration, leverage, { allocationUsdt: allocation, minimumInitialMarginUsdt: account.riskProfile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: leverageMinimum, leverageMax: leverageMaximum }),
         ...(allocation > botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber()) ? { startingPaperBalance: allocation } : {}),
         version: { increment: 1 },
       } }));
@@ -195,13 +246,25 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
     }
 
     const reserved = new Set(occupied);
+    const testnetFleetAllocation = account.riskProfile.testnetBotAllocationUsdt.toNumber();
+    const testnetMinimumMargin = account.riskProfile.testnetMinInitialMarginUsdt.toNumber();
     for (let index = 0; index < demo.length; index += 1) {
       const bot = demo[index]!;
-      if (schedulerLeaseActive(bot.schedulerOwner, bot.leaseExpiresAt, now)) continue;
-      const leverage = fleetLeverage(index, demo.length);
+      const leverage = fleetLeverage(index, demo.length, leverageMinimum, leverageMaximum);
+      const allocation = testnetFleetAllocation;
+      const testnetSizing = { allocationUsdt: allocation, minimumInitialMarginUsdt: testnetMinimumMargin, leverageMin: leverageMinimum, leverageMax: leverageMaximum };
+      if (schedulerLeaseActive(bot.schedulerOwner, bot.leaseExpiresAt, now)) {
+        updates.push(prisma.tradingBot.updateMany({ where: { id: bot.id, mode: 'DEMO' }, data: {
+          intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS,
+          configuration: testnetExecutionConfiguration(bot.configuration, leverage, testnetSizing),
+          timeframe: '15m',
+          startingPaperBalance: allocation,
+          version: { increment: 1 },
+        } }));
+        continue;
+      }
       const hasPosition = occupied.has(bot.symbol);
       const pending = rotationPending(bot.configuration);
-      const allocation = scaleTarget.get(bot.id) ?? botAllocationUsdt(bot.configuration);
       let target = bot.symbol;
       if (pending && !hasPosition) {
         for (let attempt = 0; attempt < demoSymbols.length; attempt += 1) {
@@ -213,8 +276,10 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       reserved.add(target);
       const changedSymbol = target !== bot.symbol;
       if (!hasPosition && !pending) {
-        updates.push(prisma.tradingBot.updateMany({ where: availableBotWhere(bot.id, now), data: {
-          configuration: configuration(bot.configuration, leverage, { universeRotationPending: true, allocationUsdt: allocation }),
+      updates.push(prisma.tradingBot.updateMany({ where: availableBotWhere(bot.id, now), data: {
+          intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS,
+          configuration: testnetExecutionConfiguration(bot.configuration, leverage, { ...testnetSizing, universeRotationPending: true }),
+          timeframe: '15m',
           ...(allocation > botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber()) ? { startingPaperBalance: allocation } : {}),
           state: 'PAUSED', desiredState: 'PAUSED', schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
           stateReason: 'TESTNET universe rotation staged; next cycle verifies the old symbol is still flat.', version: { increment: 1 },
@@ -223,7 +288,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
         continue;
       }
       updates.push(prisma.tradingBot.updateMany({ where: availableBotWhere(bot.id, now), data: {
-        symbol: target, symbols: [target], configuration: configuration(bot.configuration, leverage, { universeRotationPending: false, allocationUsdt: allocation }),
+        symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { ...testnetSizing, universeRotationPending: false }),
         ...(allocation > botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber()) ? { startingPaperBalance: allocation } : {}),
         ...(pending ? { desiredState: 'RUNNING', state: 'STARTING', schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
           stateReason: hasPosition ? 'A position appeared during staged rotation; original symbol preserved.' : 'Staged flat TESTNET bot rotated safely through the Futures universe.' } : {}),
@@ -233,7 +298,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       if (changedSymbol) rotatedDemo += 1;
     }
 
-    const projectedDemoAllocation = demo.reduce((sum, bot) => sum + (scaleTarget.get(bot.id) ?? botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber())), 0);
+    const projectedDemoAllocation = demo.length * testnetFleetAllocation;
     await prisma.$transaction([
       ...updates,
       prisma.tradingAuditLog.create({ data: {
@@ -247,7 +312,8 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
             maximumRiskPerTradePct: PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, alwaysInMarket: true },
           riskProfileOwnership: 'ADMIN_MANAGED_NOT_MUTATED_BY_UNIVERSE_WORKER',
           automaticScaleRule: { minimumClosedTrades: 200, profitableEquityRequired: true, targetAllocationUsdt: 200 },
-          projectedDemoAllocation, leverageMin: 5, leverageMax: 20, productionLive: false, occupiedSymbolsPreserved: [...occupied] },
+          testnetSizingPolicy: { botAllocationUsdt: testnetFleetAllocation, minimumInitialMarginUsdt: testnetMinimumMargin, allocationMode: 'INITIAL_MARGIN' },
+          projectedDemoAllocation, leverageMin: leverageMinimum, leverageMax: leverageMaximum, productionLive: false, occupiedSymbolsPreserved: [...occupied] },
       } }),
     ]);
     return { status: 'ROTATED' as const, universeSize: paperSymbols.length, paperBots: paper.length, demoBots: demo.length, privateExecutionReady, rotatedPaper, rotatedDemo, stagedDemo, adjustedPositions, canceledStaleProtectives, autoScaledCapital, occupied: occupied.size };

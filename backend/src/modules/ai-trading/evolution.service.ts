@@ -56,7 +56,7 @@ export async function runEvolution(userId: string, input: RunEvolutionInput, ipA
   const source = await prisma.generation.findFirst({
     where: { id: input.sourceGenerationId, createdById: userId },
     include: { bots: {
-      where: { type: 'AUTONOMOUS', mode: 'PAPER' },
+      where: { type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: { not: 'ARCHIVED' } },
       include: {
         metrics: { orderBy: [{ snapshotAt: 'desc' }, { id: 'desc' }], take: 1 },
         strategyVersion: { select: { parameterSchema: true, strategy: { select: { family: true } } } },
@@ -135,7 +135,7 @@ export async function runEvolution(userId: string, input: RunEvolutionInput, ipA
     await prisma.$transaction([
       prisma.tradingBot.updateMany({
         where: { id: { in: children.map((child) => child.id) }, userId, type: 'AUTONOMOUS', mode: 'PAPER' },
-        data: { lifecycleStatus: 'PAPER', state: 'STARTING', desiredState: 'RUNNING', intervalSeconds: 15, stateReason: `Evolution ${run.id} PAPER evaluation started.`, schedulerOwner: null, leaseExpiresAt: null, version: { increment: 1 } },
+        data: { lifecycleStatus: 'PAPER', state: 'STARTING', desiredState: 'RUNNING', intervalSeconds: 60, stateReason: `Evolution ${run.id} PAPER evaluation started.`, schedulerOwner: null, leaseExpiresAt: null, version: { increment: 1 } },
       }),
       prisma.generation.update({ where: { id: target.id }, data: { status: 'EVALUATING', metadata: { evolutionRunId: run.id, sourceGenerationId: source.id, mode: 'PAPER', liveEnabled: false, childIds: children.map((child) => child.id) } } }),
       prisma.generation.update({ where: { id: source.id }, data: { status: 'COMPLETED', completedAt: new Date() } }),

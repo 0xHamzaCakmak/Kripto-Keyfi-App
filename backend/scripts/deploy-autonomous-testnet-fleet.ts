@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../src/database/prisma.js';
 
 const CONFIRMATION = 'ENABLE_BINANCE_TESTNET_FLEET';
-const SYMBOLS = ['ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'LINKUSDT', 'AVAXUSDT', 'DOTUSDT', 'LTCUSDT', 'BCHUSDT', 'TRXUSDT', 'SUIUSDT', 'NEARUSDT', 'APTUSDT'] as const;
+const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'BCHUSDT', 'LINKUSDT', 'AVAXUSDT', 'LTCUSDT', 'DOTUSDT', 'SUIUSDT', 'UNIUSDT', 'AAVEUSDT', 'NEARUSDT', 'ETCUSDT', 'XLMUSDT', 'PUMPUSDT'] as const;
 
 function configuration(value: Prisma.JsonValue, index: number): Prisma.InputJsonObject {
   const source = value && !Array.isArray(value) && typeof value === 'object' ? value as Prisma.JsonObject : {};
@@ -56,13 +56,12 @@ async function main() {
     const trades = (right.metrics[0]?.totalTrades ?? 0) - (left.metrics[0]?.totalTrades ?? 0);
     return trades || left.id.localeCompare(right.id);
   });
-  if (sources.length < SYMBOLS.length) throw new Error('At least 15 ranked PAPER source bots are required.');
+  if (sources.length !== SYMBOLS.length) throw new Error('Exactly 20 ranked PAPER source bots are required.');
   const fleetAllocation = sources.slice(0, SYMBOLS.length).reduce((sum, source) => sum + allocation(source.configuration), 0);
 
-  const current = await prisma.tradingBot.findFirst({ where: { userId: account.userId, type: 'AUTONOMOUS', mode: 'DEMO' }, orderBy: { createdAt: 'asc' } });
   await prisma.$transaction(async (tx) => {
     await tx.tradingRiskProfile.update({ where: { id: account.riskProfile!.id }, data: {
-      maxOpenPositions: 15,
+      maxOpenPositions: 20,
       maxAccountOpenNotional: Math.max(riskProfile.maxAccountOpenNotional.toNumber(), fleetAllocation).toFixed(2),
       maxLeverage: 20,
       maxOrdersPerMinute: 1000,
@@ -73,24 +72,16 @@ async function main() {
     for (let index = 0; index < SYMBOLS.length; index += 1) {
       const source = sources[index]!;
       const symbol = SYMBOLS[index]!;
-      const name = `AI TESTNET Fleet #${String(index + 1).padStart(2, '0')} ${symbol}`;
       const data = {
-        exchangeAccountId: account.id, name, type: 'AUTONOMOUS' as const, mode: 'DEMO' as const,
+        exchangeAccountId: account.id, mode: 'DEMO' as const,
         state: 'STARTING' as const, desiredState: 'RUNNING' as const, symbol, intervalSeconds: 15,
-        configuration: configuration(source.configuration, index), stateReason: 'Explicit 15-bot Binance TESTNET fleet deployment.',
+        configuration: configuration(source.configuration, index), stateReason: 'Explicit 20-bot Binance TESTNET fleet deployment.',
         schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null, lastErrorCode: null, lastErrorMessage: null,
-        strategyVersionId: source.strategyVersionId, generationId: null, parentBotId: source.id,
+        strategyVersionId: source.strategyVersionId,
         riskProfileId: account.riskProfile!.id, lifecycleStatus: 'PAPER' as const,
-        startingPaperBalance: source.startingPaperBalance, factoryCreationMethod: 'CLONE' as const,
-        symbols: [symbol], timeframe: '1m', version: { increment: 1 },
+        symbols: [symbol], timeframe: '15m', version: { increment: 1 },
       };
-      if (index === 0 && current) {
-        await tx.tradingBot.update({ where: { id: current.id }, data });
-        continue;
-      }
-      const existing = await tx.tradingBot.findFirst({ where: { userId: account.userId, name } });
-      if (existing) await tx.tradingBot.update({ where: { id: existing.id }, data });
-      else await tx.tradingBot.create({ data: { ...data, userId: account.userId, version: 0 } });
+      await tx.tradingBot.update({ where: { id: source.id }, data });
     }
     await tx.tradingAuditLog.create({ data: {
       userId: account.userId, exchangeAccountId: account.id, action: 'AI_TESTNET_FLEET_DEPLOYED', entityType: 'EXCHANGE_ACCOUNT', entityId: account.id,

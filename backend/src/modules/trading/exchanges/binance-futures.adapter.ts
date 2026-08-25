@@ -11,7 +11,7 @@ const FUTURES_BASE_URL = 'https://demo-fapi.binance.com';
 const FUTURES_PUBLIC_MARKET_BASE_URL = 'https://fapi.binance.com';
 const SPOT_BASE_URL = 'https://demo-api.binance.com';
 
-type BinanceFuturesAccount = { canTrade?: boolean; canWithdraw?: boolean; assets?: Array<{ asset?: string; walletBalance?: string; availableBalance?: string; unrealizedProfit?: string }> };
+type BinanceFuturesAccount = { canTrade?: boolean; canWithdraw?: boolean; assets?: Array<{ asset?: string; walletBalance?: string; availableBalance?: string; unrealizedProfit?: string; marginAvailable?: boolean }> };
 type BinanceSpotAccount = { balances?: Array<{ asset?: string; free?: string; locked?: string }> };
 type BinanceTickerPrice = { symbol?: string; price?: string };
 type BinanceExchangeInfo = { symbols?: BinanceExchangeSymbol[] };
@@ -80,7 +80,7 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
       .filter((asset) => isNonZero(asset.walletBalance) || isNonZero(asset.unrealizedProfit))
       .map((asset) => ({
         walletType: 'USD_M_FUTURES' as const, asset: asset.asset ?? 'UNKNOWN', walletBalance: asset.walletBalance ?? '0',
-        availableBalance: asset.availableBalance ?? '0', unrealizedPnl: asset.unrealizedProfit ?? '0',
+        availableBalance: asset.availableBalance ?? '0', unrealizedPnl: asset.unrealizedProfit ?? '0', marginAvailable: asset.marginAvailable ?? false,
       }));
     return [...spotBalances, ...futuresBalances];
   }

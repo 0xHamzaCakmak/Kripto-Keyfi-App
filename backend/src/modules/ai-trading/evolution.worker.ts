@@ -31,7 +31,7 @@ export async function runAutonomousEvolutionCycle() {
     }
     const generation = await prisma.generation.findFirst({
       where: { status: { in: ['RUNNING', 'EVALUATING'] } }, orderBy: [{ number: 'asc' }, { createdAt: 'asc' }],
-      include: { bots: { where: { type: 'AUTONOMOUS', mode: 'PAPER' }, select: { id: true, lifecycleStatus: true, metrics: { orderBy: [{ snapshotAt: 'desc' }, { id: 'desc' }], take: 1, select: { totalTrades: true, score: true } } } } },
+      include: { bots: { where: { type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: { not: 'ARCHIVED' } }, select: { id: true, lifecycleStatus: true, metrics: { orderBy: [{ snapshotAt: 'desc' }, { id: 'desc' }], take: 1, select: { totalTrades: true, score: true } } } } },
     });
     if (!generation) return { status: 'IDLE' as const, promotionCycles };
     const alreadyRun = await prisma.evolutionRun.findFirst({ where: { sourceGenerationId: generation.id, status: { in: ['RUNNING', 'COMPLETED'] } }, select: { id: true } });

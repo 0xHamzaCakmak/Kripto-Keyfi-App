@@ -11,8 +11,13 @@ export const updateRiskProfileBodySchema = z.object({
   maxAccountOpenNotional: positiveDecimal.optional(),
   maxOpenPositions: z.number().int().min(1).max(100).optional(),
   paperMaxOpenPositions: z.number().int().min(1).max(100).optional(),
+  testnetBotAllocationUsdt: positiveDecimal.optional(),
+  testnetMinInitialMarginUsdt: positiveDecimal.optional(),
+  botAllocationUsdt: positiveDecimal.optional(),
+  minInitialMarginUsdt: positiveDecimal.optional(),
   maxSymbolPositions: z.number().int().min(1).max(20).optional(),
-  maxLeverage: z.number().int().min(1).max(125).optional(),
+  minLeverage: z.number().int().min(5).max(20).optional(),
+  maxLeverage: z.number().int().min(5).max(20).optional(),
   minAvailableBalance: positiveDecimal.optional(),
   maxOrdersPerMinute: z.number().int().min(1).max(1000).optional(),
   maxDailyOrders: z.number().int().min(1).max(100_000).optional(),
@@ -35,6 +40,18 @@ export const updateRiskProfileBodySchema = z.object({
   }
   if (value.maxOpenPositions !== undefined && value.maxSymbolPositions !== undefined && value.maxSymbolPositions > value.maxOpenPositions) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['maxSymbolPositions'], message: 'Parite pozisyon limiti hesap limitini aşamaz.' });
+  }
+  if (value.minLeverage !== undefined && value.maxLeverage !== undefined && value.minLeverage > value.maxLeverage) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['minLeverage'], message: 'Asgari kaldıraç azami kaldıracı aşamaz.' });
+  }
+  if (value.testnetBotAllocationUsdt !== undefined && value.testnetMinInitialMarginUsdt !== undefined
+    && Number(value.testnetMinInitialMarginUsdt) > Number(value.testnetBotAllocationUsdt)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['testnetMinInitialMarginUsdt'], message: 'TESTNET asgari işlem teminatı bot kotasını aşamaz.' });
+  }
+  const allocation = value.botAllocationUsdt ?? value.testnetBotAllocationUsdt;
+  const minimumMargin = value.minInitialMarginUsdt ?? value.testnetMinInitialMarginUsdt;
+  if (allocation !== undefined && minimumMargin !== undefined && Number(minimumMargin) > Number(allocation)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['minInitialMarginUsdt'], message: 'Asgari işlem teminatı bot başına teminat kotasını aşamaz.' });
   }
 });
 

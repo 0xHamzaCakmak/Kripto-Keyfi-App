@@ -1,11 +1,15 @@
-import type { Prisma, TradingBotState } from '@prisma/client';
+import { Prisma, type TradingBotState } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import { env } from '../../config/env.js';
-import type { BotCapitalInput, NonCriticalBotSettingsInput, PromotionReviewInput, TestnetActivationInput, TriggerPaperGenerationInput } from './autonomous-admin.schema.js';
+import type { BotCapitalInput, ClosePaperPositionInput, NonCriticalBotSettingsInput, PaperFleetActivationInput, PromotionReviewInput, ResetPaperAccountingInput, TestnetActivationInput, TestnetFleetActivationInput, TriggerPaperGenerationInput } from './autonomous-admin.schema.js';
 import { collectLiveEligibilityEvidence } from './live-eligibility.service.js';
 import { DEFAULT_LIVE_ELIGIBILITY_CONFIG } from './live-eligibility.schema.js';
 import { assessEvolutionReadiness, evolutionConfigForPopulation } from './evolution.service.js';
+import { getBinanceFuturesPublicSymbols } from '../trading/exchanges/binance-futures.adapter.js';
+import { getEnabledTradingSymbols } from './trading-universe.service.js';
+import { getTradingEngineSnapshot } from '../trading/trading-engine.client.js';
+import { fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, paperTrainingConfiguration, testnetExecutionConfiguration } from './universe.worker.js';
 
 export const AUTONOMOUS_ADMIN_API_VERSION = 'v1' as const;
 
@@ -15,7 +19,7 @@ export function autonomousDTO<T>(kind: string, data: T) {
 
 export async function getAutonomousOverview(userId: string) {
   const [bots, strategies, generations, paperTrades, champions, liveEligible, globalRisk] = await Promise.all([
-    prisma.tradingBot.count({ where: { userId, type: 'AUTONOMOUS' } }),
+    prisma.tradingBot.count({ where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } } }),
     prisma.strategy.count({ where: { createdById: userId } }),
     prisma.generation.count({ where: { createdById: userId } }),
     prisma.paperTrade.count({ where: { tradingBot: { userId, type: 'AUTONOMOUS' } } }),
@@ -34,8 +38,8 @@ export async function getAutonomousOverview(userId: string) {
 export async function getArenaStatus(userId: string) {
   const since = new Date(Date.now() - 5 * 60_000);
   const [states, modes, decisions, latest] = await Promise.all([
-    prisma.tradingBot.groupBy({ by: ['state'], where: { userId, type: 'AUTONOMOUS' }, _count: { _all: true } }),
-    prisma.tradingBot.groupBy({ by: ['mode'], where: { userId, type: 'AUTONOMOUS' }, _count: { _all: true } }),
+    prisma.tradingBot.groupBy({ by: ['state'], where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } }, _count: { _all: true } }),
+    prisma.tradingBot.groupBy({ by: ['mode'], where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } }, _count: { _all: true } }),
     prisma.tradingBotDecision.count({ where: { userId, type: 'AUTONOMOUS', occurredAt: { gte: since } } }),
     prisma.tradingBotDecision.findFirst({ where: { userId, type: 'AUTONOMOUS' }, orderBy: { occurredAt: 'desc' }, select: { occurredAt: true } }),
   ]);
@@ -47,12 +51,103 @@ export async function getArenaStatus(userId: string) {
   });
 }
 
+export async function getPaperAccountingStatus(userId: string) {
+  const [active, periods] = await Promise.all([
+    prisma.paperAccountingPeriod.findFirst({ where: { userId, status: 'ACTIVE' }, orderBy: { startedAt: 'desc' } }),
+    prisma.paperAccountingPeriod.findMany({ where: { userId }, orderBy: { number: 'desc' }, take: 20 }),
+  ]);
+  const fallbackBots = active ? [] : await activePaperBotIds(prisma, userId);
+  const botIds = active ? jsonStringArray(active.botIds) : fallbackBots;
+  const current = await paperFinancialSnapshot(prisma, botIds);
+  return autonomousDTO('PAPER_ACCOUNTING', {
+    active: active ? paperPeriodResult(active, current) : null,
+    currentWithoutPeriod: active ? null : serializePaperSnapshot(current),
+    periods: periods.map((period) => ({ id: period.id, number: period.number, status: period.status, botCount: period.botCount,
+      note: period.note, startedAt: period.startedAt, closedAt: period.closedAt })),
+    tradeHistoryPreserved: true,
+  });
+}
+
+export async function resetPaperAccounting(userId: string, input: ResetPaperAccountingInput, ipAddress?: string) {
+  return prisma.$transaction(async (tx) => {
+    const botIds = await activePaperBotIds(tx, userId);
+    if (botIds.length === 0) throw new ApiError(409, 'Yeni PAPER dönemi için çalışan PAPER botu bulunamadı.', 'PAPER_ACCOUNTING_NO_ACTIVE_BOTS');
+    const snapshot = await paperFinancialSnapshot(tx, botIds);
+    const now = new Date();
+    await tx.paperAccountingPeriod.updateMany({ where: { userId, status: 'ACTIVE' }, data: { status: 'CLOSED', closedAt: now } });
+    const maximum = await tx.paperAccountingPeriod.aggregate({ where: { userId }, _max: { number: true } });
+    const period = await tx.paperAccountingPeriod.create({ data: {
+      userId, number: (maximum._max.number ?? 0) + 1, status: 'ACTIVE',
+      baselineStartingCapital: snapshot.startingCapital, baselineRealizedPnl: snapshot.realizedPnl,
+      baselineUnrealizedPnl: snapshot.unrealizedPnl, baselineFees: snapshot.fees,
+      botIds, botCount: botIds.length, note: input.note, startedAt: now,
+    } });
+    await tx.tradingAuditLog.create({ data: {
+      userId, action: 'AI_PAPER_ACCOUNTING_PERIOD_RESET', entityType: 'PAPER_ACCOUNTING_PERIOD', entityId: period.id,
+      metadata: { periodNumber: period.number, botCount: botIds.length, confirmation: input.confirmation,
+        tradeHistoryPreserved: true, positionsPreserved: true, ordersCanceled: false, productionLive: false },
+      ...(ipAddress ? { ipAddress } : {}),
+    } });
+    return autonomousDTO('PAPER_ACCOUNTING_RESET', paperPeriodResult(period, snapshot));
+  });
+}
+
+type PaperSnapshot = { startingCapital: Prisma.Decimal; realizedPnl: Prisma.Decimal; unrealizedPnl: Prisma.Decimal; fees: Prisma.Decimal; netPnl: Prisma.Decimal };
+type PaperClient = Pick<Prisma.TransactionClient, 'tradingBot' | 'tradingBotPaperPosition'>;
+
+async function activePaperBotIds(client: PaperClient, userId: string) {
+  const bots = await client.tradingBot.findMany({
+    where: { userId, type: 'AUTONOMOUS', mode: 'PAPER', desiredState: 'RUNNING', lifecycleStatus: { not: 'ARCHIVED' } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { id: true },
+  });
+  return bots.map((bot) => bot.id);
+}
+
+async function paperFinancialSnapshot(client: PaperClient, botIds: string[]): Promise<PaperSnapshot> {
+  if (botIds.length === 0) {
+    const zero = new Prisma.Decimal(0);
+    return { startingCapital: zero, realizedPnl: zero, unrealizedPnl: zero, fees: zero, netPnl: zero };
+  }
+  const [capital, ledger] = await Promise.all([
+    client.tradingBot.aggregate({ where: { id: { in: botIds } }, _sum: { startingPaperBalance: true } }),
+    client.tradingBotPaperPosition.aggregate({ where: { tradingBotId: { in: botIds } },
+      _sum: { realizedPnl: true, unrealizedPnl: true, totalFees: true } }),
+  ]);
+  const startingCapital = capital._sum.startingPaperBalance ?? new Prisma.Decimal(0);
+  const realizedPnl = ledger._sum.realizedPnl ?? new Prisma.Decimal(0);
+  const unrealizedPnl = ledger._sum.unrealizedPnl ?? new Prisma.Decimal(0);
+  const fees = ledger._sum.totalFees ?? new Prisma.Decimal(0);
+  return { startingCapital, realizedPnl, unrealizedPnl, fees, netPnl: realizedPnl.add(unrealizedPnl).sub(fees) };
+}
+
+function paperPeriodResult(period: { id: string; number: number; status: string; botCount: number; note: string | null; startedAt: Date; closedAt: Date | null;
+  baselineStartingCapital: Prisma.Decimal; baselineRealizedPnl: Prisma.Decimal; baselineUnrealizedPnl: Prisma.Decimal; baselineFees: Prisma.Decimal }, current: PaperSnapshot) {
+  const baselineNetPnl = period.baselineRealizedPnl.add(period.baselineUnrealizedPnl).sub(period.baselineFees);
+  const periodNetPnl = current.netPnl.sub(baselineNetPnl);
+  return { id: period.id, number: period.number, status: period.status, botCount: period.botCount, note: period.note,
+    startedAt: period.startedAt, closedAt: period.closedAt, startingCapital: current.startingCapital.toString(),
+    periodNetPnl: periodNetPnl.toString(), periodEquity: current.startingCapital.add(periodNetPnl).toString(),
+    current: serializePaperSnapshot(current), baseline: {
+      startingCapital: period.baselineStartingCapital.toString(), realizedPnl: period.baselineRealizedPnl.toString(),
+      unrealizedPnl: period.baselineUnrealizedPnl.toString(), fees: period.baselineFees.toString(), netPnl: baselineNetPnl.toString(),
+    }, tradeHistoryPreserved: true };
+}
+
+function serializePaperSnapshot(value: PaperSnapshot) {
+  return { startingCapital: value.startingCapital.toString(), realizedPnl: value.realizedPnl.toString(),
+    unrealizedPnl: value.unrealizedPnl.toString(), fees: value.fees.toString(), netPnl: value.netPnl.toString() };
+}
+
+function jsonStringArray(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
 export async function listGenerations(userId: string, limit: number) {
   const rows = await prisma.generation.findMany({
     where: { createdById: userId }, orderBy: [{ number: 'desc' }, { createdAt: 'desc' }], take: limit,
     include: {
       _count: { select: { bots: true, mutations: true, crossovers: true } },
-      bots: { where: { type: 'AUTONOMOUS', mode: 'PAPER' }, select: {
+      bots: { where: { type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: { not: 'ARCHIVED' } }, select: {
         id: true, lifecycleStatus: true,
         metrics: { orderBy: [{ snapshotAt: 'desc' }, { id: 'desc' }], take: 1, select: { totalTrades: true, score: true } },
       } },
@@ -66,7 +161,10 @@ export async function listGenerations(userId: string, limit: number) {
     }));
     return {
       id: row.id, number: row.number, status: row.status, populationTarget: row.populationTarget,
-      metadata: row.metadata, counts: row._count,
+      // Archived bots remain linked to the generation so their trades, PnL and
+      // lineage history are preserved.  Runtime/UI population must only count
+      // active PAPER bots, otherwise a drained fleet still appears as 100.
+      metadata: row.metadata, counts: { ...row._count, bots: evidence.length },
       readiness: assessEvolutionReadiness(evidence, row.populationTarget, config),
       startedAt: row.startedAt, completedAt: row.completedAt, createdAt: row.createdAt, updatedAt: row.updatedAt,
     };
@@ -130,6 +228,43 @@ export async function resumeAutonomousBot(userId: string, id: string, ipAddress?
   if (bot.mode === 'DEMO' && !env.AUTONOMOUS_TESTNET_EXECUTION_ENABLED) throw new ApiError(409, 'Autonomous TESTNET execution feature flag is disabled.', 'AUTONOMOUS_TESTNET_DISABLED');
   await assertAutonomousRuntimeReady(userId, bot.exchangeAccountId);
   return persistBotUpdate(userId, bot, { state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Admin resume; scheduler lease pending.' }, 'AI_PAPER_BOT_RESUMED', ipAddress);
+}
+
+export async function requestPaperPositionClose(userId: string, id: string, input: ClosePaperPositionInput, ipAddress?: string) {
+  return prisma.$transaction(async (tx) => {
+    const bot = await tx.tradingBot.findFirst({
+      where: { id, userId, type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: { not: 'ARCHIVED' } },
+      select: safeBotSelect,
+    });
+    if (!bot) throw new ApiError(404, 'Active PAPER bot not found.', 'AUTONOMOUS_BOT_NOT_FOUND');
+    const openTrade = await tx.paperTrade.findFirst({ where: { tradingBotId: id, status: 'OPEN' }, select: { id: true, symbol: true } });
+    if (!openTrade) throw new ApiError(409, 'Bot has no open PAPER position.', 'PAPER_POSITION_NOT_OPEN');
+    const configuration = bot.configuration && !Array.isArray(bot.configuration) && typeof bot.configuration === 'object'
+      ? { ...(bot.configuration as Prisma.JsonObject) }
+      : {};
+    configuration.paperManualCloseRequested = true;
+    configuration.paperManualCloseStopBot = input.stopBot;
+    configuration.paperManualCloseRequestedAt = new Date().toISOString();
+    const changed = await tx.tradingBot.updateMany({
+      where: { id, userId, type: 'AUTONOMOUS', version: bot.version },
+      data: {
+        configuration: configuration as Prisma.InputJsonValue,
+        // A paused/stopped bot must briefly return to the scheduler so the
+        // position is closed through the canonical PAPER fill/PnL lifecycle.
+        ...(!['STARTING', 'RUNNING', 'RECONCILING', 'RISK_BLOCKED'].includes(bot.state)
+          ? { state: 'STARTING' as const, desiredState: 'RUNNING' as const, stateReason: 'Admin PAPER close requested; scheduler close pending.' }
+          : {}),
+        version: { increment: 1 },
+      },
+    });
+    if (changed.count !== 1) throw new ApiError(409, 'Bot changed concurrently; refresh and retry.', 'BOT_VERSION_CONFLICT');
+    await tx.tradingAuditLog.create({ data: {
+      userId, exchangeAccountId: bot.exchangeAccountId, action: 'AI_PAPER_POSITION_CLOSE_REQUESTED', entityType: 'PAPER_TRADE', entityId: openTrade.id,
+      metadata: { botId: id, symbol: openTrade.symbol, stopBot: input.stopBot, note: input.note ?? null, productionLive: false, historyDeleted: false },
+      ...(ipAddress ? { ipAddress } : {}),
+    } });
+    return autonomousDTO('PAPER_POSITION_CLOSE_REQUEST', { botId: id, tradeId: openTrade.id, symbol: openTrade.symbol, stopBot: input.stopBot, status: 'QUEUED' });
+  });
 }
 
 async function assertAutonomousRuntimeReady(userId: string, exchangeAccountId: string) {
@@ -228,7 +363,7 @@ export async function activateAutonomousTestnet(userId: string, id: string, inpu
   if (!bot) throw new ApiError(404, 'PAPER autonomous bot not found.', 'AUTONOMOUS_BOT_NOT_FOUND');
   const [account, profile, control, activeCanaries, activeSymbol, paperPosition] = await Promise.all([
     prisma.exchangeAccount.findFirst({ where: { id: bot.exchangeAccountId, userId }, select: { provider: true, environment: true, executionEngine: true, connectionStatus: true, isActive: true } }),
-    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId: bot.exchangeAccountId }, select: { enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true } }),
+    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId: bot.exchangeAccountId }, select: { enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true, minLeverage: true, maxLeverage: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true } }),
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
     prisma.tradingBot.count({ where: { userId, type: 'AUTONOMOUS', mode: 'DEMO', desiredState: 'RUNNING' } }),
     prisma.tradingBot.count({ where: { userId, type: 'AUTONOMOUS', mode: 'DEMO', desiredState: 'RUNNING', symbol: bot.symbol } }),
@@ -240,12 +375,129 @@ export async function activateAutonomousTestnet(userId: string, id: string, inpu
   if (!profile?.enabled || profile.accountKillSwitch || (control?.globalKillSwitch ?? true) || !profile.stopLossRequired || profile.marginModePolicy !== 'ISOLATED_ONLY') {
     throw new ApiError(409, 'TESTNET canary risk profile must be enabled, isolated-only and stop-required.', 'AUTONOMOUS_TESTNET_RISK_GATE_CLOSED');
   }
-  if (activeCanaries >= 15) throw new ApiError(409, 'The autonomous TESTNET fleet is limited to 15 active bots.', 'AUTONOMOUS_TESTNET_FLEET_LIMIT');
+  if (activeCanaries >= env.AI_TRADING_FIXED_FLEET_SIZE) throw new ApiError(409, `The autonomous TESTNET fleet is limited to ${env.AI_TRADING_FIXED_FLEET_SIZE} active bots.`, 'AUTONOMOUS_TESTNET_FLEET_LIMIT');
   if (activeSymbol >= 1) throw new ApiError(409, 'Only one TESTNET bot may own a symbol on the shared exchange account.', 'AUTONOMOUS_TESTNET_SYMBOL_IN_USE');
   if (paperPosition && !paperPosition.netQuantity.isZero()) throw new ApiError(409, 'Choose a bot with a flat PAPER position before TESTNET activation.', 'AUTONOMOUS_TESTNET_BOT_NOT_FLAT');
-  return persistBotUpdate(userId, bot, { mode: 'DEMO', state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Explicit admin Binance TESTNET canary activation; scheduler lease pending.' }, 'AI_TESTNET_CANARY_ACTIVATED', ipAddress, {
-    note: input.note, confirmation: input.confirmation, environment: 'TESTNET', productionLive: false, maxActiveTestnetBots: 15,
+  const leverage = Math.max(profile.minLeverage, Math.min(profile.maxLeverage, Math.round(Number((bot.configuration as Prisma.JsonObject | null)?.leverage) || profile.minLeverage)));
+  return persistBotUpdate(userId, bot, { mode: 'DEMO', timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { allocationUsdt: profile.testnetBotAllocationUsdt.toNumber(), minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage }), startingPaperBalance: profile.testnetBotAllocationUsdt, state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Explicit admin Binance TESTNET canary activation; scheduler lease pending.' }, 'AI_TESTNET_CANARY_ACTIVATED', ipAddress, {
+    note: input.note, confirmation: input.confirmation, environment: 'TESTNET', productionLive: false, maxActiveTestnetBots: env.AI_TRADING_FIXED_FLEET_SIZE,
   }, true);
+}
+
+export async function activateAutonomousTestnetFleet(userId: string, input: TestnetFleetActivationInput, ipAddress?: string) {
+  if (!env.AUTONOMOUS_TESTNET_EXECUTION_ENABLED) throw new ApiError(409, 'Autonomous TESTNET execution feature flag is disabled.', 'AUTONOMOUS_TESTNET_DISABLED');
+  const bots = await prisma.tradingBot.findMany({
+    where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' }, mode: { in: ['PAPER', 'DEMO'] } },
+    select: { ...safeBotSelect, name: true, paperPosition: { select: { netQuantity: true } } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+  if (bots.length !== env.AI_TRADING_FIXED_FLEET_SIZE) {
+    throw new ApiError(409, `Bulk TESTNET activation requires exactly ${env.AI_TRADING_FIXED_FLEET_SIZE} active autonomous bots; found ${bots.length}.`, 'AUTONOMOUS_FIXED_FLEET_MISMATCH');
+  }
+  const accountIds = [...new Set(bots.map((bot) => bot.exchangeAccountId))];
+  if (accountIds.length !== 1) throw new ApiError(409, 'All fleet bots must use the same Binance TESTNET account.', 'AUTONOMOUS_TESTNET_ACCOUNT_MISMATCH');
+  const exchangeAccountId = accountIds[0]!;
+  const [account, profile, control, configuredSymbols, exchangeSymbols] = await Promise.all([
+    prisma.exchangeAccount.findFirst({ where: { id: exchangeAccountId, userId }, select: { provider: true, environment: true, executionEngine: true, connectionStatus: true, isActive: true } }),
+    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId }, select: { id: true, enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true, minLeverage: true, maxLeverage: true, maxOrderNotional: true, maxInitialMargin: true, maxAccountOpenNotional: true, maxSymbolOpenNotional: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true } }),
+    prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
+    getEnabledTradingSymbols(userId),
+    getBinanceFuturesPublicSymbols(),
+  ]);
+  if (!account || account.provider !== 'BINANCE' || account.environment !== 'TESTNET' || account.executionEngine !== 'GO' || account.connectionStatus !== 'CONNECTED' || !account.isActive) {
+    throw new ApiError(409, 'Fleet requires a connected Binance TESTNET USD-M account owned by the Go executor.', 'AUTONOMOUS_TESTNET_ACCOUNT_NOT_READY');
+  }
+  if (!profile?.enabled || profile.accountKillSwitch || (control?.globalKillSwitch ?? true) || !profile.stopLossRequired || profile.marginModePolicy !== 'ISOLATED_ONLY') {
+    throw new ApiError(409, 'TESTNET fleet risk profile must be enabled, isolated-only and stop-required.', 'AUTONOMOUS_TESTNET_RISK_GATE_CLOSED');
+  }
+  const nonFlatPaper = bots.filter((bot) => bot.mode === 'PAPER' && bot.paperPosition && !bot.paperPosition.netQuantity.isZero());
+  if (nonFlatPaper.length > 0) throw new ApiError(409, `${nonFlatPaper.length} PAPER bot still has an open position. Close it before TESTNET fleet activation.`, 'AUTONOMOUS_TESTNET_FLEET_NOT_FLAT');
+  const available = new Set(exchangeSymbols.filter((item) => item.status === 'TRADING' && item.quoteAsset === 'USDT').map((item) => item.symbol));
+  const validUniverse = configuredSymbols.filter((symbol) => available.has(symbol));
+  const existingDemoSymbols = new Set(bots.filter((bot) => bot.mode === 'DEMO').map((bot) => bot.symbol));
+  const assignable = validUniverse.filter((symbol) => !existingDemoSymbols.has(symbol));
+  const paperBots = bots.filter((bot) => bot.mode === 'PAPER');
+  if (new Set(validUniverse).size < bots.length || assignable.length < paperBots.length) {
+    throw new ApiError(409, `At least ${bots.length} different enabled Binance Futures symbols are required for this shared TESTNET fleet.`, 'AUTONOMOUS_TESTNET_UNIVERSE_TOO_SMALL');
+  }
+  const assignments = new Map(paperBots.map((bot, index) => [bot.id, assignable[index]!]));
+  const allocations = bots.map(() => profile.testnetBotAllocationUsdt.toNumber());
+  const fleetAllocation = allocations.reduce((sum, value) => sum + value, 0);
+  const maximumBotAllocation = Math.max(...allocations);
+  const leveragedAllocations = bots.map((_, index) => allocations[index]! * fleetLeverage(index, bots.length));
+  const fleetNotionalCapacity = leveragedAllocations.reduce((sum, value) => sum + value, 0);
+  const maximumBotNotional = Math.max(...leveragedAllocations);
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.tradingRiskProfile.update({ where: { id: profile.id }, data: {
+      // This account is verified above as Binance TESTNET. PAPER uses its
+      // separate paperMaxOpenPositions field; no mainnet profile is changed.
+      maxOpenPositions: env.AI_TRADING_FIXED_FLEET_SIZE,
+      maxOrderNotional: Math.max(profile.maxOrderNotional.toNumber(), maximumBotNotional).toFixed(2),
+      maxInitialMargin: Math.max(profile.maxInitialMargin.toNumber(), maximumBotAllocation).toFixed(2),
+      maxAccountOpenNotional: Math.max(profile.maxAccountOpenNotional.toNumber(), fleetNotionalCapacity).toFixed(2),
+      maxSymbolOpenNotional: Math.max(profile.maxSymbolOpenNotional.toNumber(), maximumBotNotional).toFixed(2),
+      allowedSymbols: bots.map((bot) => assignments.get(bot.id) ?? bot.symbol),
+    } });
+    for (let index = 0; index < bots.length; index += 1) {
+      const bot = bots[index]!;
+      const target = assignments.get(bot.id) ?? bot.symbol;
+      const changed = await tx.tradingBot.updateMany({
+        where: { id: bot.id, userId, type: 'AUTONOMOUS', version: bot.version },
+        data: {
+          mode: 'DEMO', symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, fleetLeverage(index, bots.length, profile.minLeverage, profile.maxLeverage), { allocationUsdt: allocations[index]!, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage }), startingPaperBalance: allocations[index]!, state: 'STARTING', desiredState: 'RUNNING',
+          schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
+          stateReason: 'Explicit admin bulk Binance TESTNET activation; scheduler lease pending.', version: { increment: 1 },
+        },
+      });
+      if (changed.count !== 1) throw new ApiError(409, 'Fleet changed concurrently; refresh and retry.', 'BOT_VERSION_CONFLICT');
+    }
+    await tx.tradingAuditLog.create({ data: {
+      userId, exchangeAccountId, action: 'AI_TESTNET_FLEET_ACTIVATED', entityType: 'AUTONOMOUS_FLEET', entityId: exchangeAccountId,
+      metadata: { note: input.note, confirmation: input.confirmation, botCount: bots.length, symbols: bots.map((bot) => assignments.get(bot.id) ?? bot.symbol), fleetAllocationUsdt: fleetAllocation, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toString(), fleetNotionalCapacity, maxOpenPositions: env.AI_TRADING_FIXED_FLEET_SIZE, environment: 'TESTNET', executionEngine: 'GO', productionLive: false, liveChanged: false, riskEngineBypassed: false },
+      ...(ipAddress ? { ipAddress } : {}),
+    } });
+    return bots.map((bot) => ({ botId: bot.id, name: bot.name, symbol: assignments.get(bot.id) ?? bot.symbol, mode: 'DEMO' as const, desiredState: 'RUNNING' as const }));
+  });
+  return autonomousDTO('TESTNET_FLEET_ACTIVATION', { botCount: result.length, bots: result, environment: 'TESTNET', productionLive: false });
+}
+
+export async function activateAutonomousPaperFleet(userId: string, input: PaperFleetActivationInput, ipAddress?: string) {
+  const bots = await prisma.tradingBot.findMany({
+    where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' }, mode: { in: ['PAPER', 'DEMO'] } },
+    select: safeBotSelect, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+  if (bots.length !== env.AI_TRADING_FIXED_FLEET_SIZE) throw new ApiError(409, `PAPER fleet requires exactly ${env.AI_TRADING_FIXED_FLEET_SIZE} active autonomous bots.`, 'AUTONOMOUS_FIXED_FLEET_MISMATCH');
+  const demoBots = bots.filter((bot) => bot.mode === 'DEMO');
+  if (demoBots.length > 0) {
+    const accountIds = [...new Set(demoBots.map((bot) => bot.exchangeAccountId))];
+    if (accountIds.length !== 1) throw new ApiError(409, 'TESTNET fleet account mismatch.', 'AUTONOMOUS_TESTNET_ACCOUNT_MISMATCH');
+    const account = await prisma.exchangeAccount.findFirst({ where: { id: accountIds[0]!, userId, provider: 'BINANCE', environment: 'TESTNET', executionEngine: 'GO', isActive: true } });
+    if (!account) throw new ApiError(409, 'Connected Binance TESTNET account is required for flat-position verification.', 'AUTONOMOUS_TESTNET_ACCOUNT_NOT_READY');
+    const snapshot = await getTradingEngineSnapshot(account);
+    const demoSymbols = new Set(demoBots.map((bot) => bot.symbol));
+    const exposure = snapshot.positions.filter((position) => demoSymbols.has(position.symbol) && Number(position.quantity) !== 0);
+    const workingOrders = snapshot.orders.filter((order) => demoSymbols.has(order.symbol));
+    if (exposure.length > 0 || workingOrders.length > 0) {
+      throw new ApiError(409, `PAPER mode is blocked until Binance TESTNET is flat and has no working fleet orders (${exposure.length} positions, ${workingOrders.length} orders).`, 'AUTONOMOUS_TESTNET_NOT_FLAT');
+    }
+  }
+  const result = await prisma.$transaction(async (tx) => {
+    for (let index = 0; index < bots.length; index += 1) {
+      const bot = bots[index]!;
+      const changed = await tx.tradingBot.updateMany({ where: { id: bot.id, userId, version: bot.version }, data: {
+        mode: 'PAPER', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: paperTrainingConfiguration(bot.configuration, fleetLeverage(index, bots.length)), state: 'STARTING', desiredState: 'RUNNING', schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
+        stateReason: 'Explicit admin fixed PAPER fleet start; scheduler lease pending.', version: { increment: 1 },
+      } });
+      if (changed.count !== 1) throw new ApiError(409, 'Fleet changed concurrently; refresh and retry.', 'BOT_VERSION_CONFLICT');
+    }
+    await tx.tradingAuditLog.create({ data: {
+      userId, action: 'AI_PAPER_FLEET_ACTIVATED', entityType: 'AUTONOMOUS_FLEET',
+      metadata: { note: input.note, confirmation: input.confirmation, botCount: bots.length, mode: 'PAPER', submittedToExchange: false, productionLive: false, riskEngineBypassed: false },
+      ...(ipAddress ? { ipAddress } : {}),
+    } });
+    return bots.length;
+  });
+  return autonomousDTO('PAPER_FLEET_ACTIVATION', { botCount: result, mode: 'PAPER', submittedToExchange: false, productionLive: false });
 }
 
 const safeBotSelect = {

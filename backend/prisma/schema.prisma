@@ -234,6 +234,11 @@ enum PaperTradeStatus {
   CANCELED
 }
 
+enum PaperAccountingPeriodStatus {
+  ACTIVE
+  CLOSED
+}
+
 enum MarketRegime {
   TRENDING_UP
   TRENDING_DOWN
@@ -453,6 +458,9 @@ model User {
   tradingBotDecisions       TradingBotDecision[]
   tradingBotSignals         TradingBotSignal[]
   tradingUniverseAssets     TradingUniverseAsset[]
+  paperAccountingPeriods    PaperAccountingPeriod[]
+  testnetAccountingCheckpoints TestnetAccountingCheckpoint[]
+  testnetExecutionFills     TestnetExecutionFill[]
   portfolioAllocations      PortfolioAllocation[]
   strategies                Strategy[]            @relation("strategy_created_by")
   strategyVersions          StrategyVersion[]     @relation("strategy_version_created_by")
@@ -1305,6 +1313,8 @@ model ExchangeAccount {
   tradingBotDecisions  TradingBotDecision[]
   tradingBotSignals    TradingBotSignal[]
   portfolioAllocations PortfolioAllocation[]
+  testnetExecutionFills TestnetExecutionFill[]
+  testnetAccountingCheckpoint TestnetAccountingCheckpoint?
 
   @@unique([userId, name])
   @@index([userId, provider])
@@ -1362,6 +1372,7 @@ model TradingBot {
   metrics             BotMetric[]
   championCandidates  ChampionCandidate[]
   teacherEvaluations  TeacherEvaluation[]
+  testnetExecutionFills TestnetExecutionFill[]
   parentMutations     BotMutation[]            @relation("mutation_parent")
   childMutation       BotMutation?             @relation("mutation_child")
   crossoversAsParentA BotCrossover[]           @relation("crossover_parent_a")
@@ -1441,6 +1452,7 @@ model StrategyVersion {
   createdBy   User         @relation("strategy_version_created_by", fields: [createdById], references: [id], onDelete: Restrict)
   tradingBots TradingBot[]
   paperTrades PaperTrade[]
+  testnetExecutionFills TestnetExecutionFill[]
   metrics     BotMetric[]
 
   @@unique([strategyId, version])
@@ -1454,7 +1466,7 @@ model Generation {
   createdById      String
   number           Int
   status           GenerationStatus @default(DRAFT)
-  populationTarget Int              @default(100)
+  populationTarget Int              @default(20)
   metadata         Json?
   startedAt        DateTime?
   completedAt      DateTime?
@@ -1683,6 +1695,61 @@ model TradingOrder {
   @@map("trading_orders")
 }
 
+model TestnetExecutionFill {
+  id                BigInt           @id @default(autoincrement()) @db.UnsignedBigInt
+  userId            String
+  exchangeAccountId String
+  tradingBotId      String
+  strategyVersionId String?
+  tradeId           String           @db.VarChar(100)
+  exchangeOrderId   String           @db.VarChar(100)
+  clientOrderId     String           @db.VarChar(36)
+  symbol            String           @db.VarChar(40)
+  side              TradingOrderSide
+  orderType         TradingOrderType
+  reduceOnly        Boolean          @default(false)
+  price             Decimal          @db.Decimal(36, 18)
+  quantity          Decimal          @db.Decimal(36, 18)
+  quoteQuantity     Decimal          @db.Decimal(36, 18)
+  realizedPnl       Decimal          @default(0) @db.Decimal(36, 18)
+  commission        Decimal          @default(0) @db.Decimal(36, 18)
+  commissionAsset   String           @db.VarChar(20)
+  netRealizedPnl    Decimal          @default(0) @db.Decimal(36, 18)
+  maker             Boolean          @default(false)
+  occurredAt        DateTime
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeAccount ExchangeAccount  @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+  tradingBot      TradingBot       @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
+  strategyVersion StrategyVersion? @relation(fields: [strategyVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([exchangeAccountId, symbol, tradeId])
+  @@index([tradingBotId, occurredAt])
+  @@index([strategyVersionId, occurredAt])
+  @@index([userId, occurredAt])
+  @@map("testnet_execution_fills")
+}
+
+model TestnetAccountingCheckpoint {
+  exchangeAccountId          String   @id
+  userId                     String
+  number                     Int      @default(1)
+  baselineWalletBalance      Decimal  @default(0) @db.Decimal(36, 18)
+  baselineUnrealizedPnl      Decimal  @default(0) @db.Decimal(36, 18)
+  note                       String?  @db.VarChar(500)
+  startedAt                  DateTime @default(now())
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeAccount ExchangeAccount @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@map("testnet_accounting_checkpoints")
+}
+
 model TradingRiskProfile {
   id                     String   @id @default(cuid())
   userId                 String
@@ -1695,7 +1762,10 @@ model TradingRiskProfile {
   maxAccountOpenNotional Decimal  @default(500) @db.Decimal(36, 18)
   maxOpenPositions       Int      @default(5)
   paperMaxOpenPositions  Int      @default(100)
+  testnetBotAllocationUsdt Decimal @default(100) @db.Decimal(36, 18)
+  testnetMinInitialMarginUsdt Decimal @default(20) @db.Decimal(36, 18)
   maxSymbolPositions     Int      @default(1)
+  minLeverage            Int      @default(5)
   maxLeverage            Int      @default(5)
   minAvailableBalance    Decimal  @default(20) @db.Decimal(36, 18)
   maxOrdersPerMinute     Int      @default(10)
@@ -1786,6 +1856,30 @@ model PaperTrade {
   @@index([marketRegimeSnapshotId, status, realizedPnl])
   @@index([symbol, side, status, realizedPnl])
   @@map("paper_trades")
+}
+
+model PaperAccountingPeriod {
+  id                      String                       @id @default(cuid())
+  userId                  String
+  number                  Int
+  status                  PaperAccountingPeriodStatus @default(ACTIVE)
+  baselineStartingCapital Decimal                      @default(0) @db.Decimal(36, 18)
+  baselineRealizedPnl     Decimal                      @default(0) @db.Decimal(36, 18)
+  baselineUnrealizedPnl   Decimal                      @default(0) @db.Decimal(36, 18)
+  baselineFees            Decimal                      @default(0) @db.Decimal(36, 18)
+  botIds                  Json
+  botCount                Int
+  note                    String?                      @db.VarChar(500)
+  startedAt               DateTime                     @default(now())
+  closedAt                DateTime?
+  createdAt               DateTime                     @default(now())
+  updatedAt               DateTime                     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, number])
+  @@index([userId, status, startedAt])
+  @@map("paper_accounting_periods")
 }
 
 model BotMetric {

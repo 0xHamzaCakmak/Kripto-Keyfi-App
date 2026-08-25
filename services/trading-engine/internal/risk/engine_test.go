@@ -93,6 +93,16 @@ func TestEngineRejectsLeverageBeforeExchangeRead(t *testing.T) {
 	}
 }
 
+func TestEngineRejectsLeverageBelowAdminMinimum(t *testing.T) {
+	profile := safeProfile()
+	profile.MinLeverage = 5
+	store := &fakeStore{profile: profile}
+	decision, err := New(store).Evaluate(t.Context(), testAccount(), testOrder(), safeMarket())
+	if err != nil || decision.Code != "RISK_MIN_LEVERAGE_NOT_MET" || decision.Status != "REJECTED" {
+		t.Fatalf("minimum leverage was not enforced: %#v err=%v", decision, err)
+	}
+}
+
 func TestEngineAllowsReduceOnlyExitDuringKillSwitch(t *testing.T) {
 	profile := safeProfile()
 	profile.GlobalKillSwitch = true
@@ -133,6 +143,23 @@ func TestEngineEnforcesBalanceReserveAndOrderRate(t *testing.T) {
 	decision, err = New(store).Evaluate(t.Context(), testAccount(), testOrder(), market)
 	if err != nil || decision.Code != "RISK_ORDER_RATE_EXCEEDED" {
 		t.Fatalf("rate was not enforced: %#v err=%v", decision, err)
+	}
+}
+
+func TestEngineCountsUSDCOnlyWhenBinanceMarksItAsMarginAvailable(t *testing.T) {
+	store := &fakeStore{profile: safeProfile()}
+	market := safeMarket()
+	market.balances[0].AvailableBalance = "25"
+	market.balances = append(market.balances, domain.Balance{WalletType: domain.WalletUSDMFutures, Asset: "USDC", AvailableBalance: "50", PriceUSDT: "1", MarginAvailable: true})
+	decision, err := New(store).Evaluate(t.Context(), testAccount(), testOrder(), market)
+	if err != nil || decision.Code != "RISK_APPROVED" {
+		t.Fatalf("margin-eligible USDC was not counted: %#v err=%v", decision, err)
+	}
+
+	market.balances[1].MarginAvailable = false
+	decision, err = New(&fakeStore{profile: safeProfile()}).Evaluate(t.Context(), testAccount(), testOrder(), market)
+	if err != nil || decision.Code != "RISK_MIN_BALANCE_RESERVE" {
+		t.Fatalf("non-collateral USDC was incorrectly counted: %#v err=%v", decision, err)
 	}
 }
 

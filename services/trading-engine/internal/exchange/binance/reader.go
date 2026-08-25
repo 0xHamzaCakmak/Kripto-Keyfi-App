@@ -56,6 +56,7 @@ type futuresAccount struct {
 		WalletBalance    string `json:"walletBalance"`
 		AvailableBalance string `json:"availableBalance"`
 		UnrealizedProfit string `json:"unrealizedProfit"`
+		MarginAvailable  bool   `json:"marginAvailable"`
 	} `json:"assets"`
 	Code int `json:"code"`
 }
@@ -105,11 +106,16 @@ func (r *Reader) GetBalances(ctx context.Context) ([]domain.Balance, error) {
 		if !exchange.IsNonZero(item.WalletBalance) && !exchange.IsNonZero(item.UnrealizedProfit) {
 			continue
 		}
-		balances = append(balances, domain.Balance{
+		balance := domain.Balance{
 			WalletType: domain.WalletUSDMFutures, Asset: item.Asset,
 			WalletBalance: domain.Decimal(item.WalletBalance), AvailableBalance: domain.Decimal(item.AvailableBalance),
-			UnrealizedPnL: domain.Decimal(item.UnrealizedProfit),
-		})
+			UnrealizedPnL: domain.Decimal(item.UnrealizedProfit), MarginAvailable: item.MarginAvailable,
+		}
+		if price := usdtPrice(item.Asset, prices); price != "" {
+			balance.PriceUSDT = domain.Decimal(price)
+			balance.ValueUSDT = domain.Decimal(exchange.MultiplyDecimal(item.WalletBalance, price, 8))
+		}
+		balances = append(balances, balance)
 	}
 	return balances, nil
 }

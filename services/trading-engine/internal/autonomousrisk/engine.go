@@ -9,12 +9,12 @@ import (
 )
 
 type Policy struct {
-	Enabled, GlobalKillSwitch, AccountKillSwitch                               bool
-	MaxRiskPerTradePct, MaxDailyLossPct, MaxWeeklyLossPct, MaxDrawdownPct      string
-	MaxLeverage, MaxConcurrentPositions, CooldownSeconds, MaxConsecutiveLosses int
-	MaxTotalExposure, MaxSymbolExposure, MaxPositionSize, MinRiskReward        string
-	StopLossRequired                                                           bool
-	MarginModePolicy                                                           string
+	Enabled, GlobalKillSwitch, AccountKillSwitch                                            bool
+	MaxRiskPerTradePct, MaxDailyLossPct, MaxWeeklyLossPct, MaxDrawdownPct                   string
+	MinLeverage, MaxLeverage, MaxConcurrentPositions, CooldownSeconds, MaxConsecutiveLosses int
+	MaxTotalExposure, MaxSymbolExposure, MaxPositionSize, MinRiskReward                     string
+	StopLossRequired                                                                        bool
+	MarginModePolicy                                                                        string
 }
 
 type Intent struct {
@@ -60,7 +60,14 @@ func Evaluate(policy Policy, intent Intent, snapshot Snapshot) Decision {
 	if !validPolicy(policy) {
 		return block("RISK_POLICY_INVALID", "Autonomous risk policy is invalid or incomplete.", nil)
 	}
-	if intent.Leverage < 1 || intent.Leverage > policy.MaxLeverage {
+	minimumLeverage := policy.MinLeverage
+	if minimumLeverage < 1 {
+		minimumLeverage = 1
+	}
+	if intent.Leverage < minimumLeverage {
+		return reject("RISK_MIN_LEVERAGE_NOT_MET", "Autonomous leverage is below policy minimum.", map[string]any{"leverage": intent.Leverage, "minimum": minimumLeverage})
+	}
+	if intent.Leverage > policy.MaxLeverage {
 		return reject("RISK_MAX_LEVERAGE_EXCEEDED", "Autonomous leverage exceeds policy.", map[string]any{"leverage": intent.Leverage, "maximum": policy.MaxLeverage})
 	}
 	if policy.MarginModePolicy == "ISOLATED_ONLY" && intent.MarginMode != "ISOLATED" {
@@ -165,6 +172,8 @@ func Evaluate(policy Policy, intent Intent, snapshot Snapshot) Decision {
 	checklist := entrycheck.Validate(checkInput)
 	if intent.ExecutionMode == "PAPER" {
 		checklist = entrycheck.ValidatePaperTraining(checkInput)
+	} else if intent.ExecutionMode == "DEMO" && checkInput.TestnetTraining {
+		checklist = entrycheck.ValidateTestnetTraining(checkInput)
 	}
 	metrics["entryChecklistPassed"] = checklist.Passed
 	metrics["entryChecklistFailed"] = checklist.Failed

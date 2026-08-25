@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { automaticCapitalScaleTarget, botAllocationUsdt, fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, PAPER_TRAINING_MAX_OPEN_POSITIONS, PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT, PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, PAPER_TRAINING_STOP_LOSS_BPS, PAPER_TRAINING_TAKE_PROFIT_BPS, paperTrainingConfiguration, rotationPending, schedulerLeaseActive, staleAutonomousProtection, TESTNET_ROTATION_SETTLE_MS, universeCandidate } from '../src/modules/ai-trading/universe.worker.js';
+import { automaticCapitalScaleTarget, botAllocationUsdt, fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, PAPER_TRAINING_MAX_OPEN_POSITIONS, PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT, PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, PAPER_TRAINING_STOP_LOSS_BPS, PAPER_TRAINING_TAKE_PROFIT_BPS, paperTrainingConfiguration, rotationPending, schedulerLeaseActive, staleAutonomousProtection, TESTNET_MIN_TAKE_PROFIT_BPS, TESTNET_ROTATION_SETTLE_MS, TESTNET_TRANSITION_MIN_ATR_BPS, TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES, TESTNET_TREND_GRID_STEP_BPS, testnetExecutionConfiguration, universeCandidate } from '../src/modules/ai-trading/universe.worker.js';
 import { CORE_TRADING_UNIVERSE } from '../src/modules/ai-trading/trading-universe.service.js';
 import { addTradingUniverseAssetSchema, searchTradingUniverseSchema, tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../src/modules/ai-trading/trading-universe.schema.js';
 
@@ -51,7 +51,7 @@ describe('autonomous Futures universe', () => {
 
   it('preserves manual capital and scales only profitable bots with enough evidence', () => {
     expect(botAllocationUsdt({ allocationUsdt: 175 })).toBe(175);
-    expect(botAllocationUsdt({ allocationUsdt: 500 })).toBe(100);
+    expect(botAllocationUsdt({ allocationUsdt: 500 })).toBe(500);
     expect(automaticCapitalScaleTarget(100, 100, 200, 101)).toBe(200);
     expect(automaticCapitalScaleTarget(100, 100, 199, 150)).toBe(100);
     expect(automaticCapitalScaleTarget(100, 100, 500, 99)).toBe(100);
@@ -68,6 +68,15 @@ describe('autonomous Futures universe', () => {
       paperMaxRiskPerTradePct: PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, paperAlwaysInMarket: true });
     const capped = paperTrainingConfiguration({ stopLossBps: 2500, takeProfitBps: 500 }, 12);
     expect(capped).toMatchObject({ stopLossBps: PAPER_TRAINING_STOP_LOSS_BPS, takeProfitBps: 500 });
+  });
+
+  it('replaces stale PAPER flags with an explicit protected TESTNET trend-grid profile', () => {
+    const result = testnetExecutionConfiguration({ paperAlwaysInMarket: true, paperTrainingMode: true, pyramidingEnabled: false, stopLossBps: 2000, takeProfitBps: 3000 }, 9, { allocationUsdt: 500, minimumInitialMarginUsdt: 100 });
+    expect(result).toMatchObject({ paperAlwaysInMarket: false, paperTrainingMode: false, testnetExecutionProfile: true,
+      testnetContinuousExecution: true, testnetTrendGridEnabled: true, testnetGridStepBps: TESTNET_TREND_GRID_STEP_BPS,
+      leverage: 9, marginMode: 'ISOLATED', allocationUsdt: 500, minimumInitialMarginUsdt: 100, testnetMarginAllocationMode: true, pyramidingEnabled: true, takeProfitBps: TESTNET_MIN_TAKE_PROFIT_BPS,
+      testnetTransitionRegimeEnabled: true, testnetTransitionMinConfirmedTimeframes: TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES, testnetTransitionMinAtrBps: TESTNET_TRANSITION_MIN_ATR_BPS,
+      analysisTimeframes: ['15m', '1h'], directionWindowsHours: [24, 48] });
   });
 
   it('does not rotate a bot while a scheduler cycle owns its lease', () => {

@@ -11,20 +11,27 @@ export type CoinPerformance = ReturnType<typeof presentCoinPerformance>;
 export async function getCoinPerformance(userId: string, options: { symbol?: string; regime?: MarketRegime; limit?: number } = {}) {
   const rows = await prisma.$queryRaw<CoinPerformanceRow[]>(Prisma.sql`
     SELECT t.tradingBotId, b.name AS botName, t.strategyVersionId, t.symbol,
-      COALESCE(r.regime, 'UNKNOWN') AS regime, COUNT(*) AS tradeCount,
+      t.regime, COUNT(*) AS tradeCount,
       SUM(CASE WHEN t.realizedPnl > 0 THEN 1 ELSE 0 END) AS wins,
       SUM(CASE WHEN t.realizedPnl < 0 THEN 1 ELSE 0 END) AS losses,
       MAX(t.closedAt) AS latestTradeAt,
       COALESCE(SUM(t.realizedPnl), 0) AS netPnl,
       COALESCE(SUM(CASE WHEN t.realizedPnl > 0 THEN t.realizedPnl ELSE 0 END), 0) AS grossProfit,
       COALESCE(SUM(CASE WHEN t.realizedPnl < 0 THEN -t.realizedPnl ELSE 0 END), 0) AS grossLoss
-    FROM paper_trades t
+    FROM (
+      SELECT p.tradingBotId, p.strategyVersionId, p.symbol, COALESCE(r.regime, 'UNKNOWN') AS regime, p.realizedPnl, p.closedAt
+      FROM paper_trades p LEFT JOIN market_regime_snapshots r ON r.id = p.marketRegimeSnapshotId
+      WHERE p.status IN ('CLOSED', 'LIQUIDATED')
+      UNION ALL
+      SELECT f.tradingBotId, f.strategyVersionId, f.symbol, 'UNKNOWN' AS regime, SUM(f.netRealizedPnl) AS realizedPnl, MAX(f.occurredAt) AS closedAt
+      FROM testnet_execution_fills f WHERE f.reduceOnly = true
+      GROUP BY f.tradingBotId, f.strategyVersionId, f.symbol, f.exchangeOrderId
+    ) t
     JOIN trading_bots b ON b.id = t.tradingBotId
-    LEFT JOIN market_regime_snapshots r ON r.id = t.marketRegimeSnapshotId
-    WHERE b.userId = ${userId} AND b.type = 'AUTONOMOUS' AND t.status IN ('CLOSED', 'LIQUIDATED')
+    WHERE b.userId = ${userId} AND b.type = 'AUTONOMOUS'
       ${options.symbol ? Prisma.sql`AND t.symbol = ${options.symbol}` : Prisma.empty}
-      ${options.regime ? Prisma.sql`AND COALESCE(r.regime, 'UNKNOWN') = ${options.regime}` : Prisma.empty}
-    GROUP BY t.tradingBotId, b.name, t.strategyVersionId, t.symbol, COALESCE(r.regime, 'UNKNOWN')
+      ${options.regime ? Prisma.sql`AND t.regime = ${options.regime}` : Prisma.empty}
+    GROUP BY t.tradingBotId, b.name, t.strategyVersionId, t.symbol, t.regime
   `);
   return rows.map(presentCoinPerformance).sort((left, right) => right.score - left.score || right.tradeCount - left.tradeCount).slice(0, options.limit ?? 100);
 }

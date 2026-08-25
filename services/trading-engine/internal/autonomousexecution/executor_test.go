@@ -12,7 +12,10 @@ import (
 )
 
 type fakeStore struct {
-	orders []mysqlstore.AutonomousOrderInput
+	orders       []mysqlstore.AutonomousOrderInput
+	reentryGuards int
+	guardCandle   int64
+	guardReason   string
 }
 
 func (s *fakeStore) CreateAutonomousOrder(_ context.Context, _ bot.Instance, order mysqlstore.AutonomousOrderInput, _ time.Time) error {
@@ -22,6 +25,13 @@ func (s *fakeStore) CreateAutonomousOrder(_ context.Context, _ bot.Instance, ord
 func (s *fakeStore) MarkAutonomousExecution(context.Context, int64, bool, string) error  { return nil }
 func (s *fakeStore) MarkAutonomousExecutionFailure(context.Context, int64, string) error { return nil }
 
+func (s *fakeStore) MarkAutonomousReentryGuard(_ context.Context, _ bot.Instance, candle int64, reason string, _ time.Time) error {
+	s.reentryGuards++
+	s.guardCandle = candle
+	s.guardReason = reason
+	return nil
+}
+
 type fakeExecution struct {
 	positions           []domain.Position
 	positionsAfterPlace []domain.Position
@@ -29,13 +39,18 @@ type fakeExecution struct {
 	commands            []tradingv1.PlaceOrderCommand
 	previews            []tradingv1.PreviewOrderRequest
 	cancels             []tradingv1.CancelOrderCommand
+	marketMark          domain.Decimal
 }
 
 func (e *fakeExecution) OpenOrders(context.Context, domain.ExchangeAccountRef) ([]domain.Order, error) {
 	return e.orders, nil
 }
 func (e *fakeExecution) MarketRule(context.Context, domain.ExchangeAccountRef, string) (domain.SymbolRule, domain.Decimal, error) {
-	return domain.SymbolRule{StepSize: "0.001", MinQuantity: "0.001", MinNotional: "5"}, "2500", nil
+	mark := e.marketMark
+	if mark == "" {
+		mark = "2500"
+	}
+	return domain.SymbolRule{StepSize: "0.001", MinQuantity: "0.001", MinNotional: "5"}, mark, nil
 }
 
 func (e *fakeExecution) Positions(context.Context, domain.ExchangeAccountRef) ([]domain.Position, error) {
@@ -81,6 +96,46 @@ func TestAlignStopPriceUsesProtectiveDirection(t *testing.T) {
 	sell, _ := alignStopPrice("2500.129", "0.01", domain.SideSell)
 	if buy != "2535.33" || sell != "2500.12" {
 		t.Fatalf("unexpected aligned stops buy=%s sell=%s", buy, sell)
+	}
+}
+
+func TestExecutorGuardsFreshEntryAfterExchangePositionDisappears(t *testing.T) {
+	store, exchange := &fakeStore{}, &fakeExecution{}
+	executor := &Executor{store: store, execution: exchange}
+	executor.setPositionOpen("account-1:BTCUSDT")
+	instance := bot.Instance{ID: "bot-1", UserID: "user-1", ExchangeAccountID: "account-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "BTCUSDT"}
+	decision := bot.Decision{
+		HypotheticalOrder: map[string]any{"side": "BUY", "quantity": "0.01", "stopLoss": "70000", "takeProfit": "80000", "leverage": 5},
+		Metrics:           map[string]any{"marketDataOpenTimeMs": int64(1_777_000_000_000)},
+	}
+	if err := executor.Execute(t.Context(), instance, decision, 44, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if store.reentryGuards != 1 || store.guardCandle != 1_777_000_000_000 || store.guardReason != "EXCHANGE_POSITION_CLOSED" {
+		t.Fatalf("expected persisted external-close guard, got %#v", store)
+	}
+	if len(exchange.commands) != 0 {
+		t.Fatalf("external close must not be immediately reopened: %#v", exchange.commands)
+	}
+}
+
+func TestManualLimitClosePendingOnlyMatchesReduceOnlyManualLimit(t *testing.T) {
+	orders := []domain.Order{{Symbol: "ETHUSDT", Type: domain.OrderLimit, ReduceOnly: true, ClientOrderID: "kk_manual_close"}}
+	if !manualLimitClosePending(orders, "ETHUSDT") {
+		t.Fatal("expected manual reduce-only LIMIT close to suspend additions")
+	}
+	orders[0].ReduceOnly = false
+	if manualLimitClosePending(orders, "ETHUSDT") {
+		t.Fatal("non-reduce-only limit must not be treated as a close")
+	}
+}
+
+func TestConfiguredMinimumMarginRoundsUpAfterExchangeStepAlignment(t *testing.T) {
+	quantity, err := enforceConfiguredMinimumMargin("13.1", 8500, 17,
+		map[string]any{"testnetMarginAllocationMode": true, "minimumInitialMarginUsdt": float64(100)},
+		domain.SymbolRule{StepSize: "0.1", MinQuantity: "0.1", MinNotional: "5"}, "129.1")
+	if err != nil || quantity != "13.2" {
+		t.Fatalf("minimum margin was not rounded up safely: quantity=%s err=%v", quantity, err)
 	}
 }
 
@@ -184,6 +239,38 @@ func TestExecutorDoesNotPyramidOppositeSignalOrExhaustedAllocation(t *testing.T)
 			}
 			if len(exchange.commands) != 0 || len(exchange.cancels) != 0 {
 				t.Fatalf("position should not have been pyramided: commands=%#v cancels=%#v", exchange.commands, exchange.cancels)
+			}
+		})
+	}
+}
+
+func TestExecutorTrendGridAddsOnlyAfterFavorableLevel(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		mark         domain.Decimal
+		wantCommands int
+	}{
+		{name: "inside step", mark: "2504", wantCommands: 0},
+		{name: "next favorable level", mark: "2507", wantCommands: 3},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{}
+			instance := bot.Instance{ID: "bot-1", UserID: "user-1", ExchangeAccountID: "account-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "ETHUSDT", Configuration: map[string]any{
+				"stopLossBps": float64(75), "takeProfitBps": float64(300), "allocationUsdt": float64(100), "pyramidingEnabled": true,
+				"testnetTrendGridEnabled": true, "testnetGridStepBps": float64(25),
+			}}
+			prefix := botClientPrefix(instance.ID)
+			exchange := &fakeExecution{marketMark: test.mark,
+				positions:           []domain.Position{{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.02", EntryPrice: "2500", MarkPrice: test.mark, Leverage: "7"}},
+				positionsAfterPlace: []domain.Position{{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.024", EntryPrice: "2501", MarkPrice: test.mark, Leverage: "7"}},
+				orders:              []domain.Order{{ExchangeOrderID: "stop", ClientOrderID: prefix + "s", Symbol: "ETHUSDT", Type: domain.OrderStopMarket, Quantity: "0.02"}, {ExchangeOrderID: "take", ClientOrderID: prefix + "t", Symbol: "ETHUSDT", Type: domain.OrderTakeProfitMarket, Quantity: "0.02"}},
+			}
+			decision := bot.Decision{HypotheticalOrder: map[string]any{"side": "BUY", "quantity": "0.004", "stopLoss": "2400", "takeProfit": "2700", "leverage": 7}}
+			if err := (&Executor{store: store, execution: exchange}).Execute(t.Context(), instance, decision, 49, time.Now().UTC()); err != nil {
+				t.Fatal(err)
+			}
+			if len(exchange.commands) != test.wantCommands {
+				t.Fatalf("unexpected grid command count: %d", len(exchange.commands))
 			}
 		})
 	}

@@ -163,7 +163,12 @@ async function loadEvidence(userId: string, input: RunTeacherInput) {
       (SELECT m.maxDrawdown FROM bot_metrics m WHERE m.tradingBotId = b.id ORDER BY m.snapshotAt DESC, m.id DESC LIMIT 1) AS maxDrawdown,
       AVG(t.holdingSeconds) AS averageHoldingSeconds,
       (SELECT m.score FROM bot_metrics m WHERE m.tradingBotId = b.id ORDER BY m.snapshotAt DESC, m.id DESC LIMIT 1) AS score
-    FROM trading_bots b LEFT JOIN paper_trades t ON t.tradingBotId = b.id AND t.status IN ('CLOSED', 'LIQUIDATED')
+    FROM trading_bots b LEFT JOIN (
+      SELECT tradingBotId, realizedPnl, holdingSeconds FROM paper_trades WHERE status IN ('CLOSED', 'LIQUIDATED')
+      UNION ALL
+      SELECT tradingBotId, SUM(netRealizedPnl) AS realizedPnl, NULL AS holdingSeconds
+      FROM testnet_execution_fills WHERE reduceOnly = true GROUP BY tradingBotId, exchangeOrderId
+    ) t ON t.tradingBotId = b.id
     WHERE b.userId = ${userId} AND b.type = 'AUTONOMOUS' ${input.botId ? Prisma.sql`AND b.id = ${input.botId}` : Prisma.empty}
     GROUP BY b.id
   `);
@@ -177,7 +182,12 @@ async function loadEvidence(userId: string, input: RunTeacherInput) {
       NULL AS maxDrawdown, AVG(t.holdingSeconds) AS averageHoldingSeconds, NULL AS score
     FROM trading_strategies s
     LEFT JOIN trading_strategy_versions v ON v.strategyId = s.id
-    LEFT JOIN paper_trades t ON t.strategyVersionId = v.id AND t.status IN ('CLOSED', 'LIQUIDATED')
+    LEFT JOIN (
+      SELECT strategyVersionId, realizedPnl, holdingSeconds FROM paper_trades WHERE status IN ('CLOSED', 'LIQUIDATED')
+      UNION ALL
+      SELECT strategyVersionId, SUM(netRealizedPnl) AS realizedPnl, NULL AS holdingSeconds
+      FROM testnet_execution_fills WHERE reduceOnly = true AND strategyVersionId IS NOT NULL GROUP BY strategyVersionId, tradingBotId, exchangeOrderId
+    ) t ON t.strategyVersionId = v.id
     WHERE s.createdById = ${userId} ${input.strategyId ? Prisma.sql`AND s.id = ${input.strategyId}` : Prisma.empty}
     GROUP BY s.id
   `);
@@ -195,10 +205,26 @@ async function loadRegimes(userId: string, input: RunTeacherInput) {
       WHERE b.userId = ${userId} AND b.type = 'AUTONOMOUS' AND t.status IN ('CLOSED', 'LIQUIDATED')
         ${input.botId ? Prisma.sql`AND b.id = ${input.botId}` : Prisma.empty} ${input.strategyId ? Prisma.sql`AND 1 = 0` : Prisma.empty}
       UNION ALL
+      SELECT 'BOT' AS targetType, b.id AS targetId, 'UNKNOWN' AS regime, grouped.realizedPnl
+      FROM (
+        SELECT tradingBotId, exchangeOrderId, SUM(netRealizedPnl) AS realizedPnl
+        FROM testnet_execution_fills WHERE reduceOnly = true GROUP BY tradingBotId, exchangeOrderId
+      ) grouped JOIN trading_bots b ON b.id = grouped.tradingBotId
+      WHERE b.userId = ${userId} AND b.type = 'AUTONOMOUS'
+        ${input.botId ? Prisma.sql`AND b.id = ${input.botId}` : Prisma.empty} ${input.strategyId ? Prisma.sql`AND 1 = 0` : Prisma.empty}
+      UNION ALL
       SELECT 'STRATEGY' AS targetType, s.id AS targetId, COALESCE(r.regime, 'UNKNOWN') AS regime, t.realizedPnl
       FROM paper_trades t JOIN trading_strategy_versions v ON v.id = t.strategyVersionId JOIN trading_strategies s ON s.id = v.strategyId
       LEFT JOIN market_regime_snapshots r ON r.id = t.marketRegimeSnapshotId
       WHERE s.createdById = ${userId} AND t.status IN ('CLOSED', 'LIQUIDATED')
+        ${input.strategyId ? Prisma.sql`AND s.id = ${input.strategyId}` : Prisma.empty} ${input.botId ? Prisma.sql`AND 1 = 0` : Prisma.empty}
+      UNION ALL
+      SELECT 'STRATEGY' AS targetType, s.id AS targetId, 'UNKNOWN' AS regime, grouped.realizedPnl
+      FROM (
+        SELECT strategyVersionId, tradingBotId, exchangeOrderId, SUM(netRealizedPnl) AS realizedPnl
+        FROM testnet_execution_fills WHERE reduceOnly = true AND strategyVersionId IS NOT NULL GROUP BY strategyVersionId, tradingBotId, exchangeOrderId
+      ) grouped JOIN trading_strategy_versions v ON v.id = grouped.strategyVersionId JOIN trading_strategies s ON s.id = v.strategyId
+      WHERE s.createdById = ${userId}
         ${input.strategyId ? Prisma.sql`AND s.id = ${input.strategyId}` : Prisma.empty} ${input.botId ? Prisma.sql`AND 1 = 0` : Prisma.empty}
     ) grouped GROUP BY grouped.targetType, grouped.targetId, grouped.regime
   `);

@@ -2,14 +2,15 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, LoaderCircle, ShieldCheck, SlidersHorizontal, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getApiErrorMessage } from '../services/apiClient';
-import { confirmOrder, getTradingAccounts, getTradingSymbols, previewOrder, type MarginMode, type OrderPreview, type OrderSide, type OrderType, type TradingAccount, type TradingSymbol } from '../services/tradingService';
+import { confirmOrder, getTradingAccounts, getTradingExecutionProfile, getTradingSymbols, previewOrder, type MarginMode, type OrderPreview, type OrderSide, type OrderType, type TradingAccount, type TradingExecutionProfile, type TradingSymbol } from '../services/tradingService';
 
-const initialForm = { symbol: '', side: 'BUY' as OrderSide, type: 'MARKET' as OrderType, quantity: '', price: '', stopPrice: '', leverage: 2, marginMode: 'ISOLATED' as MarginMode, reduceOnly: false };
+const initialForm = { symbol: '', side: 'BUY' as OrderSide, type: 'MARKET' as OrderType, quantity: '', price: '', stopPrice: '', leverage: 5, marginMode: 'ISOLATED' as MarginMode, reduceOnly: false };
 
 export default function ManualTrading() {
   const [accounts, setAccounts] = useState<TradingAccount[]>([]);
   const [accountId, setAccountId] = useState('');
   const [symbols, setSymbols] = useState<TradingSymbol[]>([]);
+  const [executionProfile, setExecutionProfile] = useState<TradingExecutionProfile | null>(null);
   const [form, setForm] = useState(initialForm);
   const [quote, setQuote] = useState<OrderPreview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,11 +27,15 @@ export default function ManualTrading() {
   }, []);
 
   useEffect(() => {
-    if (!accountId) { setSymbols([]); return; }
-    if (!accounts.find((item) => item.id === accountId)?.canTrade) { setSymbols([]); setSymbolsLoading(false); setForm(initialForm); return; }
+    if (!accountId) { setSymbols([]); setExecutionProfile(null); return; }
+    if (!accounts.find((item) => item.id === accountId)?.canTrade) { setSymbols([]); setExecutionProfile(null); setSymbolsLoading(false); setForm(initialForm); return; }
     setSymbolsLoading(true); setError(''); setForm(initialForm);
-    getTradingSymbols(accountId).then((items) => {
-      setSymbols(items); setForm((current) => ({ ...current, symbol: items.find((item) => item.symbol === 'BTCUSDT')?.symbol ?? items[0]?.symbol ?? '' }));
+    Promise.all([getTradingSymbols(accountId), getTradingExecutionProfile(accountId)]).then(([items, profile]) => {
+      setSymbols(items); setExecutionProfile(profile); setForm((current) => ({
+        ...current,
+        symbol: items.find((item) => item.symbol === 'BTCUSDT')?.symbol ?? items[0]?.symbol ?? '',
+        leverage: Math.min(profile.maxLeverage, Math.max(profile.minLeverage, current.leverage)),
+      }));
     }).catch((reason) => setError(getApiErrorMessage(reason, 'Parite kuralları alınamadı.'))).finally(() => setSymbolsLoading(false));
   }, [accountId, accounts]);
 
@@ -39,6 +44,10 @@ export default function ManualTrading() {
 
   async function createPreview(event: FormEvent) {
     event.preventDefault(); setWorking(true); setError(''); setNotice('');
+    if (executionProfile && (form.leverage < executionProfile.minLeverage || form.leverage > executionProfile.maxLeverage)) {
+      setError(`Kaldiraç merkezi risk profilindeki ${executionProfile.minLeverage}x-${executionProfile.maxLeverage}x araliginda olmalidir.`);
+      setWorking(false); return;
+    }
     if (!selectedAccount?.canTrade) {
       setError('Bu API anahtarının Futures işlem yetkisi kapalı. Binance Demo API ayarından işlem yetkisini açıp Borsa Hesapları ekranında bağlantıyı yeniden test edin.');
       setWorking(false); return;

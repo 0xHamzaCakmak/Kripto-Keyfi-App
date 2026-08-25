@@ -8,11 +8,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"sync"
+	"time"
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
 )
 
 const maximumResponseBytes = 8 << 20
+
+var exchangeCooldowns = struct {
+	sync.Mutex
+	until map[string]time.Time
+}{until: make(map[string]time.Time)}
 
 func GetJSON(ctx context.Context, client *http.Client, requestURL string, headers map[string]string, target any) (int, error) {
 	return RequestJSON(ctx, client, http.MethodGet, requestURL, headers, nil, target, nil)
@@ -25,6 +33,9 @@ func RequestJSON(ctx context.Context, client *http.Client, method, requestURL st
 	}
 	for name, value := range headers {
 		request.Header.Set(name, value)
+	}
+	if err := waitForExchangeCooldown(ctx, request.URL.Host); err != nil {
+		return 0, NewError(domain.ErrorTimeout, "EXCHANGE_RATE_LIMIT_BACKOFF_CANCELED", "", true, false)
 	}
 	response, err := client.Do(request)
 	if err != nil {
@@ -45,6 +56,9 @@ func RequestJSON(ctx context.Context, client *http.Client, method, requestURL st
 		}
 		_ = json.Unmarshal(body, &envelope)
 		exchangeCode := firstCode(envelope.Code, envelope.RetCode)
+		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode == http.StatusTeapot || exchangeCode == "-1003" || exchangeCode == "10006" {
+			recordExchangeCooldown(request.URL.Host, response.Header.Get("Retry-After"), time.Now())
+		}
 		if _, accepted := acceptedCodes[exchangeCode]; !accepted {
 			return response.StatusCode, classifyHTTPError(response.StatusCode, exchangeCode)
 		}
@@ -58,11 +72,48 @@ func RequestJSON(ctx context.Context, client *http.Client, method, requestURL st
 	return response.StatusCode, nil
 }
 
+func waitForExchangeCooldown(ctx context.Context, host string) error {
+	for {
+		exchangeCooldowns.Lock()
+		until := exchangeCooldowns.until[host]
+		exchangeCooldowns.Unlock()
+		delay := time.Until(until)
+		if delay <= 0 {
+			return nil
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func recordExchangeCooldown(host, retryAfter string, now time.Time) {
+	delay := 5 * time.Second
+	if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds > 0 {
+		delay = time.Duration(seconds) * time.Second
+	} else if parsed, err := http.ParseTime(retryAfter); err == nil && parsed.After(now) {
+		delay = parsed.Sub(now)
+	}
+	if delay > time.Minute {
+		delay = time.Minute
+	}
+	exchangeCooldowns.Lock()
+	defer exchangeCooldowns.Unlock()
+	until := now.Add(delay)
+	if until.After(exchangeCooldowns.until[host]) {
+		exchangeCooldowns.until[host] = until
+	}
+}
+
 func classifyHTTPError(status int, exchangeCode string) error {
 	if status == http.StatusUnauthorized || status == http.StatusForbidden || exchangeCode == "-2015" || exchangeCode == "10003" {
 		return NewError(domain.ErrorPermission, "EXCHANGE_PERMISSION_DENIED", exchangeCode, false, false)
 	}
-	if status == http.StatusTooManyRequests || exchangeCode == "10006" {
+	if status == http.StatusTooManyRequests || status == http.StatusTeapot || exchangeCode == "-1003" || exchangeCode == "10006" {
 		return NewError(domain.ErrorRateLimit, "EXCHANGE_RATE_LIMITED", exchangeCode, true, false)
 	}
 	// Binance Demo can briefly return -2013 immediately after accepting a

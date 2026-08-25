@@ -64,6 +64,34 @@ WHERE decisionId = ? AND source = 'RULE_ENGINE'`, detail, decisionID)
 	return nil
 }
 
+func (s *AccountStore) MarkAutonomousReentryGuard(ctx context.Context, instance bot.Instance, candleOpenMS int64, reason string, now time.Time) error {
+	if candleOpenMS <= 0 {
+		return errors.New("autonomous reentry guard candle is invalid")
+	}
+	metadata, err := json.Marshal(map[string]any{"symbol": instance.Symbol, "reason": reason, "candleOpenMs": candleOpenMS, "timeframe": "15m", "productionLive": false})
+	if err != nil {
+		return err
+	}
+	tx, err := s.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.ExecContext(ctx, `UPDATE trading_bots SET configuration = JSON_SET(
+COALESCE(configuration, JSON_OBJECT()), '$.testnetReentryAfterCandleOpenMs', ?, '$.testnetReentryGuardReason', ?, '$.testnetReentryGuardedAt', ?),
+version = version + 1 WHERE userId = ? AND exchangeAccountId = ? AND type = 'AUTONOMOUS' AND mode = 'DEMO' AND symbol = ? AND lifecycleStatus <> 'ARCHIVED'`,
+		candleOpenMS, reason, now.UTC().Format(time.RFC3339Nano), instance.UserID, instance.ExchangeAccountID, instance.Symbol); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO trading_audit_logs
+(id, userId, exchangeAccountId, action, entityType, entityId, metadata, createdAt)
+VALUES (UUID(), ?, ?, 'AUTONOMOUS_EXTERNAL_CLOSE_DETECTED', 'EXCHANGE_POSITION', ?, ?, ?)`,
+		instance.UserID, instance.ExchangeAccountID, instance.Symbol, metadata, now.UTC()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // CreateAutonomousOrder is deliberately restricted to an explicitly activated
 // autonomous DEMO bot on a connected Binance TESTNET account owned by Go. The
 // 5x-20x band is duplicated here as a transaction-time defense in depth gate.

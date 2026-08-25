@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/account"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
@@ -24,10 +25,24 @@ type Snapshot struct {
 
 type ReaderFactory func(account.Resolved) (exchange.Reader, error)
 
+type readOnlyAccountStore interface {
+	ResolveReadOnly(context.Context, string, string) (account.Resolved, error)
+}
+
 type Service struct {
 	store   account.Store
 	factory ReaderFactory
+	cacheMu sync.Mutex
+	cache   map[string]cachedSnapshot
+	locks   map[string]*sync.Mutex
 }
+
+type cachedSnapshot struct {
+	value Snapshot
+	at    time.Time
+}
+
+const snapshotTTL = 5 * time.Second
 
 func New(store account.Store, client *http.Client, endpoints exchange.Endpoints) *Service {
 	return &Service{store: store, factory: func(resolved account.Resolved) (exchange.Reader, error) {
@@ -53,7 +68,22 @@ func (s *Service) Snapshot(ctx context.Context, userID, accountID string) (Snaps
 	if userID == "" || accountID == "" {
 		return Snapshot{}, errors.New("userId and accountId are required")
 	}
-	resolved, err := s.store.Resolve(ctx, userID, accountID)
+	accountLock := s.lockFor(accountID)
+	accountLock.Lock()
+	defer accountLock.Unlock()
+	s.cacheMu.Lock()
+	cached, ok := s.cache[accountID]
+	s.cacheMu.Unlock()
+	if ok && time.Since(cached.at) < snapshotTTL {
+		return cached.value, nil
+	}
+	var resolved account.Resolved
+	var err error
+	if readStore, ok := s.store.(readOnlyAccountStore); ok {
+		resolved, err = readStore.ResolveReadOnly(ctx, userID, accountID)
+	} else {
+		resolved, err = s.store.Resolve(ctx, userID, accountID)
+	}
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -73,5 +103,25 @@ func (s *Service) Snapshot(ctx context.Context, userID, accountID string) (Snaps
 	if err := errors.Join(balancesErr, symbolsErr, ordersErr, positionsErr); err != nil {
 		return Snapshot{}, err
 	}
+	s.cacheMu.Lock()
+	if s.cache == nil {
+		s.cache = make(map[string]cachedSnapshot)
+	}
+	s.cache[accountID] = cachedSnapshot{value: result, at: time.Now()}
+	s.cacheMu.Unlock()
 	return result, nil
+}
+
+func (s *Service) lockFor(accountID string) *sync.Mutex {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	if s.locks == nil {
+		s.locks = make(map[string]*sync.Mutex)
+	}
+	if existing := s.locks[accountID]; existing != nil {
+		return existing
+	}
+	created := &sync.Mutex{}
+	s.locks[accountID] = created
+	return created
 }

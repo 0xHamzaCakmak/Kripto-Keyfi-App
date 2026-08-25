@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/account"
@@ -26,11 +27,35 @@ const (
 )
 
 type Service struct {
-	accounts account.Store
-	orders   OrderStore
-	factory  WriterFactory
-	risk     risk.Evaluator
-	now      func() time.Time
+	accounts       account.Store
+	orders         OrderStore
+	factory        WriterFactory
+	risk           risk.Evaluator
+	now            func() time.Time
+	cacheMu        sync.RWMutex
+	keyLocksMu     sync.Mutex
+	keyLocks       map[string]*sync.Mutex
+	rulesCache     map[string]cachedRules
+	positionsCache map[string]cachedPositions
+	ordersCache    map[string]cachedOrders
+}
+
+const (
+	executionRulesTTL    = 15 * time.Minute
+	executionSnapshotTTL = 5 * time.Second
+)
+
+type cachedRules struct {
+	values []domain.SymbolRule
+	at     time.Time
+}
+type cachedPositions struct {
+	values []domain.Position
+	at     time.Time
+}
+type cachedOrders struct {
+	values []domain.Order
+	at     time.Time
 }
 
 // Positions returns the exchange-authoritative position state through the same
@@ -40,7 +65,7 @@ func (s *Service) Positions(ctx context.Context, reference domain.ExchangeAccoun
 	if err != nil {
 		return nil, err
 	}
-	return writer.GetPositions(ctx)
+	return s.cachedPositions(ctx, reference.ID, writer)
 }
 
 func (s *Service) OpenOrders(ctx context.Context, reference domain.ExchangeAccountRef) ([]domain.Order, error) {
@@ -48,7 +73,7 @@ func (s *Service) OpenOrders(ctx context.Context, reference domain.ExchangeAccou
 	if err != nil {
 		return nil, err
 	}
-	return writer.GetOpenOrders(ctx)
+	return s.cachedOpenOrders(ctx, reference.ID, writer)
 }
 
 func (s *Service) MarketRule(ctx context.Context, reference domain.ExchangeAccountRef, symbol string) (domain.SymbolRule, domain.Decimal, error) {
@@ -56,7 +81,7 @@ func (s *Service) MarketRule(ctx context.Context, reference domain.ExchangeAccou
 	if err != nil {
 		return domain.SymbolRule{}, "", err
 	}
-	rules, err := writer.GetSymbols(ctx)
+	rules, err := s.cachedSymbolRules(ctx, reference.ID, writer)
 	if err != nil {
 		return domain.SymbolRule{}, "", err
 	}
@@ -68,6 +93,102 @@ func (s *Service) MarketRule(ctx context.Context, reference domain.ExchangeAccou
 		return rule, mark, markErr
 	}
 	return domain.SymbolRule{}, "", validationError("TRADING_SYMBOL_NOT_FOUND")
+}
+
+func (s *Service) cachedSymbolRules(ctx context.Context, accountID string, writer exchange.Writer) ([]domain.SymbolRule, error) {
+	key := accountID + ":rules"
+	lock := s.lockFor(key)
+	lock.Lock()
+	defer lock.Unlock()
+	now := s.now()
+	s.cacheMu.RLock()
+	cached, ok := s.rulesCache[accountID]
+	s.cacheMu.RUnlock()
+	if ok && now.Sub(cached.at) < executionRulesTTL {
+		return append([]domain.SymbolRule(nil), cached.values...), nil
+	}
+	values, err := writer.GetSymbols(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.cacheMu.Lock()
+	if s.rulesCache == nil {
+		s.rulesCache = make(map[string]cachedRules)
+	}
+	s.rulesCache[accountID] = cachedRules{values: append([]domain.SymbolRule(nil), values...), at: now}
+	s.cacheMu.Unlock()
+	return values, nil
+}
+
+func (s *Service) cachedPositions(ctx context.Context, accountID string, writer exchange.Writer) ([]domain.Position, error) {
+	key := accountID + ":positions"
+	lock := s.lockFor(key)
+	lock.Lock()
+	defer lock.Unlock()
+	now := s.now()
+	s.cacheMu.RLock()
+	cached, ok := s.positionsCache[accountID]
+	s.cacheMu.RUnlock()
+	if ok && now.Sub(cached.at) < executionSnapshotTTL {
+		return append([]domain.Position(nil), cached.values...), nil
+	}
+	values, err := writer.GetPositions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.cacheMu.Lock()
+	if s.positionsCache == nil {
+		s.positionsCache = make(map[string]cachedPositions)
+	}
+	s.positionsCache[accountID] = cachedPositions{values: append([]domain.Position(nil), values...), at: now}
+	s.cacheMu.Unlock()
+	return values, nil
+}
+
+func (s *Service) cachedOpenOrders(ctx context.Context, accountID string, writer exchange.Writer) ([]domain.Order, error) {
+	key := accountID + ":orders"
+	lock := s.lockFor(key)
+	lock.Lock()
+	defer lock.Unlock()
+	now := s.now()
+	s.cacheMu.RLock()
+	cached, ok := s.ordersCache[accountID]
+	s.cacheMu.RUnlock()
+	if ok && now.Sub(cached.at) < executionSnapshotTTL {
+		return append([]domain.Order(nil), cached.values...), nil
+	}
+	values, err := writer.GetOpenOrders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.cacheMu.Lock()
+	if s.ordersCache == nil {
+		s.ordersCache = make(map[string]cachedOrders)
+	}
+	s.ordersCache[accountID] = cachedOrders{values: append([]domain.Order(nil), values...), at: now}
+	s.cacheMu.Unlock()
+	return values, nil
+}
+
+func (s *Service) lockFor(key string) *sync.Mutex {
+	s.keyLocksMu.Lock()
+	defer s.keyLocksMu.Unlock()
+	if s.keyLocks == nil {
+		s.keyLocks = make(map[string]*sync.Mutex)
+	}
+	if existing := s.keyLocks[key]; existing != nil {
+		return existing
+	}
+	created := &sync.Mutex{}
+	s.keyLocks[key] = created
+	return created
+}
+
+func (s *Service) invalidateAccountSnapshots(accountID string) {
+	s.cacheMu.Lock()
+	defer s.cacheMu.Unlock()
+	delete(s.positionsCache, accountID)
+	delete(s.ordersCache, accountID)
 }
 
 func New(accounts account.Store, orders OrderStore, riskStore risk.Store, client *http.Client, endpoints exchange.Endpoints) *Service {
@@ -92,7 +213,7 @@ func (s *Service) Preview(ctx context.Context, request tradingv1.PreviewOrderReq
 	if err != nil {
 		return tradingv1.PreviewOrderResponse{}, err
 	}
-	rules, err := writer.GetSymbols(ctx)
+	rules, err := s.cachedSymbolRules(ctx, request.Account.ID, writer)
 	if err != nil {
 		return tradingv1.PreviewOrderResponse{}, err
 	}
@@ -154,6 +275,7 @@ func (s *Service) Place(ctx context.Context, command tradingv1.PlaceOrderCommand
 	if err != nil {
 		return domain.Order{}, false, err
 	}
+	defer s.invalidateAccountSnapshots(command.Account.ID)
 	stored, claim, err := s.orders.Claim(ctx, command.Meta.ActorUserID, command.Account.ID, command.TradingOrderID, command.Meta.IdempotencyKey, command.Meta.ClientOrderID, s.now())
 	if err != nil {
 		return domain.Order{}, false, err
@@ -229,6 +351,7 @@ func (s *Service) Cancel(ctx context.Context, command tradingv1.CancelOrderComma
 	if err != nil {
 		return domain.Order{}, false, err
 	}
+	defer s.invalidateAccountSnapshots(command.Account.ID)
 	stored, claim, err := s.orders.ClaimCancel(ctx, command.Meta.ActorUserID, command.Account.ID, command.ExchangeOrderID, command.Meta.IdempotencyKey, command.Meta.ClientOrderID, s.now())
 	if err != nil {
 		return domain.Order{}, false, err

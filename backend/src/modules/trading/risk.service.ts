@@ -8,7 +8,8 @@ import type { UpdateKillSwitchInput, UpdateRiskProfileInput } from './risk.schem
 const riskSelect = {
   id: true, exchangeAccountId: true, enabled: true, accountKillSwitch: true, killSwitchReason: true,
   maxOrderNotional: true, maxInitialMargin: true, maxAccountOpenNotional: true,
-  maxOpenPositions: true, paperMaxOpenPositions: true, maxSymbolPositions: true, maxLeverage: true, minAvailableBalance: true,
+  maxOpenPositions: true, paperMaxOpenPositions: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true,
+  maxSymbolPositions: true, minLeverage: true, maxLeverage: true, minAvailableBalance: true,
   maxOrdersPerMinute: true, maxDailyOrders: true, maxDailyLoss: true,
   maxRiskPerTradePct: true, maxDailyLossPct: true, maxWeeklyLossPct: true, maxDrawdownPct: true,
   maxSymbolOpenNotional: true, minRiskRewardRatio: true, stopLossRequired: true,
@@ -29,8 +30,7 @@ export async function getRiskProfile(userId: string, exchangeAccountId: string) 
 
 export function effectiveAutonomousPositionLimits(configured: number, paperConfigured = 100) {
   const paper = Math.max(1, Math.min(paperConfigured, 100));
-  const testnetLive = Math.max(1, Math.min(configured, 15));
-  return { paper, futuresTestnet: testnetLive, live: testnetLive };
+  return { paper, futuresTestnet: Math.max(1, Math.min(configured, 20)), live: Math.max(1, Math.min(configured, 15)) };
 }
 
 export async function updateRiskProfile(userId: string, exchangeAccountId: string, input: UpdateRiskProfileInput, ipAddress?: string) {
@@ -40,6 +40,18 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
   const maxOpenPositions = input.maxOpenPositions ?? current.maxOpenPositions;
   const maxSymbolPositions = input.maxSymbolPositions ?? current.maxSymbolPositions;
   if (maxSymbolPositions > maxOpenPositions) throw new ApiError(400, 'Parite pozisyon limiti hesap limitini aşamaz.', 'INVALID_RISK_LIMITS');
+  const botAllocationInput = input.botAllocationUsdt ?? input.testnetBotAllocationUsdt;
+  const minimumMarginInput = input.minInitialMarginUsdt ?? input.testnetMinInitialMarginUsdt;
+  const botAllocation = Number(botAllocationInput ?? current.testnetBotAllocationUsdt);
+  const minimumInitialMargin = Number(minimumMarginInput ?? current.testnetMinInitialMarginUsdt);
+  const minimumLeverage = input.minLeverage ?? current.minLeverage;
+  const maximumLeverage = input.maxLeverage ?? current.maxLeverage;
+  if (botAllocation > 10_000 || minimumInitialMargin > 1_000 || minimumInitialMargin > botAllocation) {
+    throw new ApiError(400, 'Bot kotası/teminat profili geçersiz.', 'INVALID_BOT_SIZING');
+  }
+  if (minimumLeverage > maximumLeverage) {
+    throw new ApiError(400, 'Asgari kaldıraç azami kaldıracı aşamaz.', 'INVALID_LEVERAGE_RANGE');
+  }
   const data: Prisma.TradingRiskProfileUpdateInput = {};
   if (input.enabled !== undefined) data.enabled = input.enabled;
   if (input.maxOrderNotional !== undefined) data.maxOrderNotional = input.maxOrderNotional;
@@ -47,7 +59,10 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
   if (input.maxAccountOpenNotional !== undefined) data.maxAccountOpenNotional = input.maxAccountOpenNotional;
   if (input.maxOpenPositions !== undefined) data.maxOpenPositions = input.maxOpenPositions;
   if (input.paperMaxOpenPositions !== undefined) data.paperMaxOpenPositions = input.paperMaxOpenPositions;
+  if (botAllocationInput !== undefined) data.testnetBotAllocationUsdt = botAllocationInput;
+  if (minimumMarginInput !== undefined) data.testnetMinInitialMarginUsdt = minimumMarginInput;
   if (input.maxSymbolPositions !== undefined) data.maxSymbolPositions = input.maxSymbolPositions;
+  if (input.minLeverage !== undefined) data.minLeverage = input.minLeverage;
   if (input.maxLeverage !== undefined) data.maxLeverage = input.maxLeverage;
   if (input.minAvailableBalance !== undefined) data.minAvailableBalance = input.minAvailableBalance;
   if (input.maxOrdersPerMinute !== undefined) data.maxOrdersPerMinute = input.maxOrdersPerMinute;
@@ -71,6 +86,23 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
       data,
       select: riskSelect,
     });
+    if (botAllocationInput !== undefined || minimumMarginInput !== undefined || input.minLeverage !== undefined || input.maxLeverage !== undefined) {
+      const bots = await tx.tradingBot.findMany({
+        where: { userId, exchangeAccountId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'DEMO'] }, lifecycleStatus: { not: 'ARCHIVED' } },
+        select: { id: true, configuration: true },
+      });
+      for (const bot of bots) {
+        const source = bot.configuration && !Array.isArray(bot.configuration) && typeof bot.configuration === 'object'
+          ? bot.configuration as Prisma.JsonObject : {};
+        const configuredLeverage = Number(source.leverage);
+        const leverage = Math.max(minimumLeverage, Math.min(maximumLeverage, Number.isFinite(configuredLeverage) ? Math.round(configuredLeverage) : minimumLeverage));
+        await tx.tradingBot.update({ where: { id: bot.id }, data: {
+          configuration: { ...source, allocationUsdt: botAllocation, minimumInitialMarginUsdt: minimumInitialMargin, leverage, leverageMin: minimumLeverage, leverageMax: maximumLeverage, testnetMarginAllocationMode: true },
+          startingPaperBalance: botAllocation,
+          version: { increment: 1 },
+        } });
+      }
+    }
     await tx.tradingAuditLog.create({ data: {
       userId, exchangeAccountId, action: 'RISK_PROFILE_UPDATED', entityType: 'TRADING_RISK_PROFILE', entityId: updated.id,
       metadata: { changedFields: Object.keys(input) }, ...(ipAddress ? { ipAddress } : {}),
@@ -131,9 +163,11 @@ export async function listRiskEvents(userId: string, exchangeAccountId: string) 
   return events.map((event) => ({ ...event, id: event.id.toString() }));
 }
 
-function serializeProfile<T extends { maxOrderNotional: Prisma.Decimal; maxInitialMargin: Prisma.Decimal; maxAccountOpenNotional: Prisma.Decimal; minAvailableBalance: Prisma.Decimal; maxDailyLoss: Prisma.Decimal | null; maxRiskPerTradePct: Prisma.Decimal; maxDailyLossPct: Prisma.Decimal; maxWeeklyLossPct: Prisma.Decimal; maxDrawdownPct: Prisma.Decimal; maxSymbolOpenNotional: Prisma.Decimal; minRiskRewardRatio: Prisma.Decimal }>(profile: T) {
+function serializeProfile<T extends { maxOrderNotional: Prisma.Decimal; maxInitialMargin: Prisma.Decimal; maxAccountOpenNotional: Prisma.Decimal; testnetBotAllocationUsdt: Prisma.Decimal; testnetMinInitialMarginUsdt: Prisma.Decimal; minAvailableBalance: Prisma.Decimal; maxDailyLoss: Prisma.Decimal | null; maxRiskPerTradePct: Prisma.Decimal; maxDailyLossPct: Prisma.Decimal; maxWeeklyLossPct: Prisma.Decimal; maxDrawdownPct: Prisma.Decimal; maxSymbolOpenNotional: Prisma.Decimal; minRiskRewardRatio: Prisma.Decimal }>(profile: T) {
   return { ...profile, maxOrderNotional: profile.maxOrderNotional.toString(), maxInitialMargin: profile.maxInitialMargin.toString(),
-    maxAccountOpenNotional: profile.maxAccountOpenNotional.toString(), minAvailableBalance: profile.minAvailableBalance.toString(),
+    maxAccountOpenNotional: profile.maxAccountOpenNotional.toString(), testnetBotAllocationUsdt: profile.testnetBotAllocationUsdt.toString(),
+    testnetMinInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toString(), botAllocationUsdt: profile.testnetBotAllocationUsdt.toString(),
+    minInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toString(), minAvailableBalance: profile.minAvailableBalance.toString(),
     maxDailyLoss: profile.maxDailyLoss?.toString() ?? null,
     maxRiskPerTradePct: profile.maxRiskPerTradePct.toString(), maxDailyLossPct: profile.maxDailyLossPct.toString(),
     maxWeeklyLossPct: profile.maxWeeklyLossPct.toString(), maxDrawdownPct: profile.maxDrawdownPct.toString(),

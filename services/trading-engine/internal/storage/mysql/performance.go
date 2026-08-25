@@ -36,11 +36,12 @@ var _ performance.SnapshotStore = (*AccountStore)(nil)
 // canonical closed PAPER trades. It is intentionally independent from fills:
 // fills are an audit ledger, while a round trip is the scoring evidence unit.
 func (s *AccountStore) RefreshBotPerformance(ctx context.Context, botID string) error {
-	var startingBalance, strategyVersionID, unrealized string
+	var startingBalance, strategyVersionID, unrealized, mode string
 	err := s.database.QueryRowContext(ctx, `SELECT CAST(b.startingPaperBalance AS CHAR), COALESCE(b.strategyVersionId, ''),
+ b.mode,
 COALESCE(CAST(p.unrealizedPnl AS CHAR), '0') FROM trading_bots b
-LEFT JOIN trading_bot_paper_positions p ON p.tradingBotId = b.id WHERE b.id = ? AND b.mode = 'PAPER'`, botID).Scan(
-		&startingBalance, &strategyVersionID, &unrealized)
+LEFT JOIN trading_bot_paper_positions p ON p.tradingBotId = b.id WHERE b.id = ? AND b.mode IN ('PAPER', 'DEMO')`, botID).Scan(
+		&startingBalance, &strategyVersionID, &mode, &unrealized)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -48,11 +49,25 @@ LEFT JOIN trading_bot_paper_positions p ON p.tradingBotId = b.id WHERE b.id = ? 
 		return fmt.Errorf("load paper performance identity: %w", err)
 	}
 
-	rows, err := s.database.QueryContext(ctx, `SELECT CAST(realizedPnl AS CHAR),
+	tradeQuery := `SELECT CAST(realizedPnl AS CHAR),
 CAST(ABS(entryPrice - COALESCE(stopLoss, entryPrice)) * quantity AS CHAR),
 CAST(entryPrice * quantity AS CHAR), CAST(fees AS CHAR), CAST(funding AS CHAR), CAST(slippageCost AS CHAR),
 openedAt, closedAt, status FROM paper_trades
-WHERE tradingBotId = ? AND status IN ('CLOSED', 'LIQUIDATED') ORDER BY closedAt, id`, botID)
+WHERE tradingBotId = ? AND status IN ('CLOSED', 'LIQUIDATED') ORDER BY closedAt, id`
+	if mode == "DEMO" {
+		// Binance can split one order into several fills. A reduce-only exchange
+		// order is therefore grouped into one completed TESTNET evidence unit.
+		// PAPER and TESTNET remain separate ledgers; only their normalized
+		// performance snapshots share the existing scoring pipeline.
+		tradeQuery = `SELECT CAST(SUM(netRealizedPnl) AS CHAR), '0',
+CAST(SUM(quoteQuantity) AS CHAR), CAST(SUM(commission) AS CHAR), '0', '0',
+MIN(occurredAt), MAX(occurredAt), 'CLOSED'
+FROM testnet_execution_fills
+WHERE tradingBotId = ? AND reduceOnly = true
+GROUP BY exchangeOrderId ORDER BY MAX(occurredAt), exchangeOrderId`
+		unrealized = "0"
+	}
+	rows, err := s.database.QueryContext(ctx, tradeQuery, botID)
 	if err != nil {
 		return fmt.Errorf("load closed paper trades: %w", err)
 	}
