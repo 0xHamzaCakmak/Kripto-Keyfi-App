@@ -63,6 +63,7 @@ describe('Binance demo adapter', () => {
         walletBalance: '5000.00000000',
         availableBalance: '4900.00000000',
         unrealizedPnl: '12.50000000',
+        marginAvailable: false,
       },
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(3);

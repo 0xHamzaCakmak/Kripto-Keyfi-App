@@ -60,7 +60,7 @@ describe('autonomous Futures universe', () => {
   it('applies aggressive limits only to PAPER training configuration', () => {
     const result = paperTrainingConfiguration({ signalThresholdBps: 45, stopLossBps: 50, takeProfitBps: 100 }, 12);
     expect(PAPER_TRAINING_MAX_OPEN_POSITIONS).toBe(100);
-    expect(PAPER_TRAINING_INTERVAL_SECONDS).toBe(5);
+    expect(PAPER_TRAINING_INTERVAL_SECONDS).toBe(60);
     expect(result).toMatchObject({ paperTrainingMode: true, signalThresholdBps: 10,
       stopLossBps: 50, takeProfitBps: PAPER_TRAINING_TAKE_PROFIT_BPS, riskRewardRatio: 1.5,
       adaptiveStopMaxBps: 50, pyramidingEnabled: false, independentPaperTrades: true,

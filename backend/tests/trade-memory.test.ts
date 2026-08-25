@@ -10,7 +10,7 @@ describe('trade memory', () => {
     expect(tradeMemoryQuerySchema.parse({ outcome: 'FAILURE', side: 'SELL', limit: '200' })).toMatchObject({ outcome: 'FAILURE', side: 'SELL', limit: 200 });
     expect(tradeMemoryQuerySchema.safeParse({ limit: 201 }).success).toBe(false);
     expect(tradeMemorySummaryQuerySchema.parse({ groupBy: 'REGIME' }).groupBy).toBe('REGIME');
-    expect(tradeMemoryStatsQuerySchema.parse({ outcome: 'ALL' })).toEqual({ outcome: 'ALL' });
+    expect(tradeMemoryStatsQuerySchema.parse({ outcome: 'ALL' })).toEqual({ source: 'ALL', outcome: 'ALL' });
   });
 
   it('presents stable aggregate metrics without dividing by zero', () => {
