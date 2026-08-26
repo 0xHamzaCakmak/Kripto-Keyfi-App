@@ -91,6 +91,13 @@ WHERE a.id = ? AND a.userId = ? LIMIT 1`
 	if err != nil {
 		return bot.Gate{}, fmt.Errorf("read bot safety gate: %w", err)
 	}
+	// An explicitly queued PAPER close is a local, risk-reducing accounting
+	// operation. It must remain available under emergency stops so an operator
+	// can flatten simulated exposure without reopening general execution. DEMO /
+	// TESTNET and every non-close cycle continue through the normal gates below.
+	if explicitPaperManualClose(instance) {
+		return bot.Gate{Ready: true, Code: "PAPER_MANUAL_CLOSE_ONLY", Message: "Explicit PAPER close may proceed while safety gates remain closed."}, nil
+	}
 	switch {
 	case !active:
 		return bot.Gate{Code: "BOT_ACCOUNT_DISABLED", Message: "Borsa hesabı devre dışı."}, nil
@@ -108,6 +115,10 @@ WHERE a.id = ? AND a.userId = ? LIMIT 1`
 }
 
 func botModeRequiresConnectedAccount(mode string) bool { return mode == "DEMO" }
+
+func explicitPaperManualClose(instance bot.Instance) bool {
+	return instance.Mode == "PAPER" && boolValue(instance.Configuration["paperManualCloseRequested"])
+}
 
 func (s *AccountStore) LoadBotMarketAccount(ctx context.Context, userID, accountID, mode string) (bot.MarketAccount, error) {
 	var account bot.MarketAccount

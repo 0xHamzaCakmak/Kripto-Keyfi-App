@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/autonomousrisk"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/bot"
 )
 
 func TestPaperProtectionTriggerLongAndShort(t *testing.T) {
@@ -129,6 +130,18 @@ func TestExplicitPaperCloseRemainsAvailableWhileEntriesArePaused(t *testing.T) {
 	}
 	if paperExecutionPaused(map[string]any{"entryPaused": false}) {
 		t.Fatal("running PAPER execution was unexpectedly paused")
+	}
+}
+
+func TestExplicitPaperCloseIsTheOnlyCycleAllowedToBypassClosedSafetyGates(t *testing.T) {
+	if !explicitPaperManualClose(bot.Instance{Mode: "PAPER", Configuration: map[string]any{"paperManualCloseRequested": true}}) {
+		t.Fatal("explicit PAPER close must be recognized as risk reducing")
+	}
+	if explicitPaperManualClose(bot.Instance{Mode: "PAPER", Configuration: map[string]any{}}) {
+		t.Fatal("ordinary PAPER cycle must not bypass safety gates")
+	}
+	if explicitPaperManualClose(bot.Instance{Mode: "DEMO", Configuration: map[string]any{"paperManualCloseRequested": true}}) {
+		t.Fatal("TESTNET execution must never bypass safety gates")
 	}
 }
 
