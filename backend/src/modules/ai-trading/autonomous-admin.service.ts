@@ -363,7 +363,7 @@ export async function activateAutonomousTestnet(userId: string, id: string, inpu
   if (!bot) throw new ApiError(404, 'PAPER autonomous bot not found.', 'AUTONOMOUS_BOT_NOT_FOUND');
   const [account, profile, control, activeCanaries, activeSymbol, paperPosition] = await Promise.all([
     prisma.exchangeAccount.findFirst({ where: { id: bot.exchangeAccountId, userId }, select: { provider: true, environment: true, executionEngine: true, connectionStatus: true, isActive: true } }),
-    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId: bot.exchangeAccountId }, select: { enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true, minLeverage: true, maxLeverage: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true } }),
+    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId: bot.exchangeAccountId }, select: { enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true, minLeverage: true, maxLeverage: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true, testnetStopLossBps: true, testnetTakeProfitBps: true } }),
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
     prisma.tradingBot.count({ where: { userId, type: 'AUTONOMOUS', mode: 'DEMO', desiredState: 'RUNNING' } }),
     prisma.tradingBot.count({ where: { userId, type: 'AUTONOMOUS', mode: 'DEMO', desiredState: 'RUNNING', symbol: bot.symbol } }),
@@ -379,7 +379,7 @@ export async function activateAutonomousTestnet(userId: string, id: string, inpu
   if (activeSymbol >= 1) throw new ApiError(409, 'Only one TESTNET bot may own a symbol on the shared exchange account.', 'AUTONOMOUS_TESTNET_SYMBOL_IN_USE');
   if (paperPosition && !paperPosition.netQuantity.isZero()) throw new ApiError(409, 'Choose a bot with a flat PAPER position before TESTNET activation.', 'AUTONOMOUS_TESTNET_BOT_NOT_FLAT');
   const leverage = Math.max(profile.minLeverage, Math.min(profile.maxLeverage, Math.round(Number((bot.configuration as Prisma.JsonObject | null)?.leverage) || profile.minLeverage)));
-  return persistBotUpdate(userId, bot, { mode: 'DEMO', timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { allocationUsdt: profile.testnetBotAllocationUsdt.toNumber(), minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage }), startingPaperBalance: profile.testnetBotAllocationUsdt, state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Explicit admin Binance TESTNET canary activation; scheduler lease pending.' }, 'AI_TESTNET_CANARY_ACTIVATED', ipAddress, {
+  return persistBotUpdate(userId, bot, { mode: 'DEMO', timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { allocationUsdt: profile.testnetBotAllocationUsdt.toNumber(), minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage, stopLossBps: profile.testnetStopLossBps, takeProfitBps: profile.testnetTakeProfitBps }), startingPaperBalance: profile.testnetBotAllocationUsdt, state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Explicit admin Binance TESTNET canary activation; scheduler lease pending.' }, 'AI_TESTNET_CANARY_ACTIVATED', ipAddress, {
     note: input.note, confirmation: input.confirmation, environment: 'TESTNET', productionLive: false, maxActiveTestnetBots: env.AI_TRADING_FIXED_FLEET_SIZE,
   }, true);
 }
@@ -399,7 +399,7 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
   const exchangeAccountId = accountIds[0]!;
   const [account, profile, control, configuredSymbols, exchangeSymbols] = await Promise.all([
     prisma.exchangeAccount.findFirst({ where: { id: exchangeAccountId, userId }, select: { provider: true, environment: true, executionEngine: true, connectionStatus: true, isActive: true } }),
-    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId }, select: { id: true, enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true, minLeverage: true, maxLeverage: true, maxOrderNotional: true, maxInitialMargin: true, maxAccountOpenNotional: true, maxSymbolOpenNotional: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true } }),
+    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId }, select: { id: true, enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true, minLeverage: true, maxLeverage: true, maxOrderNotional: true, maxInitialMargin: true, maxAccountOpenNotional: true, maxSymbolOpenNotional: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true, testnetStopLossBps: true, testnetTakeProfitBps: true } }),
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
     getEnabledTradingSymbols(userId),
     getBinanceFuturesPublicSymbols(),
@@ -444,7 +444,7 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
       const changed = await tx.tradingBot.updateMany({
         where: { id: bot.id, userId, type: 'AUTONOMOUS', version: bot.version },
         data: {
-          mode: 'DEMO', symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, fleetLeverage(index, bots.length, profile.minLeverage, profile.maxLeverage), { allocationUsdt: allocations[index]!, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage }), startingPaperBalance: allocations[index]!, state: 'STARTING', desiredState: 'RUNNING',
+          mode: 'DEMO', symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, fleetLeverage(index, bots.length, profile.minLeverage, profile.maxLeverage), { allocationUsdt: allocations[index]!, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage, stopLossBps: profile.testnetStopLossBps, takeProfitBps: profile.testnetTakeProfitBps }), startingPaperBalance: allocations[index]!, state: 'STARTING', desiredState: 'RUNNING',
           schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
           stateReason: 'Explicit admin bulk Binance TESTNET activation; scheduler lease pending.', version: { increment: 1 },
         },

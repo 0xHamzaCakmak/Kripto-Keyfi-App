@@ -217,6 +217,7 @@ type algoOrder struct {
 	AlgoStatus    string `json:"algoStatus"`
 	ActualOrderID string `json:"actualOrderId"`
 	ActualPrice   string `json:"actualPrice"`
+	ActualQty     string `json:"actualQty"`
 	TriggerPrice  string `json:"triggerPrice"`
 	Price         string `json:"price"`
 	ReduceOnly    bool   `json:"reduceOnly"`
@@ -637,10 +638,17 @@ func mapAlgoOrder(item algoOrder) domain.Order {
 	if item.Side == "SELL" {
 		side = domain.SideSell
 	}
+	exchangeOrderID := strconv.FormatInt(item.AlgoID, 10)
+	if strings.TrimSpace(item.ActualOrderID) != "" && item.ActualOrderID != "0" {
+		// Once Binance triggers a conditional order, userTrades references the
+		// generated actual order ID rather than the parent algo ID. Persisting
+		// that child ID is required for correct fill/PnL attribution.
+		exchangeOrderID = item.ActualOrderID
+	}
 	mapped := domain.Order{
-		ExchangeOrderID: strconv.FormatInt(item.AlgoID, 10), ClientOrderID: item.ClientAlgoID,
+		ExchangeOrderID: exchangeOrderID, ClientOrderID: item.ClientAlgoID,
 		Symbol: item.Symbol, Side: side, Type: orderType, Status: mapStatus(item.AlgoStatus),
-		Quantity: domain.Decimal(item.Quantity), ExecutedQuantity: "0", ReduceOnly: item.ReduceOnly,
+		Quantity: domain.Decimal(item.Quantity), ExecutedQuantity: domain.Decimal(item.ActualQty), ReduceOnly: item.ReduceOnly,
 	}
 	if item.CreateTime > 0 {
 		mapped.CreatedAt = time.UnixMilli(item.CreateTime).UTC()
@@ -661,9 +669,9 @@ func mapStatus(status string) domain.OrderStatus {
 	switch status {
 	case "NEW":
 		return domain.OrderOpen
-	case "PARTIALLY_FILLED":
+	case "PARTIALLY_FILLED", "TRIGGERED":
 		return domain.OrderPartiallyFilled
-	case "FILLED":
+	case "FILLED", "FINISHED":
 		return domain.OrderFilled
 	case "CANCELED", "EXPIRED", "EXPIRED_IN_MATCH":
 		return domain.OrderCanceled

@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import sharp from 'sharp';
 import { env } from '../config/env.js';
 
@@ -125,4 +125,23 @@ export async function uploadImage(input: string | Buffer, path: string) {
   }
 
   return `${env.R2_PUBLIC_URL.replace(/\/+$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+/** Deletes an object only when the URL belongs to this application's R2 public origin. */
+export async function deleteImageByPublicUrl(urlValue: string) {
+  const prefix = `${env.R2_PUBLIC_URL.replace(/\/+$/, '')}/`;
+  if (!prefix.startsWith('http') || !urlValue.startsWith(prefix)) return false;
+  let path: string;
+  try {
+    path = urlValue.slice(prefix.length).split('/').map(decodeURIComponent).join('/');
+  } catch (error) {
+    throw new R2ImageError(`Invalid encoded R2 image URL: ${urlValue}`, { cause: error });
+  }
+  const key = objectKey(path);
+  try {
+    await r2Client().send(new DeleteObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: key }));
+  } catch (error) {
+    throw new R2ImageError(`R2 delete failed for ${key}`, { cause: error });
+  }
+  return true;
 }

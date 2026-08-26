@@ -8,6 +8,7 @@ import { env } from './config/env.js';
 import { prisma } from './database/prisma.js';
 import { logger } from './utils/logger.js';
 import { scheduleNewsSync } from './modules/news/news.worker.js';
+import { scheduleNewsRetention } from './modules/news/news-retention.service.js';
 import { ensureDefaultNewsCatalog } from './modules/news/news.catalog.js';
 import { scheduleYoutubeSync } from './modules/videos/youtube.worker.js';
 import { scheduleYoutubeMetricsCollection } from './modules/videos/youtube-metrics.worker.js';
@@ -18,6 +19,7 @@ import { scheduleAutonomousLearning } from './modules/ai-trading/learning.worker
 let server: Server | undefined;
 let shuttingDown = false;
 let stopNewsSync: (() => void) | undefined;
+let stopNewsRetention: (() => void) | undefined;
 let stopYoutubeSync: (() => void) | undefined;
 let stopYoutubeMetricsCollection: (() => void) | undefined;
 let stopChatReconciliation: (() => void) | undefined;
@@ -30,6 +32,7 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
   stopNewsSync?.();
+  stopNewsRetention?.();
   stopYoutubeSync?.();
   stopYoutubeMetricsCollection?.();
   stopChatReconciliation?.();
@@ -64,6 +67,7 @@ async function start() {
     });
     logger.info({ port: env.PORT }, 'KriptoKeyfi API listening');
     if (env.NEWS_SYNC_ENABLED) stopNewsSync = scheduleNewsSync();
+    stopNewsRetention = scheduleNewsRetention();
     if (env.YOUTUBE_SYNC_ENABLED) stopYoutubeSync = scheduleYoutubeSync();
     if (env.YOUTUBE_METRICS_ENABLED) stopYoutubeMetricsCollection = scheduleYoutubeMetricsCollection();
     stopChatReconciliation = scheduleChatReconciliation();

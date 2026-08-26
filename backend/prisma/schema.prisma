@@ -1767,6 +1767,8 @@ model TradingRiskProfile {
   maxSymbolPositions     Int      @default(1)
   minLeverage            Int      @default(5)
   maxLeverage            Int      @default(5)
+  testnetStopLossBps     Int      @default(300)
+  testnetTakeProfitBps   Int      @default(300)
   minAvailableBalance    Decimal  @default(20) @db.Decimal(36, 18)
   maxOrdersPerMinute     Int      @default(10)
   maxDailyOrders         Int      @default(100)

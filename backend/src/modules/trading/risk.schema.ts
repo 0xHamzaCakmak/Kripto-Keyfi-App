@@ -18,6 +18,8 @@ export const updateRiskProfileBodySchema = z.object({
   maxSymbolPositions: z.number().int().min(1).max(20).optional(),
   minLeverage: z.number().int().min(5).max(20).optional(),
   maxLeverage: z.number().int().min(5).max(20).optional(),
+  stopLossBps: z.number().int().min(50).max(300).optional(),
+  takeProfitBps: z.number().int().min(50).max(5_000).optional(),
   minAvailableBalance: positiveDecimal.optional(),
   maxOrdersPerMinute: z.number().int().min(1).max(1000).optional(),
   maxDailyOrders: z.number().int().min(1).max(100_000).optional(),

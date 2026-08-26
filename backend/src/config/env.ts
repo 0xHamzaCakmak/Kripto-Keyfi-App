@@ -47,7 +47,6 @@ const envSchema = z.object({
   NEWS_AI_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(4).default(2),
   NEWS_AI_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(24),
   NEWS_IMAGE_RETRY_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(12),
-  NEWS_EXTERNAL_RETENTION_LIMIT: z.coerce.number().int().min(0).default(0),
   GROQ_API_KEY: z.string().trim().default(''),
   GROQ_API_BASE_URL: z.string().url().default('https://api.groq.com/openai/v1'),
   GROQ_PRIMARY_MODEL: z.string().trim().default('openai/gpt-oss-20b'),

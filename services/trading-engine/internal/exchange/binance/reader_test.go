@@ -239,7 +239,7 @@ func TestReaderFallsBackToAlgoOrderByClientID(t *testing.T) {
 			if request.URL.Query().Get("clientAlgoId") != "kk_algo_reconcile" {
 				t.Fatalf("unexpected algo order lookup: %s", request.URL.String())
 			}
-			_, _ = w.Write([]byte(`{"algoId":88,"clientAlgoId":"kk_algo_reconcile","algoType":"CONDITIONAL","orderType":"TAKE_PROFIT_MARKET","symbol":"BTCUSDT","side":"SELL","quantity":"0.01","algoStatus":"CANCELED","triggerPrice":"51000","reduceOnly":true,"createTime":1700000000000,"updateTime":1700000001000}`))
+			_, _ = w.Write([]byte(`{"algoId":88,"clientAlgoId":"kk_algo_reconcile","algoType":"CONDITIONAL","orderType":"TAKE_PROFIT_MARKET","symbol":"BTCUSDT","side":"SELL","quantity":"0.01","algoStatus":"FINISHED","actualOrderId":"991","actualQty":"0.01","actualPrice":"51025","triggerPrice":"51000","reduceOnly":true,"createTime":1700000000000,"updateTime":1700000001000}`))
 		default:
 			http.NotFound(w, request)
 		}
@@ -248,7 +248,7 @@ func TestReaderFallsBackToAlgoOrderByClientID(t *testing.T) {
 
 	reader := New(Options{Credentials: exchange.Credentials{APIKey: "test-key", APISecret: testSecret}, Client: server.Client(), FuturesURL: server.URL})
 	order, err := reader.GetOrderByClientID(t.Context(), "BTCUSDT", "kk_algo_reconcile")
-	if err != nil || order.ExchangeOrderID != "88" || order.Type != domain.OrderTakeProfitMarket || order.Status != domain.OrderCanceled || order.StopPrice != "51000" {
+	if err != nil || order.ExchangeOrderID != "991" || order.Type != domain.OrderTakeProfitMarket || order.Status != domain.OrderFilled || order.ExecutedQuantity != "0.01" || order.StopPrice != "51000" {
 		t.Fatalf("unexpected algo reconciliation order: %#v err=%v", order, err)
 	}
 	if regularCalls != 1 || algoCalls != 1 {

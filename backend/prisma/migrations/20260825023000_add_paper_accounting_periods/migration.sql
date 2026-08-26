@@ -21,4 +21,4 @@ CREATE TABLE `paper_accounting_periods` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 ALTER TABLE `trading_generations`
-  MODIFY `populationTarget` INTEGER NOT NULL DEFAULT 20;
+  ALTER COLUMN `populationTarget` SET DEFAULT 20;

@@ -12,7 +12,7 @@ import (
 )
 
 type fakeStore struct {
-	orders       []mysqlstore.AutonomousOrderInput
+	orders        []mysqlstore.AutonomousOrderInput
 	reentryGuards int
 	guardCandle   int64
 	guardReason   string
@@ -315,6 +315,54 @@ func TestReachedProtectionBoundaries(t *testing.T) {
 		if !reached || got != test.want {
 			t.Fatalf("unexpected protection result: got=%q reached=%v want=%q", got, reached, test.want)
 		}
+	}
+}
+
+func TestExecutorClosesReachedTargetEvenWhenBothConditionalOrdersStillAppearOpen(t *testing.T) {
+	store := &fakeStore{}
+	instance := bot.Instance{ID: "bot-1", UserID: "user-1", ExchangeAccountID: "account-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "ETHUSDT"}
+	instance.Configuration = map[string]any{"stopLossBps": float64(200), "takeProfitBps": float64(250)}
+	prefix := botClientPrefix(instance.ID)
+	exchange := &fakeExecution{
+		positions: []domain.Position{{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.01", EntryPrice: "2500", MarkPrice: "2563", Leverage: "5"}},
+		orders: []domain.Order{
+			{ExchangeOrderID: "algo-stop", ClientOrderID: prefix + "stop", Symbol: "ETHUSDT", Type: domain.OrderStopMarket, Quantity: "0.01"},
+			{ExchangeOrderID: "algo-take", ClientOrderID: prefix + "take", Symbol: "ETHUSDT", Type: domain.OrderTakeProfitMarket, Quantity: "0.01"},
+		},
+	}
+	decision := bot.Decision{HypotheticalOrder: map[string]any{"side": "BUY", "quantity": "0.01", "stopLoss": "2450", "takeProfit": "2562.5", "leverage": 5}}
+	if err := (&Executor{store: store, execution: exchange}).Execute(t.Context(), instance, decision, 49, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if len(exchange.commands) != 1 || exchange.commands[0].Type != domain.OrderMarket || !exchange.commands[0].ReduceOnly {
+		t.Fatalf("reached target did not produce one reduce-only fallback close: %#v", exchange.commands)
+	}
+	if len(exchange.cancels) != 2 {
+		t.Fatalf("stale conditional orders were not removed after fallback close: %#v", exchange.cancels)
+	}
+}
+
+func TestExecutorReplacesExistingProtectionWhenCentralTargetsChange(t *testing.T) {
+	store := &fakeStore{}
+	instance := bot.Instance{ID: "bot-1", UserID: "user-1", ExchangeAccountID: "account-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "ETHUSDT"}
+	instance.Configuration = map[string]any{"stopLossBps": float64(200), "takeProfitBps": float64(200)}
+	prefix := botClientPrefix(instance.ID)
+	exchange := &fakeExecution{
+		positions: []domain.Position{{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.01", EntryPrice: "2500", MarkPrice: "2520", Leverage: "5"}},
+		orders: []domain.Order{
+			{ExchangeOrderID: "algo-stop", ClientOrderID: prefix + "stop", Symbol: "ETHUSDT", Type: domain.OrderStopMarket, Quantity: "0.01", StopPrice: "2425"},
+			{ExchangeOrderID: "algo-take", ClientOrderID: prefix + "take", Symbol: "ETHUSDT", Type: domain.OrderTakeProfitMarket, Quantity: "0.01", StopPrice: "2575"},
+		},
+	}
+	decision := bot.Decision{HypotheticalOrder: map[string]any{"side": "BUY", "quantity": "0.01", "stopLoss": "2450", "takeProfit": "2550", "leverage": 5}}
+	if err := (&Executor{store: store, execution: exchange}).Execute(t.Context(), instance, decision, 50, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if len(exchange.cancels) != 2 || len(exchange.commands) != 2 {
+		t.Fatalf("old protection was not replaced: cancels=%d commands=%#v", len(exchange.cancels), exchange.commands)
+	}
+	if exchange.commands[0].StopPrice != "2450.00" || exchange.commands[1].StopPrice != "2550.00" {
+		t.Fatalf("replacement targets are incorrect: %#v", exchange.commands)
 	}
 }
 

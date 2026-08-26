@@ -71,10 +71,11 @@ describe('autonomous Futures universe', () => {
   });
 
   it('replaces stale PAPER flags with an explicit protected TESTNET trend-grid profile', () => {
-    const result = testnetExecutionConfiguration({ paperAlwaysInMarket: true, paperTrainingMode: true, pyramidingEnabled: false, stopLossBps: 2000, takeProfitBps: 3000 }, 9, { allocationUsdt: 500, minimumInitialMarginUsdt: 100 });
+    const result = testnetExecutionConfiguration({ paperAlwaysInMarket: true, paperTrainingMode: true, pyramidingEnabled: false, stopLossBps: 2000, takeProfitBps: 3000 }, 9, { allocationUsdt: 500, minimumInitialMarginUsdt: 100, stopLossBps: 200, takeProfitBps: 250 });
     expect(result).toMatchObject({ paperAlwaysInMarket: false, paperTrainingMode: false, testnetExecutionProfile: true,
       testnetContinuousExecution: true, testnetTrendGridEnabled: true, testnetGridStepBps: TESTNET_TREND_GRID_STEP_BPS,
-      leverage: 9, marginMode: 'ISOLATED', allocationUsdt: 500, minimumInitialMarginUsdt: 100, testnetMarginAllocationMode: true, pyramidingEnabled: true, takeProfitBps: TESTNET_MIN_TAKE_PROFIT_BPS,
+      leverage: 9, marginMode: 'ISOLATED', allocationUsdt: 500, minimumInitialMarginUsdt: 100, testnetMarginAllocationMode: true, pyramidingEnabled: true,
+      stopLossBps: 200, takeProfitBps: 250, minimumTakeProfitBps: 250, adaptiveStopMaxBps: 200, fixedTestnetProtectionTargets: true,
       testnetTransitionRegimeEnabled: true, testnetTransitionMinConfirmedTimeframes: TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES, testnetTransitionMinAtrBps: TESTNET_TRANSITION_MIN_ATR_BPS,
       analysisTimeframes: ['15m', '1h'], directionWindowsHours: [24, 48] });
   });

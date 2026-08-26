@@ -4,7 +4,7 @@ import { env } from '../../config/env.js';
 import { prisma } from '../../database/prisma.js';
 import { uploadImage } from '../../storage/r2-image.js';
 import { logger } from '../../utils/logger.js';
-import { applyExternalRetention, titleFingerprint } from './news.service.js';
+import { titleFingerprint } from './news.service.js';
 import { ApiNewsProvider } from './sources/api-news-provider.js';
 import type { NewsProvider, NormalizedNewsItem } from './sources/news-provider.js';
 import { RssNewsProvider } from './sources/rss-news-provider.js';
@@ -85,5 +85,5 @@ async function syncSource(source: NewsSource) {
   catch (error) { const message = error instanceof Error ? error.message.slice(0, 500) : 'Unknown source error'; const failures = source.failureCount + 1; await prisma.newsSource.update({ where: { id: source.id }, data: { lastFetchedAt: new Date(), lastError: message, failureCount: failures, nextFetchAt: new Date(Date.now() + retryDelay(failures) * 60_000) } }); logger.warn({ source: source.slug, err: message }, 'news source sync failed'); }
 }
 
-export async function runNewsSync() { await markWorkerStarted(); try { const now = new Date(); const sources = await prisma.newsSource.findMany({ where: { isActive: true, isTrusted: true, commercialUseAllowed: true, excerptAllowed: true, lastTermsCheckedAt: { not: null }, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] }, orderBy: [{ priority: 'asc' }, { nextFetchAt: 'asc' }] }); const sourceResults = await Promise.allSettled(sources.map(syncSource)); const rejected = sourceResults.find((result): result is PromiseRejectedResult => result.status === 'rejected'); if (rejected) await markWorkerError(rejected.reason); await retryNewsImages(); if (env.NEWS_AI_AUTO_PROCESS) await runNewsLocalizationBatch(); await applyExternalRetention(); await markWorkerSucceeded(); } catch (error) { await markWorkerError(error); throw error; } }
+export async function runNewsSync() { await markWorkerStarted(); try { const now = new Date(); const sources = await prisma.newsSource.findMany({ where: { isActive: true, isTrusted: true, commercialUseAllowed: true, excerptAllowed: true, lastTermsCheckedAt: { not: null }, OR: [{ nextFetchAt: null }, { nextFetchAt: { lte: now } }] }, orderBy: [{ priority: 'asc' }, { nextFetchAt: 'asc' }] }); const sourceResults = await Promise.allSettled(sources.map(syncSource)); const rejected = sourceResults.find((result): result is PromiseRejectedResult => result.status === 'rejected'); if (rejected) await markWorkerError(rejected.reason); await retryNewsImages(); if (env.NEWS_AI_AUTO_PROCESS) await runNewsLocalizationBatch(); await markWorkerSucceeded(); } catch (error) { await markWorkerError(error); throw error; } }
 export function scheduleNewsSync() { const timer = setInterval(() => { void runNewsSync().catch((error) => logger.error({ err: error }, 'news sync scheduler failed')); }, 60_000); timer.unref(); void runNewsSync().catch((error) => logger.error({ err: error }, 'initial news sync failed')); return () => clearInterval(timer); }

@@ -77,6 +77,10 @@ export function testnetExecutionConfiguration(value: Prisma.JsonValue, leverage:
   const source = configuration(value, leverage);
   const configuredThreshold = Number(source.signalThresholdBps);
   const configuredMinimumMargin = Number(extra.minimumInitialMarginUsdt ?? source.minimumInitialMarginUsdt);
+  const configuredStop = Number(extra.stopLossBps ?? source.stopLossBps);
+  const configuredTarget = Number(extra.takeProfitBps ?? source.takeProfitBps);
+  const stopLossBps = Number.isFinite(configuredStop) && configuredStop >= 50 && configuredStop <= TESTNET_MAX_ADAPTIVE_STOP_BPS ? configuredStop : TESTNET_MAX_ADAPTIVE_STOP_BPS;
+  const takeProfitBps = Number.isFinite(configuredTarget) && configuredTarget >= 50 && configuredTarget <= 5_000 ? configuredTarget : TESTNET_MIN_TAKE_PROFIT_BPS;
   return {
     ...source, ...extra,
     paperTrainingMode: false,
@@ -92,14 +96,15 @@ export function testnetExecutionConfiguration(value: Prisma.JsonValue, leverage:
     analysisTimeframes: ['15m', '1h'],
     directionWindowsHours: [24, 48],
     signalThresholdBps: Number.isFinite(configuredThreshold) ? Math.min(configuredThreshold, 10) : 10,
-    stopLossBps: TESTNET_MAX_ADAPTIVE_STOP_BPS,
-    takeProfitBps: TESTNET_MIN_TAKE_PROFIT_BPS,
-    minimumTakeProfitBps: TESTNET_MIN_TAKE_PROFIT_BPS,
+    stopLossBps,
+    takeProfitBps,
+    minimumTakeProfitBps: takeProfitBps,
     minimumInitialMarginUsdt: Number.isFinite(configuredMinimumMargin) && configuredMinimumMargin > 0 ? configuredMinimumMargin : TESTNET_DEFAULT_MIN_INITIAL_MARGIN_USDT,
     testnetMarginAllocationMode: true,
     testnetMaxRiskPerTradePct: 0.20,
-    adaptiveStopMinBps: 75,
-    adaptiveStopMaxBps: TESTNET_MAX_ADAPTIVE_STOP_BPS,
+    adaptiveStopMinBps: Math.min(75, stopLossBps),
+    adaptiveStopMaxBps: stopLossBps,
+    fixedTestnetProtectionTargets: true,
     riskRewardRatio: 1.5,
     pyramidingEnabled: true,
   };
@@ -252,7 +257,12 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       const bot = demo[index]!;
       const leverage = fleetLeverage(index, demo.length, leverageMinimum, leverageMaximum);
       const allocation = testnetFleetAllocation;
-      const testnetSizing = { allocationUsdt: allocation, minimumInitialMarginUsdt: testnetMinimumMargin, leverageMin: leverageMinimum, leverageMax: leverageMaximum };
+      const testnetSizing = {
+        allocationUsdt: allocation, minimumInitialMarginUsdt: testnetMinimumMargin,
+        leverageMin: leverageMinimum, leverageMax: leverageMaximum,
+        stopLossBps: account.riskProfile.testnetStopLossBps,
+        takeProfitBps: account.riskProfile.testnetTakeProfitBps,
+      };
       if (schedulerLeaseActive(bot.schedulerOwner, bot.leaseExpiresAt, now)) {
         updates.push(prisma.tradingBot.updateMany({ where: { id: bot.id, mode: 'DEMO' }, data: {
           intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS,

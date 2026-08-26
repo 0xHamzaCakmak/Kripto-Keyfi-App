@@ -7,7 +7,8 @@ import type { ExchangeOrder, ExchangePosition, ExchangeTrade } from '../trading/
 import { getTradingEngineSnapshot } from '../trading/trading-engine.client.js';
 import { autonomousDTO } from './autonomous-admin.service.js';
 
-const CACHE_MS = 15_000;
+const OPERATIONS_CACHE_MS = 60_000;
+const ACCOUNT_SUMMARY_CACHE_MS = 15_000;
 type Cached = { expiresAt: number; value: Awaited<ReturnType<typeof loadOperations>> };
 const cache = new Map<string, Cached>();
 const inFlight = new Map<string, Promise<Awaited<ReturnType<typeof loadOperations>>>>();
@@ -32,7 +33,7 @@ export async function getTestnetAccountSummary(userId: string) {
   // exchange's historical-trades endpoint is temporarily unavailable.
   const operations = await cachedOperations(userId).catch(() => []);
   const value = await loadAccountSummary(userId, operations);
-  accountSummaryCache.set(userId, { expiresAt: Date.now() + CACHE_MS, value });
+  accountSummaryCache.set(userId, { expiresAt: Date.now() + ACCOUNT_SUMMARY_CACHE_MS, value });
   return autonomousDTO('TESTNET_ACCOUNT_SUMMARY', value);
 }
 
@@ -72,7 +73,7 @@ async function cachedOperations(userId: string) {
   if (pending) return pending;
   const refresh = loadOperations(userId)
     .then((value) => {
-      cache.set(userId, { expiresAt: Date.now() + CACHE_MS, value });
+      cache.set(userId, { expiresAt: Date.now() + OPERATIONS_CACHE_MS, value });
       return value;
     })
     .finally(() => { inFlight.delete(userId); });

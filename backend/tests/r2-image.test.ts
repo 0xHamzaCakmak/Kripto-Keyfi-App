@@ -10,6 +10,9 @@ vi.mock('@aws-sdk/client-s3', () => ({
   PutObjectCommand: class {
     constructor(public readonly input: Record<string, unknown>) {}
   },
+  DeleteObjectCommand: class {
+    constructor(public readonly input: Record<string, unknown>) {}
+  },
 }));
 
 vi.mock('../src/config/env.js', () => ({
@@ -22,7 +25,7 @@ vi.mock('../src/config/env.js', () => ({
   },
 }));
 
-import { MAX_IMAGE_BYTES, R2ImageError, uploadImage } from '../src/storage/r2-image.js';
+import { deleteImageByPublicUrl, MAX_IMAGE_BYTES, R2ImageError, uploadImage } from '../src/storage/r2-image.js';
 
 describe('R2 image upload', () => {
   beforeEach(() => aws.send.mockResolvedValue({}));
@@ -77,5 +80,14 @@ describe('R2 image upload', () => {
   it('rejects unsafe or non-WebP object paths', async () => {
     await expect(uploadImage(Buffer.from('x'), '../image.webp')).rejects.toBeInstanceOf(R2ImageError);
     await expect(uploadImage(Buffer.from('x'), 'haberler/image.jpg')).rejects.toThrow('must end with .webp');
+  });
+
+  it('deletes only images hosted by the configured R2 public URL', async () => {
+    await expect(deleteImageByPublicUrl('https://source.example/haberler/foreign.webp')).resolves.toBe(false);
+    expect(aws.send).not.toHaveBeenCalled();
+
+    await expect(deleteImageByPublicUrl('https://media.example.com/haberler/old-news.webp')).resolves.toBe(true);
+    const command = aws.send.mock.calls[0]?.[0] as { input: { Bucket: string; Key: string } };
+    expect(command.input).toEqual({ Bucket: 'images', Key: 'haberler/old-news.webp' });
   });
 });

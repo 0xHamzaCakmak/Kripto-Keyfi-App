@@ -115,7 +115,14 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		return e.store.MarkAutonomousExecution(ctx, decisionID, false, "exchange position closed outside this execution cycle; waiting for a fresh 15m market signal")
 	}
 	if current != nil {
-		if !positionProtectionComplete(*current, openOrders, botClientPrefix(instance.ID)) {
+		handled, protectionErr := e.closeReachedProtection(ctx, instance, decisionID, *current, openOrders, reference, now)
+		if protectionErr != nil {
+			return protectionErr
+		}
+		if handled {
+			return nil
+		}
+		if !positionProtectionComplete(*current, openOrders, botClientPrefix(instance.ID), instance.Configuration) {
 			return e.ensurePositionProtection(ctx, instance, decisionID, *current, openOrders, reference, now)
 		}
 		if manualLimitClosePending(openOrders, instance.Symbol) {
@@ -254,6 +261,47 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		return err
 	}
 	return nil
+}
+
+// Binance conditional orders are the primary protection mechanism. This
+// read-only comparison is a fail-safe for delayed/missed TESTNET triggers: it
+// sends one idempotent reduce-only close only after the configured boundary is
+// already crossed, then removes the stale conditional orders.
+func (e *Executor) closeReachedProtection(ctx context.Context, instance bot.Instance, decisionID int64, position domain.Position, orders []domain.Order, reference domain.ExchangeAccountRef, now time.Time) (bool, error) {
+	stop, take, err := testnetProtectionPrices(instance.Configuration, position)
+	if err != nil {
+		return false, err
+	}
+	reason, reached := reachedProtection(position, stop, take)
+	if !reached {
+		return false, nil
+	}
+	exitSide := domain.SideBuy
+	if position.Side == domain.PositionLong {
+		exitSide = domain.SideSell
+	}
+	leverage := 1
+	if parsed, parseErr := strconv.Atoi(string(position.Leverage)); parseErr == nil && parsed > 0 {
+		leverage = parsed
+	}
+	closeOrder, closeCommand := build(instance, decisionID, "exit", exitSide, domain.OrderMarket, position.Quantity, "", true, leverage, now, reference)
+	if err := e.store.CreateAutonomousOrder(ctx, instance, closeOrder, now); err != nil {
+		return false, fmt.Errorf("persist reached TESTNET protection exit: %w", err)
+	}
+	placed, _, err := e.execution.Place(ctx, closeCommand)
+	if err != nil {
+		return false, fmt.Errorf("close reached TESTNET protection: %w", err)
+	}
+	if placed.Status != domain.OrderFilled && placed.Status != domain.OrderPartiallyFilled {
+		return false, errors.New("reached TESTNET protection exit was not filled")
+	}
+	if err := e.cancelStaleProtectives(ctx, instance, decisionID, orders, reference, now.Add(time.Millisecond)); err != nil {
+		return false, fmt.Errorf("position closed at %s but stale protection cleanup failed: %w", reason, err)
+	}
+	if err := e.store.MarkAutonomousExecution(ctx, decisionID, true, "existing TESTNET position closed because "+reason+" was already reached"); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (e *Executor) lockFor(key string) *sync.Mutex {
@@ -414,6 +462,10 @@ func (e *Executor) rollbackPyramidAddition(ctx context.Context, instance bot.Ins
 }
 
 func (e *Executor) ensurePositionProtection(ctx context.Context, instance bot.Instance, decisionID int64, position domain.Position, orders []domain.Order, reference domain.ExchangeAccountRef, now time.Time) error {
+	stop, take, err := testnetProtectionPrices(instance.Configuration, position)
+	if err != nil {
+		return err
+	}
 	hasStop, hasTake := false, false
 	relevant, mismatched := 0, false
 	prefix := botClientPrefix(instance.ID)
@@ -425,18 +477,20 @@ func (e *Executor) ensurePositionProtection(ctx context.Context, instance bot.In
 			continue
 		}
 		relevant++
-		if !decimalEqual(string(order.Quantity), string(position.Quantity)) {
+		expectedTrigger := stop
+		if order.Type == domain.OrderTakeProfitMarket {
+			expectedTrigger = take
+		}
+		orderMatches := decimalEqual(string(order.Quantity), string(position.Quantity)) &&
+			(order.StopPrice == "" || protectionTriggerMatches(string(order.StopPrice), expectedTrigger, string(position.EntryPrice)))
+		if !orderMatches {
 			mismatched = true
 		}
-		hasStop = hasStop || (order.Type == domain.OrderStopMarket && !mismatched)
-		hasTake = hasTake || (order.Type == domain.OrderTakeProfitMarket && !mismatched)
+		hasStop = hasStop || (order.Type == domain.OrderStopMarket && orderMatches)
+		hasTake = hasTake || (order.Type == domain.OrderTakeProfitMarket && orderMatches)
 	}
 	if hasStop && hasTake && relevant == 2 && !mismatched {
 		return nil
-	}
-	stop, take, err := testnetProtectionPrices(instance.Configuration, position)
-	if err != nil {
-		return err
 	}
 	exitSide := domain.SideBuy
 	if position.Side == domain.PositionLong {
@@ -494,7 +548,11 @@ func (e *Executor) ensurePositionProtection(ctx context.Context, instance bot.In
 	return e.store.MarkAutonomousExecution(ctx, decisionID, true, "missing TESTNET position protection repaired")
 }
 
-func positionProtectionComplete(position domain.Position, orders []domain.Order, prefix string) bool {
+func positionProtectionComplete(position domain.Position, orders []domain.Order, prefix string, configuration map[string]any) bool {
+	stopPrice, takePrice, err := testnetProtectionPrices(configuration, position)
+	if err != nil {
+		return false
+	}
 	stop, take, relevant := 0, 0, 0
 	for _, order := range orders {
 		if order.Symbol != position.Symbol || !strings.HasPrefix(order.ClientOrderID, prefix) || (order.Type != domain.OrderStopMarket && order.Type != domain.OrderTakeProfitMarket) {
@@ -505,12 +563,34 @@ func positionProtectionComplete(position domain.Position, orders []domain.Order,
 			return false
 		}
 		if order.Type == domain.OrderStopMarket {
+			if order.StopPrice != "" && !protectionTriggerMatches(string(order.StopPrice), stopPrice, string(position.EntryPrice)) {
+				return false
+			}
 			stop++
 		} else {
+			if order.StopPrice != "" && !protectionTriggerMatches(string(order.StopPrice), takePrice, string(position.EntryPrice)) {
+				return false
+			}
 			take++
 		}
 	}
 	return relevant == 2 && stop == 1 && take == 1
+}
+
+// One basis point tolerance absorbs exchange tick-size rounding without
+// treating an old protection target as current configuration.
+func protectionTriggerMatches(actualText, expectedText, entryText string) bool {
+	actual, actualOK := new(big.Rat).SetString(actualText)
+	expected, expectedOK := new(big.Rat).SetString(expectedText)
+	entry, entryOK := new(big.Rat).SetString(entryText)
+	if !actualOK || !expectedOK || !entryOK || entry.Sign() <= 0 {
+		return false
+	}
+	difference := new(big.Rat).Sub(actual, expected)
+	if difference.Sign() < 0 {
+		difference.Neg(difference)
+	}
+	return new(big.Rat).Mul(difference, big.NewRat(10_000, 1)).Cmp(entry) <= 0
 }
 
 func samePositionDirection(position domain.Position, side domain.OrderSide) bool {

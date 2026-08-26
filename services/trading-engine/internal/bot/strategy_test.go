@@ -231,6 +231,22 @@ func TestExplicitTestnetProfileTurnsHoldIntoProtectedTrendGridCandidate(t *testi
 	}
 }
 
+func TestExplicitTestnetProfileUsesAdminFixedProtectionTargets(t *testing.T) {
+	instance := autonomousMomentumInstance("DEMO")
+	instance.Configuration["testnetExecutionProfile"] = true
+	instance.Configuration["testnetMarginAllocationMode"] = true
+	instance.Configuration["fixedTestnetProtectionTargets"] = true
+	instance.Configuration["stopLossBps"] = float64(200)
+	instance.Configuration["takeProfitBps"] = float64(250)
+	result, err := EvaluateStrategyWithMarket(instance, "209.5", "209", trendingSnapshot(1))
+	if err != nil || result.HypotheticalOrder == nil {
+		t.Fatalf("fixed TESTNET protection plan failed: %#v err=%v", result, err)
+	}
+	if result.HypotheticalOrder["stopLossBps"] != float64(200) || result.HypotheticalOrder["takeProfitBps"] != float64(250) {
+		t.Fatalf("admin protection targets were not preserved: %#v", result.HypotheticalOrder)
+	}
+}
+
 func TestTestnetContinuousMarketConfirmationAcceptsOnlyGuardedTransition(t *testing.T) {
 	configuration := map[string]any{
 		"testnetTransitionRegimeEnabled":          true,

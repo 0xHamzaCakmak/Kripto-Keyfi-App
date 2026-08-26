@@ -19,6 +19,7 @@ BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-}"
 ENGINE_HEALTH_URL="${ENGINE_HEALTH_URL:-http://127.0.0.1:8081/health/ready}"
 ENGINE_STATUS_URL="${ENGINE_STATUS_URL:-http://127.0.0.1:8081/internal/v1/status}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/kriptokeyfi}"
+BACKUP_RETENTION_COUNT="${BACKUP_RETENTION_COUNT:-1}"
 MAINTENANCE_RESUME_MINUTES="${MAINTENANCE_RESUME_MINUTES:-180}"
 ENABLE_PM2_STARTUP="${ENABLE_PM2_STARTUP:-true}"
 PM2_RUNTIME_USER="${PM2_RUNTIME_USER:-$(id -un)}"
@@ -223,10 +224,20 @@ validate_and_build() {
 backup_database() {
   step "5/13 Veritabani yedegi aliniyor"
   require_command mysqldump
+  require_command gzip
+  if [ -z "$BACKUP_DIR" ] || [ "$BACKUP_DIR" = "/" ]; then
+    printf 'Guvenli olmayan BACKUP_DIR reddedildi: %s\n' "$BACKUP_DIR" >&2
+    exit 1
+  fi
+  if ! [[ "$BACKUP_RETENTION_COUNT" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'BACKUP_RETENTION_COUNT pozitif bir tam sayi olmalidir.\n' >&2
+    exit 1
+  fi
   mkdir -p "$BACKUP_DIR"
   chmod 0700 "$BACKUP_DIR"
 
-  local db_host db_port db_user db_password db_name defaults_file backup_file
+  local db_host db_port db_user db_password db_name defaults_file backup_file remove_count index
+  local -a backup_files
   db_host="$(node -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.hostname)' )"
   db_port="$(node -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.port || "3306")' )"
   db_user="$(node -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.username))' )"
@@ -241,8 +252,8 @@ backup_database() {
   chmod 0600 "$defaults_file"
   printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n' \
     "$db_host" "$db_port" "$db_user" "$db_password" > "$defaults_file"
-  backup_file="$BACKUP_DIR/${db_name}_$(date '+%Y%m%d_%H%M%S').sql"
-  if ! mysqldump --defaults-extra-file="$defaults_file" --single-transaction --routines --triggers --no-tablespaces "$db_name" > "$backup_file"; then
+  backup_file="$BACKUP_DIR/${db_name}_$(date '+%Y%m%d_%H%M%S').sql.gz"
+  if ! mysqldump --defaults-extra-file="$defaults_file" --single-transaction --routines --triggers --no-tablespaces "$db_name" | gzip -9 > "$backup_file"; then
     rm -f "$defaults_file" "$backup_file"
     return 1
   fi
@@ -250,6 +261,15 @@ backup_database() {
   chmod 0600 "$backup_file"
   test -s "$backup_file"
   log "Veritabani yedegi olusturuldu: $backup_file"
+
+  mapfile -d '' -t backup_files < <(find "$BACKUP_DIR" -maxdepth 1 -type f \( -name "${db_name}_*.sql" -o -name "${db_name}_*.sql.gz" \) -print0 | sort -z)
+  remove_count=$((${#backup_files[@]} - BACKUP_RETENTION_COUNT))
+  if [ "$remove_count" -gt 0 ]; then
+    for ((index = 0; index < remove_count; index += 1)); do
+      rm -f -- "${backup_files[$index]}"
+    done
+    log "Eski veritabani yedekleri temizlendi; son $BACKUP_RETENTION_COUNT yedek tutuluyor."
+  fi
 }
 
 pause_testnet_fleet() {

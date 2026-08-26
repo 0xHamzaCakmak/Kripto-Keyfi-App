@@ -176,6 +176,7 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 	maximumBps := configNumberOr(instance.Configuration, "adaptiveStopMaxBps", 300)
 	riskReward := configNumberOr(instance.Configuration, "riskRewardRatio", 1.5)
 	minimumTakeProfitBps := float64(0)
+	fixedTestnetProtection := false
 	maintenanceMarginBps := configNumberOr(instance.Configuration, "maintenanceMarginBps", 50)
 	liquidationReserveFraction := configNumberOr(instance.Configuration, "liquidationReserveFraction", 0.20)
 	if instance.Mode == "PAPER" {
@@ -197,7 +198,16 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 		minimumBps = math.Min(minimumBps, maximumBps)
 	}
 	if instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetExecutionProfile") {
-		minimumTakeProfitBps = math.Max(configNumberOr(instance.Configuration, "minimumTakeProfitBps", 300), 300)
+		configuredStopBps := configNumberOr(instance.Configuration, "stopLossBps", 300)
+		configuredTakeBps := configNumberOr(instance.Configuration, "takeProfitBps", 300)
+		if booleanConfig(instance.Configuration, "fixedTestnetProtectionTargets") {
+			minimumBps = configuredStopBps
+			maximumBps = configuredStopBps
+			minimumTakeProfitBps = configuredTakeBps
+			fixedTestnetProtection = true
+		} else {
+			minimumTakeProfitBps = math.Max(configNumberOr(instance.Configuration, "minimumTakeProfitBps", 300), 300)
+		}
 		minimumMargin := math.Max(0.01, configNumberOr(instance.Configuration, "minimumInitialMarginUsdt", 20))
 		if minimumMargin > allocation {
 			return errors.New("TESTNET minimum initial margin is outside the bot allocation")
@@ -223,7 +233,9 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 		}
 	}
 	takeBps := stopBps * riskReward
-	if instance.Mode == "PAPER" || (instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetExecutionProfile")) {
+	if fixedTestnetProtection {
+		takeBps = minimumTakeProfitBps
+	} else if instance.Mode == "PAPER" || (instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetExecutionProfile")) {
 		takeBps = math.Max(takeBps, minimumTakeProfitBps)
 	}
 	stop, take, err := protectionPrices(markPrice, side, stopBps, takeBps)

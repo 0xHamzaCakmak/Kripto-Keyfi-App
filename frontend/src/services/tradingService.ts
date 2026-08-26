@@ -32,6 +32,7 @@ export type OpenPosition = {
 export type TradingExecutionProfile = {
   minLeverage: number; maxLeverage: number; botAllocationUsdt: string; minInitialMarginUsdt: string;
   maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string;
+  stopLossBps: number; takeProfitBps: number; maxOrdersPerMinute: number;
 };
 export type TradingBotState = 'DRAFT' | 'VALIDATING' | 'STARTING' | 'RUNNING' | 'PAUSED' | 'STOPPED' | 'RISK_BLOCKED' | 'RECONCILING' | 'EMERGENCY_STOPPED' | 'ERROR';
 export type TradingBot = {

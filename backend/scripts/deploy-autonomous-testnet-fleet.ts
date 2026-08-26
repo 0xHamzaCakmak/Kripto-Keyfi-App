@@ -4,7 +4,7 @@ import { prisma } from '../src/database/prisma.js';
 const CONFIRMATION = 'ENABLE_BINANCE_TESTNET_FLEET';
 const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'BCHUSDT', 'LINKUSDT', 'AVAXUSDT', 'LTCUSDT', 'DOTUSDT', 'SUIUSDT', 'UNIUSDT', 'AAVEUSDT', 'NEARUSDT', 'ETCUSDT', 'XLMUSDT', 'PUMPUSDT'] as const;
 
-function configuration(value: Prisma.JsonValue, index: number): Prisma.InputJsonObject {
+function configuration(value: Prisma.JsonValue, index: number, stopLossBps: number, takeProfitBps: number): Prisma.InputJsonObject {
   const source = value && !Array.isArray(value) && typeof value === 'object' ? value as Prisma.JsonObject : {};
   const candidate = Number(source.allocationUsdt);
   const allocationUsdt = Number.isFinite(candidate) && candidate >= 10 && candidate <= 10_000 ? candidate : 100;
@@ -12,12 +12,14 @@ function configuration(value: Prisma.JsonValue, index: number): Prisma.InputJson
     ...source,
     signalThresholdBps: 5 + (index % 5) * 5,
     side: 'BOTH', leverage: 5 + Math.round(index * 15 / (SYMBOLS.length - 1)), marginMode: 'ISOLATED',
-    stopLossBps: 75,
-    takeProfitBps: 125,
+    stopLossBps,
+    takeProfitBps,
+    minimumTakeProfitBps: takeProfitBps,
+    fixedTestnetProtectionTargets: true,
     fixedRiskPct: 0.0075,
     atrStopMultiplier: 1.5,
-    adaptiveStopMinBps: 75,
-    adaptiveStopMaxBps: 300,
+    adaptiveStopMinBps: Math.min(75, stopLossBps),
+    adaptiveStopMaxBps: stopLossBps,
     riskRewardRatio: 1.5,
     maintenanceMarginBps: 50,
     liquidationReserveFraction: 0.2,
@@ -64,8 +66,8 @@ async function main() {
       maxOpenPositions: 20,
       maxAccountOpenNotional: Math.max(riskProfile.maxAccountOpenNotional.toNumber(), fleetAllocation).toFixed(2),
       maxLeverage: 20,
-      maxOrdersPerMinute: 1000,
-      maxDailyOrders: 100_000,
+      maxOrdersPerMinute: 60,
+      maxDailyOrders: 5_000,
       cooldownSeconds: 0,
       allowedSymbols: [...SYMBOLS],
     } });
@@ -74,8 +76,8 @@ async function main() {
       const symbol = SYMBOLS[index]!;
       const data = {
         exchangeAccountId: account.id, mode: 'DEMO' as const,
-        state: 'STARTING' as const, desiredState: 'RUNNING' as const, symbol, intervalSeconds: 15,
-        configuration: configuration(source.configuration, index), stateReason: 'Explicit 20-bot Binance TESTNET fleet deployment.',
+        state: 'STARTING' as const, desiredState: 'RUNNING' as const, symbol, intervalSeconds: 60,
+        configuration: configuration(source.configuration, index, riskProfile.testnetStopLossBps, riskProfile.testnetTakeProfitBps), stateReason: 'Explicit 20-bot Binance TESTNET fleet deployment.',
         schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null, lastErrorCode: null, lastErrorMessage: null,
         strategyVersionId: source.strategyVersionId,
         riskProfileId: account.riskProfile!.id, lifecycleStatus: 'PAPER' as const,
