@@ -180,15 +180,80 @@ function BalanceGroups({ provider, balances, loading, error }: { provider: Provi
       ]
     : [{ type: 'UNIFIED', title: 'Unified Hesap', subtitle: 'Birleşik işlem bakiyeleri' }];
 
-  return <div className={`mt-5 grid gap-4 ${groups.length > 1 ? 'xl:grid-cols-2' : ''}`}>
-    {groups.map((group) => {
-      const rows = balances.filter((balance) => balance.walletType === group.type);
-      return <section key={group.type} className="min-w-0 overflow-hidden rounded-2xl border border-outline/10 bg-background/35 p-3 sm:p-4">
-        <div className="mb-4"><h3 className="text-base font-black text-white">{group.title}</h3><p className="mt-0.5 text-[11px] text-outline">{group.subtitle}</p></div>
-        {loading ? <BalanceTableLoading/> : error ? <div className="rounded-xl border border-error/20 bg-error/10 p-3 text-xs leading-5 text-error">{error}</div> : group.type === 'SPOT' ? <SpotBalanceTable rows={rows}/> : <TradingBalanceTable rows={rows}/>} 
-      </section>;
-    })}
+  return <>
+    <StablecoinPnlSummary provider={provider} balances={balances} loading={loading} error={error}/>
+    <div className={`mt-4 grid gap-4 ${groups.length > 1 ? 'xl:grid-cols-2' : ''}`}>
+      {groups.map((group) => {
+        const rows = balances.filter((balance) => balance.walletType === group.type);
+        return <section key={group.type} className="min-w-0 overflow-hidden rounded-2xl border border-outline/10 bg-background/35 p-3 sm:p-4">
+          <div className="mb-4"><h3 className="text-base font-black text-white">{group.title}</h3><p className="mt-0.5 text-[11px] text-outline">{group.subtitle}</p></div>
+          {loading ? <BalanceTableLoading/> : error ? <div className="rounded-xl border border-error/20 bg-error/10 p-3 text-xs leading-5 text-error">{error}</div> : group.type === 'SPOT' ? <SpotBalanceTable rows={rows}/> : <TradingBalanceTable rows={rows}/>}
+        </section>;
+      })}
+    </div>
+  </>;
+}
+
+const INITIAL_STABLECOIN_BALANCE = { USDT: 5_000, USDC: 5_000 } as const;
+
+function StablecoinPnlSummary({ provider, balances, loading, error }: { provider: Provider; balances: Balance[]; loading: boolean; error: string | undefined }) {
+  if (loading) return <div className="mt-5 h-24 animate-pulse rounded-2xl bg-surface-high/70"/>;
+  if (error) return null;
+
+  // Trading capital lives in Futures/Unified. Spot assets such as BTC and TRX
+  // are deliberately excluded, and Spot stablecoins are only a fallback when
+  // the selected demo account has no trading-wallet rows.
+  const preferredWallet: WalletType = provider === 'BINANCE' ? 'USD_M_FUTURES' : 'UNIFIED';
+  const preferredRows = balances.filter((balance) => balance.walletType === preferredWallet);
+  const sourceRows = preferredRows.length > 0 ? preferredRows : balances.filter((balance) => balance.walletType === 'SPOT');
+  const current = {
+    USDT: stablecoinWalletBalance(sourceRows, 'USDT'),
+    USDC: stablecoinWalletBalance(sourceRows, 'USDC'),
+  };
+  if (current.USDT === null && current.USDC === null) return null;
+
+  const usdt = current.USDT ?? 0;
+  const usdc = current.USDC ?? 0;
+  const usdtPnl = usdt - INITIAL_STABLECOIN_BALANCE.USDT;
+  const usdcPnl = usdc - INITIAL_STABLECOIN_BALANCE.USDC;
+  const totalPnl = usdtPnl + usdcPnl;
+  const currentTotal = usdt + usdc;
+
+  return <section className="mt-5 rounded-2xl border border-primary/20 bg-primary/[0.04] p-4">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div><h3 className="text-sm font-black text-white">Demo sermaye K/Z</h3><p className="mt-1 text-[10px] leading-4 text-outline">Yalnızca {preferredWallet === 'USD_M_FUTURES' ? 'Futures' : 'Unified'} USDT + USDC · Başlangıç 10.000,00 USD</p></div>
+      <p className="text-xs text-on-surface-variant">Mevcut: <span className="font-black tabular-nums text-white">{formatUsd(currentTotal)}</span></p>
+    </div>
+    <dl className="mt-4 grid gap-2 sm:grid-cols-3">
+      <PnlValue label="K/Z USDT" value={usdtPnl}/>
+      <PnlValue label="K/Z USDC" value={usdcPnl}/>
+      <PnlValue label="Toplam K/Z" value={totalPnl} emphasized/>
+    </dl>
+  </section>;
+}
+
+function stablecoinWalletBalance(rows: Balance[], asset: 'USDT' | 'USDC') {
+  const row = rows.find((balance) => balance.asset === asset);
+  if (!row) return null;
+  const value = Number(row.walletBalance);
+  return Number.isFinite(value) ? value : null;
+}
+
+function PnlValue({ label, value, emphasized = false }: { label: string; value: number; emphasized?: boolean }) {
+  const tone = value > 0 ? 'text-secondary' : value < 0 ? 'text-error' : 'text-on-surface';
+  return <div className={`rounded-xl border p-3 ${emphasized ? 'border-primary/25 bg-primary/[0.06]' : 'border-outline/10 bg-background/35'}`}>
+    <dt className="text-[9px] font-black uppercase tracking-wider text-outline">{label}</dt>
+    <dd className={`mt-1 text-base font-black tabular-nums ${tone}`}>{formatSignedUsd(value)}</dd>
   </div>;
+}
+
+function formatUsd(value: number) {
+  return `${new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)} USD`;
+}
+
+function formatSignedUsd(value: number) {
+  const prefix = value > 0 ? '+' : '';
+  return `${prefix}${new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value)} USD`;
 }
 
 function SpotBalanceTable({ rows }: { rows: Balance[] }) {

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
@@ -6,7 +6,7 @@ import { assertPositiveDecimal, compareDecimals, isStepAligned, multiplyDecimals
 import { adapterFor, exchangeCall, ownedAccount, readExchangeState } from './exchange-account.service.js';
 import { ExchangeAdapterError } from './exchanges/exchange-adapter.js';
 import type { ExchangeAdapter } from './exchanges/exchange-adapter.js';
-import type { CancelOrderInput, ClosePositionInput, PreviewOrderInput, SubmitOrderInput } from './manual-trading.schema.js';
+import type { CancelOrderInput, ClosePositionInput, PreviewOrderInput, PublishMentorSignalInput, SubmitOrderInput } from './manual-trading.schema.js';
 import { scheduleShadowComparison } from './shadow-compare.js';
 import { cancelTradingEngineOrder, executeTradingEngineOrder, getTradingEngineSnapshot, previewTradingEngineOrder } from './trading-engine.client.js';
 import { appendTradingEvent } from './trading-events.service.js';
@@ -25,6 +25,17 @@ export async function listSymbols(userId: string, exchangeAccountId: string) {
 
 export async function createOrderPreview(userId: string, input: PreviewOrderInput) {
   const account = await tradingAccount(userId, input.exchangeAccountId);
+  if (account.provider === 'BINANCE' && !input.reduceOnly && !input.symbol.endsWith('USDC')) {
+    throw new ApiError(400, 'Manuel yeni işlemler bot sermayesinden ayrılmak için USDC vadeli paritelerinde açılmalıdır.', 'MANUAL_USDC_REQUIRED');
+  }
+  if (account.provider === 'BINANCE' && !input.reduceOnly) {
+    const botConflict = await prisma.tradingBot.count({
+      where: { userId, exchangeAccountId: account.id, type: 'AUTONOMOUS', mode: 'DEMO', symbol: input.symbol, lifecycleStatus: { not: 'ARCHIVED' } },
+    });
+    if (botConflict > 0) {
+      throw new ApiError(409, 'Bu USDC paritesi aktif bir bot tarafından kullanılıyor. Manuel ve bot pozisyonlarının birleşmemesi için başka bir USDC paritesi seçin.', 'MANUAL_SYMBOL_BOT_CONFLICT');
+    }
+  }
   const goPreview = account.executionEngine === 'GO' ? await previewTradingEngineOrder(account, input) : undefined;
   const adapter = account.executionEngine === 'TYPESCRIPT' ? adapterFor(account) : undefined;
   const symbols = goPreview ? [goPreview.rule] : await exchangeCall(() => adapter!.getSymbols());
@@ -239,6 +250,112 @@ export async function listPositions(userId: string, exchangeAccountId: string) {
   return positions;
 }
 
+export async function listManualMentorPositions(userId: string, exchangeAccountId: string) {
+  const positions = await listPositions(userId, exchangeAccountId);
+  const manualEntries = await prisma.tradingOrder.findMany({
+    where: {
+      userId, exchangeAccountId, source: 'MANUAL', reduceOnly: false,
+      status: { in: ['OPEN', 'PARTIALLY_FILLED', 'FILLED'] },
+      symbol: { in: positions.map((position) => position.symbol) },
+    },
+    orderBy: [{ submittedAt: 'desc' }, { createdAt: 'desc' }],
+    select: { id: true, symbol: true },
+  });
+  const entryBySymbol = new Map<string, string>();
+  for (const entry of manualEntries) if (!entryBySymbol.has(entry.symbol)) entryBySymbol.set(entry.symbol, entry.id);
+  const published = await prisma.tradingAuditLog.findMany({
+    where: { userId, exchangeAccountId, action: 'MANUAL_MENTOR_SIGNAL_PUBLISHED' },
+    orderBy: { createdAt: 'desc' }, take: 500, select: { entityId: true },
+  });
+  const publishedIds = new Set(published.map((item) => item.entityId));
+  return positions.flatMap((position) => {
+    const manualEntryId = entryBySymbol.get(position.symbol);
+    if (!manualEntryId || !position.symbol.endsWith('USDC')) return [];
+    const signalKey = mentorSignalKey(exchangeAccountId, position.positionKey, manualEntryId, position.entryPrice);
+    return [{ ...position, manualEntryId, mentorPublished: publishedIds.has(signalKey), mentorEligible: Number(position.unrealizedPnl) > 0 }];
+  });
+}
+
+export async function publishManualMentorSignal(
+  userId: string,
+  positionKey: string,
+  input: PublishMentorSignalInput,
+  ipAddress?: string,
+) {
+  const account = await tradingAccount(userId, input.exchangeAccountId);
+  const positions = await listManualMentorPositions(userId, input.exchangeAccountId);
+  const position = positions.find((item) => item.positionKey === positionKey);
+  if (!position) throw new ApiError(404, 'Mentor sinyali için eşleşen açık manuel USDC pozisyonu bulunamadı.', 'MANUAL_MENTOR_POSITION_NOT_FOUND');
+  if (Number(position.unrealizedPnl) <= 0) throw new ApiError(409, 'Mentor sinyali yalnızca pozitif PnL gösteren manuel pozisyonlardan gönderilebilir.', 'MANUAL_MENTOR_PROFIT_REQUIRED');
+
+  const signalKey = mentorSignalKey(input.exchangeAccountId, position.positionKey, position.manualEntryId, position.entryPrice);
+  const duplicate = await prisma.tradingAuditLog.findFirst({
+    where: { userId, exchangeAccountId: input.exchangeAccountId, action: 'MANUAL_MENTOR_SIGNAL_PUBLISHED', entityId: signalKey },
+    select: { id: true },
+  });
+  if (duplicate) throw new ApiError(409, 'Bu manuel pozisyon daha önce mentor sinyali olarak gönderildi.', 'MANUAL_MENTOR_ALREADY_PUBLISHED');
+
+  const baseAsset = stablecoinBaseAsset(position.symbol);
+  const regimeSnapshot = await prisma.marketRegimeSnapshot.findFirst({
+    where: { symbol: { in: [position.symbol, `${baseAsset}USDT`, `${baseAsset}USDC`] } },
+    orderBy: [{ observedAt: 'desc' }, { id: 'desc' }],
+    select: { regime: true, confidence: true, timeframe: true, features: true, observedAt: true },
+  });
+  const action = position.side === 'LONG' ? 'BUY' : 'SELL';
+  const evidence = {
+    signalKey,
+    baseAsset,
+    sourceSymbol: position.symbol,
+    action,
+    entryPrice: position.entryPrice,
+    observedPrice: position.markPrice,
+    unrealizedPnl: position.unrealizedPnl,
+    leverage: position.leverage,
+    marginMode: position.marginMode,
+    regime: regimeSnapshot?.regime ?? 'UNKNOWN',
+    regimeConfidence: regimeSnapshot?.confidence.toString() ?? '0',
+    regimeTimeframe: regimeSnapshot?.timeframe ?? null,
+    marketFeatures: regimeSnapshot?.features ?? null,
+    mentorObservedAt: new Date().toISOString(),
+    outcomeState: 'POSITIVE_OPEN_SNAPSHOT',
+    forcesTrade: false,
+  } satisfies Prisma.JsonObject;
+
+  const candidates = await prisma.tradingBot.findMany({
+    where: { userId, exchangeAccountId: input.exchangeAccountId, type: 'AUTONOMOUS', mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' } },
+    select: {
+      id: true, symbol: true, configuration: true,
+      metrics: { orderBy: [{ snapshotAt: 'desc' }, { id: 'desc' }], take: 1, select: { totalTrades: true, wins: true, netPnl: true, score: true } },
+    },
+  });
+  const targeted = candidates.filter((bot) => {
+    if (stablecoinBaseAsset(bot.symbol) !== baseAsset) return false;
+    const metric = bot.metrics[0];
+    if (!metric || metric.totalTrades < 10) return false;
+    const winRate = metric.totalTrades > 0 ? metric.wins / metric.totalTrades : 0;
+    return winRate < 0.5 || metric.netPnl.isNegative() || (metric.score?.toNumber() ?? 100) < 50;
+  });
+  const updates = targeted.map((bot) => {
+    const configuration = bot.configuration && !Array.isArray(bot.configuration) && typeof bot.configuration === 'object'
+      ? { ...(bot.configuration as Prisma.JsonObject) }
+      : {};
+    const previous = Array.isArray(configuration.mentorEvidence)
+      ? configuration.mentorEvidence.filter((item): item is Prisma.JsonObject => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+      : [];
+    configuration.mentorEvidence = [...previous.filter((item) => item.signalKey !== signalKey), evidence].slice(-20);
+    return prisma.tradingBot.update({ where: { id: bot.id }, data: { configuration: configuration as Prisma.InputJsonValue, version: { increment: 1 } } });
+  });
+  await prisma.$transaction([
+    ...updates,
+    prisma.tradingAuditLog.create({ data: {
+      userId, exchangeAccountId: input.exchangeAccountId, action: 'MANUAL_MENTOR_SIGNAL_PUBLISHED', entityType: 'MANUAL_POSITION', entityId: signalKey,
+      metadata: { ...evidence, manualEntryId: position.manualEntryId, targetedBotIds: targeted.map((bot) => bot.id), targetedBotCount: targeted.length, recommendationWeight: 0.2 },
+      ...(ipAddress ? { ipAddress } : {}),
+    } }),
+  ]);
+  return { signalKey, targetedBotCount: targeted.length, action, baseAsset, outcomeState: evidence.outcomeState, forcesTrade: false };
+}
+
 export async function closePosition(userId: string, positionKey: string, input: ClosePositionInput, ipAddress?: string) {
   const account = await tradingAccount(userId, input.exchangeAccountId);
   const positions = await listPositions(userId, input.exchangeAccountId);
@@ -355,6 +472,14 @@ function divideByInteger(value: string, divisor: number): string {
   const quotient = scaled * 100000000n / BigInt(divisor);
   const digits = quotient.toString().padStart(scale + 1, '0');
   return `${digits.slice(0, -scale)}.${digits.slice(-scale)}`.replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+}
+
+function stablecoinBaseAsset(symbol: string) {
+  return symbol.replace(/(?:USDT|USDC)$/u, '');
+}
+
+function mentorSignalKey(exchangeAccountId: string, positionKey: string, manualEntryId: string, entryPrice: string) {
+  return createHash('sha256').update(`${exchangeAccountId}:${positionKey}:${manualEntryId}:${entryPrice}`).digest('hex').slice(0, 40);
 }
 
 function serializeStoredOrder(order: { id: string; exchangeAccountId: string; clientOrderId: string; exchangeOrderId: string | null; symbol: string; side: string; type: string; quantity: Prisma.Decimal; price: Prisma.Decimal | null; stopPrice: Prisma.Decimal | null; leverage: number; marginMode: string; reduceOnly: boolean; status: string; failureCode: string | null; failureMessage: string | null; submittedAt: Date | null; createdAt: Date }, idempotentReplay: boolean) {

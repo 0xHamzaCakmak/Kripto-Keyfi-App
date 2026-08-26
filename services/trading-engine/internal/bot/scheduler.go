@@ -203,10 +203,10 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 		s.transition(ctx, instance, StateError, "Karar/işlem kaydı tamamlanamadı; güvenli yeniden deneme bekleniyor.", now)
 		return
 	}
-	if instance.Mode == "PAPER" && s.performanceRefreshDue(instance.ID, now, cycle.PaperExecutionChanged) {
+	if (instance.Mode == "PAPER" || instance.Mode == "DEMO") && s.performanceRefreshDue(instance.ID, now, cycle.PaperExecutionChanged) {
 		if refresher, ok := s.store.(PerformanceRefresher); ok {
 			if err := refresher.RefreshBotPerformance(ctx, instance.ID); err != nil {
-				s.logger.Warn("paper performance refresh failed", "bot_id", instance.ID, "error", err)
+				s.logger.Warn("bot performance refresh failed", "bot_id", instance.ID, "mode", instance.Mode, "error", err)
 			}
 		}
 	}

@@ -94,7 +94,7 @@ export function OpenPositionsPage() {
     if (profileForm.stopLossBps < 50 || profileForm.stopLossBps > 1000) { setError('TESTNET stop-loss fiyat hareketi %0,5 ile %10 arasında olmalıdır.'); return; }
     if (profileForm.takeProfitBps < 100 || profileForm.takeProfitBps > 5000) { setError('TESTNET net kâr hedefi %1 ile %50 arasında olmalıdır.'); return; }
     if (profileForm.maxOrdersPerMinute < 1 || profileForm.maxOrdersPerMinute > 1000) { setError('Dakikadaki azami emir sayısı 1 ile 1000 arasında olmalıdır.'); return; }
-    if (!window.confirm('Bu değerler PAPER, TESTNET, manuel işlemler ve ileride güvenlik kapısı açılan LIVE işlemler için merkezi Risk Engine profiline kaydedilsin mi?')) return;
+    if (!window.confirm('Bu değerler TESTNET, manuel işlemler ve ileride güvenlik kapısı açılan LIVE işlemler için merkezi Risk Engine profiline kaydedilsin mi?')) return;
     setProfileSaving(true); setError(''); setNotice('');
     try {
       const updated = await updateTradingExecutionProfile(accountId, profileForm);
@@ -105,7 +105,7 @@ export function OpenPositionsPage() {
   }
   async function setEntryPaused(entryPaused: boolean) {
     const action = entryPaused ? 'otomatik işlemleri tamamen durdurmak' : 'otomatik işlemleri yeniden başlatmak';
-    if (!window.confirm(`Tüm PAPER ve TESTNET botlarında ${action} istiyor musunuz? ${entryPaused ? 'Botlar açık pozisyonlara ve mevcut emirlere dokunmayacak.' : 'Botlar kaldıkları yerden devam edecek.'}`)) return;
+    if (!window.confirm(`Tüm TESTNET botlarında ${action} istiyor musunuz? ${entryPaused ? 'Botlar açık pozisyonlara ve mevcut emirlere dokunmayacak.' : 'Botlar kaldıkları yerden devam edecek.'}`)) return;
     setProfileSaving(true); setError(''); setNotice('');
     try {
       const updated = await updateTradingExecutionProfile(accountId, { ...profileForm, entryPaused });

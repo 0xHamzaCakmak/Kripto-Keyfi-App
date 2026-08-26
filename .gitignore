@@ -12,3 +12,4 @@ services/trading-engine/.gocache/
 services/trading-engine/.gotmp/
 .tmp/
 .runtime/
+.deploy-maintenance-bots.json

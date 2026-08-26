@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
 )
@@ -296,6 +297,45 @@ func TestExplicitTestnetProfileEnforcesMinimumInitialMarginBeforeLeverage(t *tes
 	}
 }
 
+func TestExplicitTestnetProfileAcceptsTenPercentStopLoss(t *testing.T) {
+	instance := autonomousMomentumInstance("DEMO")
+	instance.Configuration["allocationUsdt"] = float64(500)
+	instance.Configuration["minimumInitialMarginUsdt"] = float64(100)
+	instance.Configuration["testnetExecutionProfile"] = true
+	instance.Configuration["testnetContinuousExecution"] = true
+	instance.Configuration["testnetMarginAllocationMode"] = true
+	instance.Configuration["fixedTestnetProtectionTargets"] = true
+	instance.Configuration["stopLossBps"] = float64(1000)
+	instance.Configuration["takeProfitBps"] = float64(300)
+	result, err := EvaluateStrategyWithMarket(instance, "209.5", "209", trendingSnapshot(1))
+	if err != nil || result.HypotheticalOrder == nil || result.HypotheticalOrder["stopLossBps"] != float64(1000) {
+		t.Fatalf("TESTNET 10%% stop-loss was rejected: %#v err=%v", result, err)
+	}
+}
+
+func TestExplicitTestnetStopReducesUnsafeLeverageInsteadOfChangingStop(t *testing.T) {
+	instance := autonomousMomentumInstance("DEMO")
+	instance.Configuration["allocationUsdt"] = float64(500)
+	instance.Configuration["minimumInitialMarginUsdt"] = float64(20)
+	instance.Configuration["testnetExecutionProfile"] = true
+	instance.Configuration["testnetContinuousExecution"] = true
+	instance.Configuration["testnetMarginAllocationMode"] = true
+	instance.Configuration["fixedTestnetProtectionTargets"] = true
+	instance.Configuration["leverage"] = float64(20)
+	instance.Configuration["leverageMin"] = float64(5)
+	instance.Configuration["leverageMax"] = float64(20)
+	instance.Configuration["stopLossBps"] = float64(1000)
+	instance.Configuration["takeProfitBps"] = float64(300)
+	result, err := EvaluateStrategyWithMarket(instance, "209.5", "209", trendingSnapshot(1))
+	if err != nil || result.HypotheticalOrder == nil {
+		t.Fatalf("TESTNET safe leverage adjustment failed: %#v err=%v", result, err)
+	}
+	order := result.HypotheticalOrder
+	if order["stopLossBps"] != float64(1000) || order["leverage"].(int) > 7 || order["mentorIndependentLeverageSafetyCap"] != true {
+		t.Fatalf("stop was changed or leverage remained unsafe: %#v", order)
+	}
+}
+
 func TestPaperNewsFilterVetoesOnlyConflictingTrustedEvidence(t *testing.T) {
 	instance := autonomousMomentumInstance("PAPER")
 	instance.Configuration["signalThresholdBps"] = float64(5)
@@ -338,6 +378,36 @@ func TestPlaybookConfluenceSelectsTrendSubStrategy(t *testing.T) {
 	decision, err := EvaluateStrategyWithChart(instance, "112.25", "100", closes)
 	if err != nil || decision.Kind != "BUY" || decision.HypotheticalOrder == nil || decision.Metrics["selectedSubStrategy"] != "TREND_MOMENTUM" {
 		t.Fatalf("Playbook Confluence did not select trend strategy: %#v err=%v", decision, err)
+	}
+}
+
+func TestMentorEvidenceMatchesUSDCExampleToUSDTBotWithoutForcingDirection(t *testing.T) {
+	instance := autonomousMomentumInstance("DEMO")
+	instance.Configuration["mentorEvidence"] = []any{map[string]any{
+		"signalKey": "mentor-1", "baseAsset": "BTC", "action": "BUY", "regime": "TREND",
+		"mentorObservedAt": time.Now().UTC().Format(time.RFC3339),
+	}}
+	order := map[string]any{"side": "BUY", "quantity": "1"}
+	considered, aligned, key, err := applyMentorEvidence(instance, MarketAnalysis{Regime: "TREND"}, order)
+	if err != nil || !considered || !aligned || key != "mentor-1" {
+		t.Fatalf("USDC mentor evidence was not matched to the USDT bot: considered=%v aligned=%v key=%q err=%v", considered, aligned, key, err)
+	}
+	order["side"] = "SELL"
+	considered, aligned, _, err = applyMentorEvidence(instance, MarketAnalysis{Regime: "TREND"}, order)
+	if err != nil || !considered || aligned {
+		t.Fatalf("mentor evidence forced or ignored the bot direction: considered=%v aligned=%v err=%v", considered, aligned, err)
+	}
+}
+
+func TestMentorEvidenceExpiresAndDoesNotAffectBot(t *testing.T) {
+	instance := autonomousMomentumInstance("DEMO")
+	instance.Configuration["mentorEvidence"] = []any{map[string]any{
+		"signalKey": "old-mentor", "baseAsset": "BTC", "action": "BUY", "regime": "TREND",
+		"mentorObservedAt": time.Now().UTC().Add(-8 * 24 * time.Hour).Format(time.RFC3339),
+	}}
+	considered, _, _, err := applyMentorEvidence(instance, MarketAnalysis{Regime: "TREND"}, map[string]any{"side": "BUY", "quantity": "1"})
+	if err != nil || considered {
+		t.Fatalf("expired mentor evidence affected a bot: considered=%v err=%v", considered, err)
 	}
 }
 

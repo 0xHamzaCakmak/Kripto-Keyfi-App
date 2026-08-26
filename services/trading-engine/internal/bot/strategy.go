@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
 )
@@ -161,7 +162,78 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 	if err := applyAdaptiveRiskPlan(instance, markPrice, analysis, order); err != nil {
 		return Decision{}, err
 	}
+	mentorConsidered, mentorAligned, mentorKey, err := applyMentorEvidence(instance, analysis, order)
+	if err != nil {
+		return Decision{}, err
+	}
+	if mentorConsidered {
+		result.Metrics["mentorSignalConsidered"] = true
+		result.Metrics["mentorSignalAligned"] = mentorAligned
+		result.Metrics["mentorSignalKey"] = mentorKey
+		order["mentorSignalConsidered"] = true
+		order["mentorSignalAligned"] = mentorAligned
+		order["mentorSignalWeight"] = 0.20
+		order["mentorSignalForcesTrade"] = false
+		if !mentorAligned {
+			quantity, scaleErr := scaleDecimal(order["quantity"].(string), 4, 5)
+			if scaleErr != nil {
+				return Decision{}, scaleErr
+			}
+			order["quantity"] = quantity
+			order["mentorSizeMultiplier"] = 0.80
+		} else {
+			order["mentorSizeMultiplier"] = 1.0
+		}
+	}
 	return result, nil
+}
+
+func applyMentorEvidence(instance Instance, analysis MarketAnalysis, order map[string]any) (bool, bool, string, error) {
+	raw, ok := instance.Configuration["mentorEvidence"].([]any)
+	if !ok || len(raw) == 0 {
+		return false, false, "", nil
+	}
+	botBase := stablecoinBaseAsset(instance.Symbol)
+	proposedSide, _ := order["side"].(string)
+	for index := len(raw) - 1; index >= 0; index-- {
+		item, valid := raw[index].(map[string]any)
+		if !valid || !strings.EqualFold(stringValue(item["baseAsset"]), botBase) {
+			continue
+		}
+		observedAt, parseErr := time.Parse(time.RFC3339, stringValue(item["mentorObservedAt"]))
+		if parseErr != nil || time.Since(observedAt) > 7*24*time.Hour {
+			continue
+		}
+		regime := strings.ToUpper(stringValue(item["regime"]))
+		if regime != "" && regime != "UNKNOWN" && !strings.EqualFold(regime, analysis.Regime) {
+			continue
+		}
+		action := strings.ToUpper(stringValue(item["action"]))
+		if action != "BUY" && action != "SELL" {
+			continue
+		}
+		return true, strings.EqualFold(action, proposedSide), stringValue(item["signalKey"]), nil
+	}
+	return false, false, "", nil
+}
+
+func stablecoinBaseAsset(symbol string) string {
+	value := strings.ToUpper(strings.TrimSpace(symbol))
+	value = strings.TrimSuffix(value, "USDT")
+	return strings.TrimSuffix(value, "USDC")
+}
+
+func stringValue(value any) string {
+	text, _ := value.(string)
+	return strings.TrimSpace(text)
+}
+
+func scaleDecimal(value string, numerator, denominator int64) (string, error) {
+	parsed, ok := decimalRat(value)
+	if !ok || parsed.Sign() <= 0 || numerator <= 0 || denominator <= 0 {
+		return "", errors.New("mentor-adjusted quantity is invalid")
+	}
+	return new(big.Rat).Mul(parsed, big.NewRat(numerator, denominator)).FloatString(18), nil
 }
 
 func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketAnalysis, order map[string]any) error {
@@ -216,11 +288,25 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 	maximumAllowedStopBps := float64(500)
 	if instance.Mode == "PAPER" {
 		maximumAllowedStopBps = PaperTrainingStopLossBps
+	} else if instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetExecutionProfile") {
+		maximumAllowedStopBps = 1000
 	}
 	if multiplier <= 0 || minimumBps < 50 || maximumBps < minimumBps || maximumBps > maximumAllowedStopBps || riskReward < 1 || riskReward > 5 || maintenanceMarginBps < 0 || liquidationReserveFraction < 0.1 || liquidationReserveFraction > 0.5 {
 		return errors.New("adaptive risk configuration is invalid")
 	}
 	stopBps := math.Max(minimumBps, math.Min(maximumBps, analysis.ATRBps15m*multiplier))
+	if fixedTestnetProtection {
+		maximumSafeLeverage := int(math.Floor(10_000 / (stopBps/(1-liquidationReserveFraction) + maintenanceMarginBps)))
+		minimumLeverage := maxInt(1, int(configNumberOr(instance.Configuration, "leverageMin", 5)))
+		if maximumSafeLeverage < minimumLeverage {
+			return errors.New("configured TESTNET stop cannot satisfy liquidation safety at minimum leverage")
+		}
+		if leverage > maximumSafeLeverage {
+			leverage = maximumSafeLeverage
+			order["leverage"] = leverage
+			order["mentorIndependentLeverageSafetyCap"] = true
+		}
+	}
 	liquidationDistanceBps := 10_000/float64(leverage) - maintenanceMarginBps
 	safeLiquidationBps := liquidationDistanceBps * (1 - liquidationReserveFraction)
 	if instance.Mode != "PAPER" {

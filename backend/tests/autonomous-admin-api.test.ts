@@ -65,18 +65,19 @@ describe('Autonomous Trading Admin API', () => {
   it('keeps production live unavailable while exposing the guarded TESTNET canary route', () => {
     const routes = readFileSync(new URL('../src/modules/trading/trading.routes.ts', import.meta.url), 'utf8');
     const service = readFileSync(new URL('../src/modules/ai-trading/autonomous-admin.service.ts', import.meta.url), 'utf8');
-    for (const route of ['/autonomous/overview', '/autonomous/arena-status', '/autonomous/generations', '/autonomous/live-eligibility', '/autonomous/bots/:id/start', '/autonomous/bots/:id/promotion-review']) {
+    for (const route of ['/autonomous/overview', '/autonomous/arena-status', '/autonomous/generations', '/autonomous/live-eligibility', '/autonomous/bots/:id/promotion-review']) {
       expect(routes).toContain(route);
     }
+    expect(routes).not.toContain("'/autonomous/bots/:id/start'");
     expect(service).toContain("'APPROVED_PENDING_ACTIVATION'");
     expect(service).toContain('liveActivated: false');
     expect(routes).toContain('/autonomous/bots/:id/activate-testnet');
     expect(routes).toContain('/autonomous/testnet-fleet/activate');
     expect(routes).toContain('/autonomous/testnet-account-summary');
-    expect(routes).toContain('/autonomous/paper-fleet/activate');
+    expect(routes).not.toContain('/autonomous/paper-fleet/activate');
     expect(routes).toContain('/autonomous/bots/:id/capital');
-    expect(routes).toContain('/autonomous/paper-accounting/reset');
-    expect(routes).toContain('/autonomous/bots/:id/close-paper-position');
+    expect(routes).not.toContain('/autonomous/paper-accounting/reset');
+    expect(routes).not.toContain('/autonomous/bots/:id/close-paper-position');
     expect(service).toContain("environment: 'TESTNET'");
     expect(service).not.toMatch(/lifecycleStatus:\s*'LIVE'|submitOrder|placeOrder|tradingOutboxEvent\.create/);
   });

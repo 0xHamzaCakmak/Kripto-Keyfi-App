@@ -30,11 +30,11 @@ export default function AITradingArena() {
       const scoreRequest = aiTradingApi.leaderboard(100)
         .catch((reason) => { setError(getApiErrorMessage(reason, 'Skor verileri geçici olarak alınamadı; botlar skor olmadan gösteriliyor.')); return null; });
       const operationRequest = aiTradingApi.testnetOperations()
-        .catch((reason) => { setError(getApiErrorMessage(reason, 'TESTNET operasyon verileri geçici olarak alınamadı; PAPER ve skor verileri gösteriliyor.')); return null; });
+        .catch((reason) => { setError(getApiErrorMessage(reason, 'TESTNET operasyon verileri geçici olarak alınamadı; bot skorları gösteriliyor.')); return null; });
       const [botRows, summaryRows, championRows] = await Promise.all([aiTradingApi.bots(), aiTradingApi.tradeSummary('BOT', 100), aiTradingApi.champions()]);
       // Defense in depth: archived/retired bots retain their financial history
       // in the database but must never reappear in the active Arena fleet.
-      setBots(botRows.filter((bot) => bot.lifecycleStatus !== 'ARCHIVED')); setSummaries(summaryRows); setChampions(championRows);
+      setBots(botRows.filter((bot) => bot.lifecycleStatus !== 'ARCHIVED' && bot.mode === 'DEMO')); setSummaries(summaryRows); setChampions(championRows);
       void scoreRequest.then((scoreRows) => { if (scoreRows) setScores(scoreRows); });
       void operationRequest.then((operationRows) => { if (operationRows) setOperations(operationRows.data); });
     } catch (reason) { setError(getApiErrorMessage(reason, 'Arena verileri alınamadı.')); }
@@ -66,21 +66,6 @@ export default function AITradingArena() {
     finally { setFleetBusy(false); }
   }
 
-  async function activatePaperFleet() {
-    const confirmation = window.prompt('20 botu yalnız simülasyon PAPER modunda başlatmak için tam olarak RUN 20 PAPER BOTS yazın. TESTNET pozisyonu veya emri varsa geçiş engellenir.');
-    if (confirmation !== 'RUN 20 PAPER BOTS') return;
-    const note = window.prompt('Audit notu:', 'Admin started the fixed 20-bot PAPER fleet.');
-    if (!note || note.trim().length < 3) return;
-    setFleetBusy(true); setError(''); setFleetNotice('');
-    try {
-      const result = await aiTradingApi.activatePaperFleet(note.trim());
-      setFleetNotice(`${result.botCount} bot PAPER simülasyon kuyruğuna alındı; borsaya emir gönderilmeyecek.`);
-      await load(false);
-    } catch (reason) { setError(getApiErrorMessage(reason, 'Toplu PAPER başlatma tamamlanamadı.')); }
-    finally { setFleetBusy(false); }
-  }
-
-
   const rows = useMemo(() => buildArenaRows(bots, scores, summaries, champions, operations), [bots, scores, summaries, champions, operations]);
   const strategies = useMemo(() => [...new Set(bots.map((bot) => bot.strategyVersion?.strategy.family).filter(Boolean))] as string[], [bots]);
   const generations = useMemo(() => [...new Set(bots.map((bot) => bot.generationId).filter((id): id is string => Boolean(id)))], [bots]);
@@ -99,8 +84,8 @@ export default function AITradingArena() {
   useEffect(() => { setPage(1); }, [filters, regimeIds, sort, pageSize]);
   useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
 
-  return <AITradingPage title="Bot Arena" description="Tüm autonomous PAPER ve Binance TESTNET botlarını gerçek backend kanıtlarıyla izleyin; bot satırına tıklayarak işlem geçmişini ve sermaye kotasını yönetin." icon={Bot} action={<div className="flex flex-wrap items-center justify-end gap-2"><button type="button" disabled={fleetBusy || bots.length !== 20} onClick={() => void activatePaperFleet()} className="rounded-xl border border-primary/40 px-4 py-3 text-xs font-black text-primary disabled:cursor-not-allowed disabled:opacity-40">{fleetBusy ? 'Hazırlanıyor…' : '20 botu PAPER başlat'}</button><button type="button" disabled={fleetBusy || bots.length !== 20 || bots.every((bot) => bot.mode === 'DEMO')} onClick={() => void activateTestnetFleet()} className="rounded-xl bg-error px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{fleetBusy ? 'TESTNET hazırlanıyor…' : '20 botu TESTNET başlat'}</button><RefreshButton onClick={() => void load()} busy={loading} /></div>}>
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><MetricCard label="Toplam bot" value={bots.length} detail="PAPER + TESTNET" /><MetricCard label="Score üretilen" value={scores.length} /><MetricCard label="PAPER" value={bots.filter((bot) => bot.mode === 'PAPER').length} tone="warning" /><MetricCard label="TESTNET" value={operations.length} tone="safe" /><MetricCard label="Açık TESTNET pozisyon" value={operations.filter((item) => item.position).length} tone="safe" /></div>
+  return <AITradingPage title="Bot Arena" description="20 Binance TESTNET botunun skorunu, işlem geçmişini ve sermaye kotasını tek yerden izleyin." icon={Bot} action={<div className="flex flex-wrap items-center justify-end gap-2">{bots.length === 20 ? <span className="rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-xs font-black text-secondary">20 TESTNET botu korunuyor</span> : <button type="button" disabled={fleetBusy} onClick={() => void activateTestnetFleet()} className="rounded-xl bg-error px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{fleetBusy ? 'TESTNET hazırlanıyor…' : '20 botu TESTNET başlat'}</button>}<RefreshButton onClick={() => void load()} busy={loading} /></div>}>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><MetricCard label="TESTNET botu" value={bots.length} detail="Sabit filo: 20" tone="safe" /><MetricCard label="Score üretilen" value={scores.filter((score) => bots.some((bot) => bot.id === score.tradingBotId)).length} /><MetricCard label="Challenger" value={bots.filter((bot) => bot.lifecycleStatus === 'CHALLENGER').length} tone="warning" /><MetricCard label="Kapanmış TESTNET işlem" value={operations.reduce((sum, item) => sum + item.closedFills, 0)} /><MetricCard label="Açık TESTNET pozisyon" value={operations.filter((item) => item.position).length} tone="safe" /></div>
     {error && <ErrorState message={error} />}
     {fleetNotice && <div className="rounded-2xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-sm font-bold text-secondary">{fleetNotice}</div>}
     <section className="rounded-[24px] border border-outline/10 bg-surface p-5"><div className="flex items-center gap-2 text-sm font-black text-white"><SlidersHorizontal size={18} className="text-primary" /> Filtreler ve sıralama</div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">

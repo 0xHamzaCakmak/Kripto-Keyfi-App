@@ -33,8 +33,9 @@ VALUES (?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`
 var _ performance.SnapshotStore = (*AccountStore)(nil)
 
 // RefreshBotPerformance rebuilds the latest risk-adjusted snapshot from the
-// canonical closed PAPER trades. It is intentionally independent from fills:
-// fills are an audit ledger, while a round trip is the scoring evidence unit.
+// canonical closed PAPER trades or grouped TESTNET reduce-only fills. A
+// completed position/order cycle, rather than an individual partial fill, is
+// the scoring evidence unit.
 func (s *AccountStore) RefreshBotPerformance(ctx context.Context, botID string) error {
 	var startingBalance, strategyVersionID, unrealized, mode string
 	err := s.database.QueryRowContext(ctx, `SELECT CAST(b.startingPaperBalance AS CHAR), COALESCE(b.strategyVersionId, ''),
@@ -46,7 +47,7 @@ LEFT JOIN trading_bot_paper_positions p ON p.tradingBotId = b.id WHERE b.id = ? 
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("load paper performance identity: %w", err)
+		return fmt.Errorf("load bot performance identity: %w", err)
 	}
 
 	tradeQuery := `SELECT CAST(realizedPnl AS CHAR),
@@ -69,14 +70,14 @@ GROUP BY exchangeOrderId ORDER BY MAX(occurredAt), exchangeOrderId`
 	}
 	rows, err := s.database.QueryContext(ctx, tradeQuery, botID)
 	if err != nil {
-		return fmt.Errorf("load closed paper trades: %w", err)
+		return fmt.Errorf("load closed bot trades: %w", err)
 	}
 	defer rows.Close()
 	trades := make([]performance.Trade, 0)
 	curve := []performance.EquityPoint{{At: time.Unix(0, 0).UTC(), Equity: startingBalance}}
 	equity, parseErr := strconv.ParseFloat(startingBalance, 64)
 	if parseErr != nil {
-		return fmt.Errorf("parse paper starting balance: %w", parseErr)
+		return fmt.Errorf("parse bot starting balance: %w", parseErr)
 	}
 	liquidations := 0
 	lastCurveAt := curve[0].At
@@ -86,7 +87,7 @@ GROUP BY exchangeOrderId ORDER BY MAX(occurredAt), exchangeOrderId`
 		var status string
 		if err := rows.Scan(&trade.NetPnL, &trade.RiskAmount, &trade.Notional, &trade.Fees, &trade.FundingCost,
 			&trade.SlippageCost, &trade.OpenedAt, &trade.ClosedAt, &status); err != nil {
-			return fmt.Errorf("scan closed paper trade: %w", err)
+			return fmt.Errorf("scan closed bot trade: %w", err)
 		}
 		if status == "LIQUIDATED" {
 			liquidations++
@@ -96,7 +97,7 @@ GROUP BY exchangeOrderId ORDER BY MAX(occurredAt), exchangeOrderId`
 		}
 		pnl, err := strconv.ParseFloat(trade.NetPnL, 64)
 		if err != nil {
-			return fmt.Errorf("parse paper trade pnl: %w", err)
+			return fmt.Errorf("parse bot trade pnl: %w", err)
 		}
 		before := equity
 		equity += pnl
@@ -115,7 +116,7 @@ GROUP BY exchangeOrderId ORDER BY MAX(occurredAt), exchangeOrderId`
 		trades = append(trades, trade)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate closed paper trades: %w", err)
+		return fmt.Errorf("iterate closed bot trades: %w", err)
 	}
 
 	performanceService, err := performance.NewService(s)
@@ -126,7 +127,7 @@ GROUP BY exchangeOrderId ORDER BY MAX(occurredAt), exchangeOrderId`
 		StartingBalance: startingBalance, UnrealizedPnL: unrealized, Trades: trades, EquityCurve: curve, PeriodsPerYear: 365 * 24 * 60,
 	})
 	if err != nil {
-		return fmt.Errorf("compute paper performance: %w", err)
+		return fmt.Errorf("compute bot performance: %w", err)
 	}
 	scoreService, err := scoring.NewService(scoring.DefaultConfig(), s)
 	if err != nil {
@@ -136,7 +137,7 @@ GROUP BY exchangeOrderId ORDER BY MAX(occurredAt), exchangeOrderId`
 		Metrics: snapshot.Metrics, LiquidationCount: liquidations, ReturnInstability: returnInstability(returns),
 	})
 	if err != nil {
-		return fmt.Errorf("score paper performance: %w", err)
+		return fmt.Errorf("score bot performance: %w", err)
 	}
 	return nil
 }

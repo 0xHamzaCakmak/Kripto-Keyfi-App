@@ -59,9 +59,6 @@ const AITradingLayout = lazy(() => import('./components/ai-trading/AITradingLayo
 const AITradingOverview = lazy(() => import('./components/ai-trading/AITradingOverview'));
 const AITradingArena = lazy(() => import('./components/ai-trading/AITradingArena'));
 const AITradingChampions = lazy(() => import('./components/ai-trading/AITradingChampions'));
-const AITradingEvolution = lazy(() => import('./components/ai-trading/AITradingEvolution'));
-const AITradingTeacher = lazy(() => import('./components/ai-trading/AITradingLearning').then((module) => ({ default: module.AITradingTeacher })));
-const AITradingResearcher = lazy(() => import('./components/ai-trading/AITradingLearning').then((module) => ({ default: module.AITradingResearcher })));
 const AITradingMemory = lazy(() => import('./components/ai-trading/AITradingMemory'));
 const AITradingPerformance = lazy(() => import('./components/ai-trading/AITradingPerformance'));
 const AITradingRisk = lazy(() => import('./components/ai-trading/AITradingRisk'));
@@ -119,9 +116,6 @@ export default function App() {
                   <Route index element={<AITradingOverview />} />
                   <Route path="arena" element={<AITradingArena />} />
                   <Route path="champions" element={<AITradingChampions />} />
-                  <Route path="evolution" element={<AITradingEvolution />} />
-                  <Route path="teacher" element={<AITradingTeacher />} />
-                  <Route path="researcher" element={<AITradingResearcher />} />
                   <Route path="memory" element={<AITradingMemory />} />
                   <Route path="performance" element={<AITradingPerformance />} />
                   <Route path="risk" element={<AITradingRisk />} />

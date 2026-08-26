@@ -1,4 +1,4 @@
-import { Activity, BrainCircuit, ChartNoAxesCombined, Database, FlaskConical, LayoutDashboard, Orbit, ShieldAlert, Trophy } from 'lucide-react';
+import { Activity, ChartNoAxesCombined, Database, LayoutDashboard, Orbit, ShieldAlert, Trophy } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { cn } from '../../lib/utils';
 
@@ -6,13 +6,10 @@ const tabs = [
   ['Genel Bakış', '/admin/trading/ai', LayoutDashboard, true],
   ['Arena', '/admin/trading/ai/arena', Orbit],
   ['Champions', '/admin/trading/ai/champions', Trophy],
-  ['Evolution', '/admin/trading/ai/evolution', FlaskConical],
-  ['Teacher', '/admin/trading/ai/teacher', BrainCircuit],
-  ['Researcher', '/admin/trading/ai/researcher', Activity],
   ['Memory', '/admin/trading/ai/memory', Database],
   ['Performance', '/admin/trading/ai/performance', ChartNoAxesCombined],
   ['Risk', '/admin/trading/ai/risk', ShieldAlert],
-  ['Shadow / Live', '/admin/trading/ai/shadow-live', Activity],
+  ['Live hazırlık', '/admin/trading/ai/shadow-live', Activity],
 ] as const;
 
 export default function AITradingLayout() {

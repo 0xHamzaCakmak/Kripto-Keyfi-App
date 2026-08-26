@@ -7,13 +7,12 @@ export function TestnetBalanceStrip({ summary }: { summary: TestnetAccountSummar
   const assets = summary.collateralAssets?.map((item) => `${item.asset}: ${formatMoney(Number(item.walletBalance))}`).join(' · ') || 'USDT + USDC';
   return <div className="flex w-full max-w-full flex-nowrap items-center gap-x-4 overflow-x-auto rounded-xl border border-secondary/20 bg-secondary/5 px-3 py-2 text-xs" title={`Yalnız USD-M Futures USDT + USDC · ${assets} · Açık notional: ${formatMoney(Number(summary.activeNotional))}`}>
     <BalanceDatum label="Başlangıç" value={formatMoney(Number(summary.startingBalance))} />
-    <BalanceDatum label="Toplam stable" value={formatMoney(Number(summary.totalBalance))} />
     <BalanceDatum label="Boşta" value={formatMoney(Number(summary.availableBalance))} />
     <BalanceDatum label="İşlemde" value={formatMoney(Number(summary.activeMargin))} />
     <BalanceDatum label="Açık aktivite" value={`${summary.activeBots} bot · ${summary.activeEntryOrders} işlem`} />
     <BalanceDatum label="Açık PnL" value={formatMoney(Number(summary.unrealizedPnl))} tone={Number(summary.unrealizedPnl)} />
-    <BalanceDatum label="Toplam değer" value={formatMoney(Number(summary.equity))} tone={Number(summary.netPnl)} />
     <BalanceDatum label={Number(summary.netPnl) >= 0 ? 'Kâr' : 'Zarar'} value={`${formatMoney(Math.abs(Number(summary.netPnl)))} · ${formatPercent(summary.pnlPercent)}`} tone={Number(summary.netPnl)} />
+    <BalanceDatum label="Toplam değer" value={formatMoney(Number(summary.equity))} tone={Number(summary.netPnl)} />
   </div>;
 }
 

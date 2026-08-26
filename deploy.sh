@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# KriptoKeyfi root production deploy (PAPER + Binance TESTNET only).
+# KriptoKeyfi root production deploy (Binance TESTNET only).
 # This script never bootstraps bots, resets the database, or enables real-money LIVE.
 
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
@@ -35,6 +35,7 @@ ENGINE_CANDIDATE="$ENGINE_DIR/trading-engine.deploy"
 ENGINE_ROLLBACK="$ENGINE_DIR/trading-engine.previous"
 FRONTEND_HEALTH_URL="${FRONTEND_HEALTH_URL:-}"
 FRONTEND_ASSET_PATH=""
+MAINTENANCE_STATE_FILE="$PROJECT_DIR/.deploy-maintenance-bots.json"
 
 CURRENT_STEP="Baslangic"
 FLEET_MAINTENANCE_STARTED=false
@@ -55,6 +56,7 @@ on_error() {
   printf '\n[HATA] Deploy durduruldu. Asama: %s (exit=%s)\n' "$CURRENT_STEP" "$exit_code" >&2
   if [ "$FLEET_MAINTENANCE_STARTED" = "true" ]; then
     printf '[GUVENLIK] TESTNET filosu otomatik devam ettirilmedi. Engine ve reconciliation kontrol edilmelidir.\n' >&2
+    printf '[GUVENLIK] Bu deployun durdurdugu botlar kayitli: %s\n' "$MAINTENANCE_STATE_FILE" >&2
   fi
   printf '[GUVENLIK] Veritabani resetlenmedi ve production LIVE acilmadi.\n' >&2
   exit "$exit_code"
@@ -222,7 +224,7 @@ validate_and_build() {
 }
 
 backup_database() {
-  step "5/13 Veritabani yedegi aliniyor"
+  step "5/14 Veritabani yedegi aliniyor"
   require_command mysqldump
   require_command gzip
   if [ -z "$BACKUP_DIR" ] || [ "$BACKUP_DIR" = "/" ]; then
@@ -273,15 +275,21 @@ backup_database() {
 }
 
 pause_testnet_fleet() {
-  step "7/13 TESTNET filosu bakim moduna aliniyor"
+  step "7/14 TESTNET filosu bakim moduna aliniyor"
+  if [ -e "$MAINTENANCE_STATE_FILE" ]; then
+    printf 'Onceki deploydan kalan TESTNET bakim kaydi var: %s\n' "$MAINTENANCE_STATE_FILE" >&2
+    printf 'Engine ve Binance durumunu kontrol edip onceki bakimi sonlandirmadan yeni deploy baslatmayin.\n' >&2
+    exit 1
+  fi
+  FLEET_MAINTENANCE_STARTED=true
   npm --prefix "$BACKEND_DIR" run control:ai-testnet-fleet -- \
     --action=pause \
+    --state-file="$MAINTENANCE_STATE_FILE" \
     --confirm=PAUSE_BINANCE_TESTNET_FLEET
-  FLEET_MAINTENANCE_STARTED=true
 }
 
-apply_migrations() {
-  step "6/13 Prisma migrationlari uygulaniyor"
+validate_migrations() {
+  step "6/14 Pending Prisma migrationlari guvenlik kontrolunden geciyor"
   if [ "$APPLY_MIGRATIONS" = "true" ]; then
     # Production veri kaybi veya breaking schema degisikligi otomatik deploy
     # yetkisinin disindadir. Yalniz henuz uygulanmamis migration dosyalari
@@ -314,6 +322,14 @@ const destructive = /\b(DROP\s+(?:TABLE|COLUMN|DATABASE|INDEX|FOREIGN\s+KEY|PRIM
 })().finally(() => prisma.$disconnect());
 NODE
     )
+  else
+    log "APPLY_MIGRATIONS=false: migration guvenlik kontrolu atlandi"
+  fi
+}
+
+apply_migrations() {
+  step "8/14 Prisma migrationlari uygulaniyor"
+  if [ "$APPLY_MIGRATIONS" = "true" ]; then
     (cd "$BACKEND_DIR" && npx prisma migrate deploy)
   else
     log "APPLY_MIGRATIONS=false: migration uygulanmadi"
@@ -322,7 +338,7 @@ NODE
 }
 
 install_frontend() {
-  step "8/13 Frontend yayina hazirlaniyor"
+  step "9/14 Frontend yayina hazirlaniyor"
   if [ -n "$WEB_ROOT" ]; then
     mkdir -p "$WEB_ROOT"
     cp -a "$FRONTEND_DIR/dist/." "$WEB_ROOT/"
@@ -355,7 +371,7 @@ verify_frontend_release() {
 }
 
 restart_backend() {
-  step "9/13 Backend PM2 ile yeniden baslatiliyor"
+  step "10/14 Backend PM2 ile yeniden baslatiliyor"
   if pm2 describe "$BACKEND_PM2_NAME" >/dev/null 2>&1; then
     pm2 restart "$BACKEND_PM2_NAME" --update-env
   else
@@ -369,7 +385,7 @@ restart_backend() {
 }
 
 install_and_restart_engine() {
-  step "10/13 Go Trading Engine atomik guncelleniyor"
+  step "11/14 Go Trading Engine atomik guncelleniyor"
   if [ -x "$ENGINE_BINARY" ]; then
     cp -p "$ENGINE_BINARY" "$ENGINE_ROLLBACK"
   else
@@ -446,7 +462,7 @@ wait_for_engine_contract() {
 }
 
 health_checks() {
-  step "11/13 Backend ve Engine health/reconciliation kontrol ediliyor"
+  step "12/14 Backend ve Engine health/reconciliation kontrol ediliyor"
   wait_for_backend
   verify_frontend_release
   if ! wait_for_url "Trading Engine" "$ENGINE_HEALTH_URL" "$ENGINE_PM2_NAME"; then
@@ -461,16 +477,18 @@ health_checks() {
 }
 
 resume_testnet_fleet() {
-  step "12/13 Yalniz bakimda durdurulan TESTNET botlari devam ettiriliyor"
+  step "13/14 Yalniz bu deployun durdurdugu TESTNET botlari devam ettiriliyor"
   npm --prefix "$BACKEND_DIR" run control:ai-testnet-fleet -- \
     --action=resume \
+    --state-file="$MAINTENANCE_STATE_FILE" \
     --recent-minutes="$MAINTENANCE_RESUME_MINUTES" \
     --confirm=RESUME_BINANCE_TESTNET_FLEET
+  rm -f -- "$MAINTENANCE_STATE_FILE"
   FLEET_MAINTENANCE_STARTED=false
 }
 
 finalize() {
-  step "13/13 Deploy sonucu dogrulaniyor"
+  step "14/14 Deploy sonucu dogrulaniyor"
   pm2 save
   if [ "$ENABLE_PM2_STARTUP" = "true" ]; then
     if [ "$(id -u)" -ne 0 ]; then
@@ -501,7 +519,7 @@ finalize() {
   ' "$BACKEND_PM2_NAME" "$ENGINE_PM2_NAME"
   npm --prefix "$BACKEND_DIR" run status:ai-fleet
   pm2 status
-  log "Deploy tamamlandi. PAPER/TESTNET DB durumundan devam eder; production LIVE kapali kalir."
+  log "Deploy tamamlandi. Mevcut 20 TESTNET botunun DB durumu korunarak devam eder; production LIVE kapali kalir."
 }
 
 main() {
@@ -518,8 +536,9 @@ main() {
   load_environment
   validate_and_build
   backup_database
-  apply_migrations
+  validate_migrations
   pause_testnet_fleet
+  apply_migrations
   install_frontend
   restart_backend
   install_and_restart_engine

@@ -49,7 +49,12 @@ export const closePositionBodySchema = z.object({
   }
 });
 
+export const publishMentorSignalBodySchema = z.object({
+  exchangeAccountId: z.string().cuid(),
+}).strict();
+
 export type PreviewOrderInput = z.infer<typeof previewOrderBodySchema>;
 export type SubmitOrderInput = z.infer<typeof submitOrderBodySchema>;
 export type CancelOrderInput = z.infer<typeof cancelOrderBodySchema>;
 export type ClosePositionInput = z.infer<typeof closePositionBodySchema>;
+export type PublishMentorSignalInput = z.infer<typeof publishMentorSignalBodySchema>;

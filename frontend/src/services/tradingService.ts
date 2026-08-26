@@ -29,6 +29,11 @@ export type OpenPosition = {
   liquidationPrice?: string; unrealizedPnl: string; leverage: string; marginMode: MarginMode;
   lifecycleStatus?: 'CLOSING' | 'CLOSE_FAILED';
 };
+export type ManualMentorPosition = OpenPosition & {
+  manualEntryId: string;
+  mentorPublished: boolean;
+  mentorEligible: boolean;
+};
 export type TradingExecutionProfile = {
   minLeverage: number; maxLeverage: number; botAllocationUsdt: string; minInitialMarginUsdt: string;
   maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string;
@@ -122,6 +127,15 @@ export async function cancelOrder(exchangeAccountId: string, order: OpenOrder) {
 }
 export async function getOpenPositions(exchangeAccountId: string) {
   return (await api.get<{ data: OpenPosition[] }>('/admin/trading/positions', { params: { exchangeAccountId } })).data.data;
+}
+export async function getManualMentorPositions(exchangeAccountId: string) {
+  return (await api.get<{ data: ManualMentorPosition[] }>('/admin/trading/manual-mentor-positions', { params: { exchangeAccountId } })).data.data;
+}
+export async function publishManualMentorSignal(exchangeAccountId: string, positionKey: string) {
+  return (await api.post<{ data: { signalKey: string; targetedBotCount: number; action: 'BUY' | 'SELL'; baseAsset: string; forcesTrade: false } }>(
+    `/admin/trading/manual-mentor-positions/${encodeURIComponent(positionKey)}/publish`,
+    { exchangeAccountId },
+  )).data.data;
 }
 export async function getTradingExecutionProfile(exchangeAccountId: string) {
   const profile = (await api.get<{ data: TradingExecutionProfile }>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`)).data.data;
