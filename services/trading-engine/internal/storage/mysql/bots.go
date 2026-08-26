@@ -271,8 +271,9 @@ VALUES (?, ?, ?, ?, 'AI_MODEL', ?, 'OBSERVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TI
 	}
 	var paperExecution *bot.PaperExecution
 	if instance.Mode == "PAPER" {
-		// Protective exits must always be processed. A rejected entry can never
-		// prevent an already-open PAPER position from reaching its stop or target.
+		// Protective exits remain independent of entry-risk rejection. The
+		// explicit central execution pause is handled inside persistPaperCycle and
+		// deliberately freezes both entries and open-position automation.
 		paperExecution, err = persistPaperCycle(ctx, tx, instance, decision, decisionID, now, riskApproved)
 		if err != nil {
 			return bot.CycleResult{}, err
@@ -422,6 +423,12 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 	instance.Configuration["paperTrainingMode"] = true
 	if configured, ok := paperNumber(instance.Configuration["minimumNetProfitBps"]); !ok || configured < bot.PaperTrainingMinNetProfitBps {
 		instance.Configuration["minimumNetProfitBps"] = bot.PaperTrainingMinNetProfitBps
+	}
+	// Central execution pause freezes automatic PAPER position management as
+	// well as new entries. Decisions may still be observed, but no trade,
+	// position, stop or take-profit state is mutated until execution resumes.
+	if boolValue(instance.Configuration["entryPaused"]) {
+		return nil, nil
 	}
 	position, exists, err := loadPaperPosition(ctx, tx, instance.ID)
 	if err != nil {

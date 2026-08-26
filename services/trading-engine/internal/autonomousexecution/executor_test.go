@@ -420,15 +420,17 @@ func TestTestnetNetTargetAddsRoundTripCostBuffer(t *testing.T) {
 	}
 }
 
-func TestExecutorSoftPauseBlocksOnlyNewEntry(t *testing.T) {
+func TestExecutorPauseLeavesOpenPositionAndOrdersUntouched(t *testing.T) {
 	store, exchange := &fakeStore{}, &fakeExecution{}
+	exchange.positions = []domain.Position{{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.01", EntryPrice: "2500", Leverage: "5"}}
+	exchange.orders = []domain.Order{{ExchangeOrderID: "existing-stop", Symbol: "ETHUSDT", Type: domain.OrderStopMarket, ReduceOnly: true}}
 	instance := bot.Instance{ID: "bot-1", UserID: "user-1", ExchangeAccountID: "account-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "ETHUSDT"}
 	instance.Configuration = map[string]any{"entryPaused": true}
 	decision := bot.Decision{HypotheticalOrder: map[string]any{"side": "BUY", "quantity": "0.01", "stopLoss": "2400", "takeProfit": "2525", "leverage": 5}}
 	if err := (&Executor{store: store, execution: exchange}).Execute(t.Context(), instance, decision, 101, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if len(exchange.commands) != 0 || len(store.orders) != 0 {
-		t.Fatalf("soft pause submitted a new entry: commands=%d orders=%d", len(exchange.commands), len(store.orders))
+	if len(exchange.commands) != 0 || len(exchange.previews) != 0 || len(exchange.cancels) != 0 || len(store.orders) != 0 {
+		t.Fatalf("pause touched exchange state: commands=%d previews=%d cancels=%d orders=%d", len(exchange.commands), len(exchange.previews), len(exchange.cancels), len(store.orders))
 	}
 }

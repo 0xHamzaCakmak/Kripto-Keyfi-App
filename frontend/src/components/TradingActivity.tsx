@@ -104,15 +104,15 @@ export function OpenPositionsPage() {
     finally { setProfileSaving(false); }
   }
   async function setEntryPaused(entryPaused: boolean) {
-    const action = entryPaused ? 'yeni işlem açmayı durdurmak' : 'yeni işlemleri devam ettirmek';
-    if (!window.confirm(`Tüm PAPER ve TESTNET botlarında ${action} istiyor musunuz? Açık pozisyonların SL/TP takibi devam eder.`)) return;
+    const action = entryPaused ? 'otomatik işlemleri tamamen durdurmak' : 'otomatik işlemleri yeniden başlatmak';
+    if (!window.confirm(`Tüm PAPER ve TESTNET botlarında ${action} istiyor musunuz? ${entryPaused ? 'Botlar açık pozisyonlara ve mevcut emirlere dokunmayacak.' : 'Botlar kaldıkları yerden devam edecek.'}`)) return;
     setProfileSaving(true); setError(''); setNotice('');
     try {
       const updated = await updateTradingExecutionProfile(accountId, { ...profileForm, entryPaused });
       setProfile(updated); setProfileForm(updated);
       setNotice(entryPaused
-        ? 'Yeni girişler durduruldu. Açık pozisyonlar, koruma emirleri ve elle kapatılan pozisyonların mutabakatı izlenmeye devam ediyor.'
-        : 'Yeni girişler yeniden açıldı. Botlar mevcut durumlarından devam edecek.');
+        ? 'Otomatik işlemler durduruldu. Yeni emir girişi yapılmayacak ve botlar açık pozisyonlara dokunmayacak.'
+        : 'Otomatik işlemler yeniden başlatıldı. Botlar mevcut durumlarından devam edecek.');
     } catch (reason) { setError(getApiErrorMessage(reason, 'Bot işlem durumu değiştirilemedi.')); }
     finally { setProfileSaving(false); }
   }
@@ -126,7 +126,7 @@ export function OpenPositionsPage() {
         <ExecutionField label="Dakikada azami emir (hesap)" value={profileForm.maxOrdersPerMinute} min={1} max={1000} onChange={(value) => setProfileForm((current) => ({ ...current, maxOrdersPerMinute: Number(value) }))}/><ExecutionField label="Bot başına teminat kotası (USDT)" value={profileForm.botAllocationUsdt} onChange={(value) => setProfileForm((current) => ({ ...current, botAllocationUsdt: String(value) }))}/><ExecutionField label="Asgari işlem teminatı (USDT)" value={profileForm.minInitialMarginUsdt} onChange={(value) => setProfileForm((current) => ({ ...current, minInitialMarginUsdt: String(value) }))}/><ExecutionField label="Emir başına azami notional" value={profileForm.maxOrderNotional} onChange={(value) => setProfileForm((current) => ({ ...current, maxOrderNotional: String(value) }))}/><ExecutionField label="Emir başına azami teminat" value={profileForm.maxInitialMargin} onChange={(value) => setProfileForm((current) => ({ ...current, maxInitialMargin: String(value) }))}/><ExecutionField label="Hesap açık notional limiti" value={profileForm.maxAccountOpenNotional} onChange={(value) => setProfileForm((current) => ({ ...current, maxAccountOpenNotional: String(value) }))}/>
         <button type="button" disabled={profileSaving} onClick={() => void saveExecutionProfile()} className="self-end rounded-xl bg-primary px-4 py-3 text-sm font-black text-on-primary disabled:opacity-50">{profileSaving ? 'Kaydediliyor…' : 'Tüm botlara uygula'}</button>
       </div>
-      <div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={profileSaving || profileForm.entryPaused} onClick={() => void setEntryPaused(true)} className="rounded-xl border border-error/40 bg-error/10 px-4 py-3 text-sm font-black text-error disabled:opacity-40">Yeni işlemleri durdur</button><button type="button" disabled={profileSaving || !profileForm.entryPaused} onClick={() => void setEntryPaused(false)} className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm font-black text-primary disabled:opacity-40">İşlemlere devam et</button><span className="self-center text-xs font-bold text-on-surface-variant">Durum: {profileForm.entryPaused ? 'Yeni girişler durduruldu; açık pozisyon takibi aktif' : 'Yeni girişler aktif'}</span></div>
+      <div className="mt-4 flex flex-wrap gap-3"><button type="button" disabled={profileSaving} onClick={() => void setEntryPaused(!profileForm.entryPaused)} className={`rounded-xl border px-4 py-3 text-sm font-black disabled:opacity-40 ${profileForm.entryPaused ? 'border-primary/40 bg-primary/10 text-primary' : 'border-error/40 bg-error/10 text-error'}`}>{profileSaving ? 'İşleniyor…' : profileForm.entryPaused ? 'Yeni işlemleri başlat' : 'Yeni işlemleri durdur'}</button><span className="self-center text-xs font-bold text-on-surface-variant">Durum: {profileForm.entryPaused ? 'Şu anda yeni emir girişi yapılmamaktadır; açık pozisyonlara otomatik müdahale kapalıdır.' : 'Yeni emir girişleri ve otomatik pozisyon yönetimi aktiftir.'}</span></div>
       <p className="mt-3 text-xs leading-5 text-outline">Stop-loss giriş fiyatına göre gerçek fiyat hareketidir. Net kâr hedefi giriş ve çıkış maliyetleri için koruyucu tampon eklenerek borsaya gönderilir; %1 hedef maliyetlerden sonra yaklaşık %1 kârı amaçlar. Dakikalık emir sınırı yalnızca yazma işlemlerini sınırlar; piyasa ve snapshot okumaları ayrı çağrılardır. Açık pozisyonların kaldıracı zorla değiştirilmez.</p>
     </section>}
     {rows.length === 0 ? <Empty text="Bu hesapta açık pozisyon bulunmuyor."/> : <div className="overflow-x-auto rounded-2xl border border-outline/10"><table className="w-full min-w-[980px] text-left text-sm"><thead><tr className="bg-surface-high text-[10px] font-black uppercase tracking-wider text-outline"><Th>Parite</Th><Th>Yön</Th><Th>Miktar</Th><Th>Giriş</Th><Th>Mark</Th><Th>Likidasyon</Th><Th>PnL</Th><Th>Margin</Th><Th/></tr></thead><tbody>{rows.map((row) => {

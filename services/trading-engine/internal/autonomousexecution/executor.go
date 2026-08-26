@@ -62,6 +62,12 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	if instance.Type != "AUTONOMOUS" || instance.Mode != "DEMO" || e.execution == nil {
 		return errors.New("autonomous TESTNET executor is disabled")
 	}
+	if instance.Configuration["entryPaused"] == true {
+		// A paused bot must leave both flat and open exchange state untouched.
+		// Existing exchange-side orders remain in place and can still be filled,
+		// but this executor does not create, cancel, replace or close anything.
+		return e.store.MarkAutonomousExecution(ctx, decisionID, false, "autonomous TESTNET execution is paused; existing positions and orders are untouched")
+	}
 	order := decision.HypotheticalOrder
 	sideText, sideOK := order["side"].(string)
 	quantityText, quantityOK := order["quantity"].(string)
@@ -135,9 +141,6 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		if manualLimitClosePending(openOrders, instance.Symbol) {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "manual reduce-only LIMIT close is open; autonomous additions are suspended")
 		}
-		if instance.Configuration["entryPaused"] == true {
-			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "new TESTNET entries are paused; existing position protection remains active")
-		}
 		if instance.Configuration["pyramidingEnabled"] != true || !samePositionDirection(*current, side) {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "existing TESTNET position is already protected; no additional entry allowed")
 		}
@@ -188,9 +191,6 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		// Binance does not permit changing leverage while an isolated position is
 		// open. Preserve the exchange position's leverage for same-side additions.
 		return e.pyramidPosition(ctx, instance, decisionID, side, quantityText, positionLeverage, *current, openOrders, reference, order, now)
-	}
-	if instance.Configuration["entryPaused"] == true {
-		return e.store.MarkAutonomousExecution(ctx, decisionID, false, "new TESTNET entries are paused; exchange position is flat")
 	}
 	if allocationOK && allocation > 0 {
 		positionAllocation := allocation
