@@ -567,7 +567,7 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 			// PAPER evidence units stay independent: a bot never mutates an
 			// already-open trade into a larger/averaged trade. Multiple bots and
 			// strategies may still hold separate trades on the same coin.
-			if decision.HypotheticalOrder == nil || !entryRiskApproved || !paperPyramidingAllowed(instance.Mode, instance.Configuration) {
+			if decision.HypotheticalOrder == nil || !entryRiskApproved || boolValue(instance.Configuration["entryPaused"]) || !paperPyramidingAllowed(instance.Mode, instance.Configuration) {
 				return nil, nil
 			}
 			side, sideOK := decision.HypotheticalOrder["side"].(string)
@@ -684,7 +684,7 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 		}
 		return &execution, nil
 	}
-	if decision.HypotheticalOrder == nil || !entryRiskApproved {
+	if decision.HypotheticalOrder == nil || !entryRiskApproved || boolValue(instance.Configuration["entryPaused"]) {
 		return nil, nil
 	}
 	side, sideOK := decision.HypotheticalOrder["side"].(string)

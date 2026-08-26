@@ -4,6 +4,7 @@ import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
 import { ownedAccount } from './exchange-account.service.js';
 import type { UpdateKillSwitchInput, UpdateRiskProfileInput } from './risk.schema.js';
+import { TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS } from '../ai-trading/universe.worker.js';
 
 const riskSelect = {
   id: true, exchangeAccountId: true, enabled: true, accountKillSwitch: true, killSwitchReason: true,
@@ -19,12 +20,17 @@ const riskSelect = {
 
 export async function getRiskProfile(userId: string, exchangeAccountId: string) {
   await ownedAccount(userId, exchangeAccountId);
-  const [profile, global] = await Promise.all([
+  const [profile, global, bots] = await Promise.all([
     prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId }, select: riskSelect }),
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true, reason: true, activatedAt: true } }),
+    prisma.tradingBot.findMany({
+      where: { userId, exchangeAccountId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'DEMO'] }, lifecycleStatus: { not: 'ARCHIVED' } },
+      select: { configuration: true },
+    }),
   ]);
   if (!profile || !global) throw new ApiError(503, 'Risk profili hazır değil.', 'RISK_PROFILE_UNAVAILABLE');
   return { ...serializeProfile(profile), effectiveMaxOpenPositions: effectiveAutonomousPositionLimits(profile.maxOpenPositions, profile.paperMaxOpenPositions),
+    entryPaused: bots.length > 0 && bots.every((bot) => configurationFlag(bot.configuration, 'entryPaused')),
     globalKillSwitch: global.globalKillSwitch, globalKillSwitchReason: global.reason, globalKillSwitchActivatedAt: global.activatedAt };
 }
 
@@ -89,7 +95,7 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
       select: riskSelect,
     });
     if (botAllocationInput !== undefined || minimumMarginInput !== undefined || input.minLeverage !== undefined || input.maxLeverage !== undefined
-      || input.stopLossBps !== undefined || input.takeProfitBps !== undefined) {
+      || input.stopLossBps !== undefined || input.takeProfitBps !== undefined || input.entryPaused !== undefined) {
       const bots = await tx.tradingBot.findMany({
         where: { userId, exchangeAccountId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'DEMO'] }, lifecycleStatus: { not: 'ARCHIVED' } },
         select: { id: true, mode: true, configuration: true },
@@ -102,10 +108,12 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
         const testnetProtection = bot.mode === 'DEMO' ? {
           stopLossBps: input.stopLossBps ?? current.testnetStopLossBps,
           takeProfitBps: input.takeProfitBps ?? current.testnetTakeProfitBps,
+          estimatedRoundTripCostBps: TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS,
           fixedTestnetProtectionTargets: true,
         } : {};
+        const executionControl = input.entryPaused === undefined ? {} : { entryPaused: input.entryPaused };
         await tx.tradingBot.update({ where: { id: bot.id }, data: {
-          configuration: { ...source, allocationUsdt: botAllocation, minimumInitialMarginUsdt: minimumInitialMargin, leverage, leverageMin: minimumLeverage, leverageMax: maximumLeverage, testnetMarginAllocationMode: true, ...testnetProtection },
+          configuration: { ...source, allocationUsdt: botAllocation, minimumInitialMarginUsdt: minimumInitialMargin, leverage, leverageMin: minimumLeverage, leverageMax: maximumLeverage, testnetMarginAllocationMode: true, ...testnetProtection, ...executionControl },
           startingPaperBalance: botAllocation,
           version: { increment: 1 },
         } });
@@ -115,8 +123,12 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
       userId, exchangeAccountId, action: 'RISK_PROFILE_UPDATED', entityType: 'TRADING_RISK_PROFILE', entityId: updated.id,
       metadata: { changedFields: Object.keys(input) }, ...(ipAddress ? { ipAddress } : {}),
     } });
-    return serializeProfile(updated);
+    return { ...serializeProfile(updated), ...(input.entryPaused === undefined ? {} : { entryPaused: input.entryPaused }) };
   });
+}
+
+function configurationFlag(value: Prisma.JsonValue, key: string) {
+  return Boolean(value && !Array.isArray(value) && typeof value === 'object' && (value as Prisma.JsonObject)[key] === true);
 }
 
 export async function updateKillSwitch(userId: string, input: UpdateKillSwitchInput, ipAddress?: string) {

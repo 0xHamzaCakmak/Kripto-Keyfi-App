@@ -401,3 +401,34 @@ func TestExecutorEnforcesAutonomousLeverageBand(t *testing.T) {
 		}
 	}
 }
+
+func TestTestnetNetTargetAddsRoundTripCostBuffer(t *testing.T) {
+	configuration := map[string]any{
+		"stopLossBps": float64(500), "takeProfitBps": float64(100), "estimatedRoundTripCostBps": float64(20),
+	}
+	_, longTarget, err := testnetProtectionPrices(configuration, domain.Position{Side: domain.PositionLong, EntryPrice: "100"})
+	if err != nil || longTarget != "101.200000000000000000" {
+		t.Fatalf("unexpected long net target: %s err=%v", longTarget, err)
+	}
+	_, shortTarget, err := testnetProtectionPrices(configuration, domain.Position{Side: domain.PositionShort, EntryPrice: "100"})
+	if err != nil || shortTarget != "98.800000000000000000" {
+		t.Fatalf("unexpected short net target: %s err=%v", shortTarget, err)
+	}
+	adjusted, err := addCostBufferToTake("101", domain.SideBuy, 20)
+	if err != nil || adjusted != "101.202000000000000000" {
+		t.Fatalf("unexpected initial-order target buffer: %s err=%v", adjusted, err)
+	}
+}
+
+func TestExecutorSoftPauseBlocksOnlyNewEntry(t *testing.T) {
+	store, exchange := &fakeStore{}, &fakeExecution{}
+	instance := bot.Instance{ID: "bot-1", UserID: "user-1", ExchangeAccountID: "account-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "ETHUSDT"}
+	instance.Configuration = map[string]any{"entryPaused": true}
+	decision := bot.Decision{HypotheticalOrder: map[string]any{"side": "BUY", "quantity": "0.01", "stopLoss": "2400", "takeProfit": "2525", "leverage": 5}}
+	if err := (&Executor{store: store, execution: exchange}).Execute(t.Context(), instance, decision, 101, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if len(exchange.commands) != 0 || len(store.orders) != 0 {
+		t.Fatalf("soft pause submitted a new entry: commands=%d orders=%d", len(exchange.commands), len(store.orders))
+	}
+}

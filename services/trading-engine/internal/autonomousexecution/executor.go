@@ -75,6 +75,13 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	if side != domain.SideBuy && side != domain.SideSell {
 		return errors.New("invalid autonomous side")
 	}
+	if costBps, ok := numericConfiguration(instance.Configuration["estimatedRoundTripCostBps"]); ok {
+		adjusted, adjustErr := addCostBufferToTake(takeText, side, costBps)
+		if adjustErr != nil {
+			return adjustErr
+		}
+		takeText = adjusted
+	}
 	executionKey := instance.ExchangeAccountID + ":" + instance.Symbol
 	executionLock := e.lockFor(executionKey)
 	executionLock.Lock()
@@ -128,6 +135,9 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		if manualLimitClosePending(openOrders, instance.Symbol) {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "manual reduce-only LIMIT close is open; autonomous additions are suspended")
 		}
+		if instance.Configuration["entryPaused"] == true {
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "new TESTNET entries are paused; existing position protection remains active")
+		}
 		if instance.Configuration["pyramidingEnabled"] != true || !samePositionDirection(*current, side) {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "existing TESTNET position is already protected; no additional entry allowed")
 		}
@@ -178,6 +188,9 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		// Binance does not permit changing leverage while an isolated position is
 		// open. Preserve the exchange position's leverage for same-side additions.
 		return e.pyramidPosition(ctx, instance, decisionID, side, quantityText, positionLeverage, *current, openOrders, reference, order, now)
+	}
+	if instance.Configuration["entryPaused"] == true {
+		return e.store.MarkAutonomousExecution(ctx, decisionID, false, "new TESTNET entries are paused; exchange position is flat")
 	}
 	if allocationOK && allocation > 0 {
 		positionAllocation := allocation
@@ -666,6 +679,12 @@ func testnetProtectionPricesWithPlan(configuration, plan map[string]any, positio
 	if !entryOK || !stopOK || !takeOK || entry.Sign() <= 0 || stopBps <= 0 || takeBps <= 0 {
 		return "", "", errors.New("TESTNET protection configuration is invalid")
 	}
+	// The UI expresses take-profit as a net target. Add a conservative
+	// round-trip commission/slippage allowance before placing the exchange
+	// trigger, so a 1% target is not consumed by entry and exit costs.
+	if costBps, ok := numericConfiguration(configuration["estimatedRoundTripCostBps"]); ok && costBps >= 0 && costBps <= 100 {
+		takeBps += costBps
+	}
 	stopRate, _ := new(big.Rat).SetString(strconv.FormatFloat(stopBps/10_000, 'f', 8, 64))
 	takeRate, _ := new(big.Rat).SetString(strconv.FormatFloat(takeBps/10_000, 'f', 8, 64))
 	one := big.NewRat(1, 1)
@@ -709,6 +728,24 @@ func numericConfiguration(value any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func addCostBufferToTake(value string, entrySide domain.OrderSide, costBps float64) (string, error) {
+	price, priceOK := new(big.Rat).SetString(value)
+	if !priceOK || price.Sign() <= 0 || costBps < 0 || costBps > 100 || (entrySide != domain.SideBuy && entrySide != domain.SideSell) {
+		return "", errors.New("TESTNET net take-profit cost buffer is invalid")
+	}
+	rate := bpsRat(costBps)
+	one := big.NewRat(1, 1)
+	if entrySide == domain.SideBuy {
+		return new(big.Rat).Mul(price, new(big.Rat).Add(one, rate)).FloatString(18), nil
+	}
+	return new(big.Rat).Mul(price, new(big.Rat).Sub(one, rate)).FloatString(18), nil
+}
+
+func bpsRat(value float64) *big.Rat {
+	parsed, _ := new(big.Rat).SetString(strconv.FormatFloat(value/10_000, 'f', 8, 64))
+	return parsed
 }
 
 var errAllocationExhausted = errors.New("bot TESTNET allocation is fully deployed")

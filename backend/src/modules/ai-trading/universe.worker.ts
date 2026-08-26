@@ -24,8 +24,9 @@ export const PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT = 0.05;
 export const TESTNET_TREND_GRID_STEP_BPS = 25;
 export const TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES = 2;
 export const TESTNET_TRANSITION_MIN_ATR_BPS = 20;
-export const TESTNET_MIN_TAKE_PROFIT_BPS = 300;
-export const TESTNET_MAX_ADAPTIVE_STOP_BPS = 300;
+export const TESTNET_MIN_TAKE_PROFIT_BPS = 100;
+export const TESTNET_MAX_ADAPTIVE_STOP_BPS = 1_000;
+export const TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS = 20;
 export const TESTNET_DEFAULT_MIN_INITIAL_MARGIN_USDT = 20;
 
 export function universeCandidate(symbols: string[], slot: number, index: number, cohortSize: number) {
@@ -98,6 +99,7 @@ export function testnetExecutionConfiguration(value: Prisma.JsonValue, leverage:
     signalThresholdBps: Number.isFinite(configuredThreshold) ? Math.min(configuredThreshold, 10) : 10,
     stopLossBps,
     takeProfitBps,
+    estimatedRoundTripCostBps: TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS,
     minimumTakeProfitBps: takeProfitBps,
     minimumInitialMarginUsdt: Number.isFinite(configuredMinimumMargin) && configuredMinimumMargin > 0 ? configuredMinimumMargin : TESTNET_DEFAULT_MIN_INITIAL_MARGIN_USDT,
     testnetMarginAllocationMode: true,
