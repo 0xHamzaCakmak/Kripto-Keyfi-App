@@ -241,7 +241,7 @@ function signedQuery(params: Record<string, string>, secret: string): string {
 function filter(symbol: BinanceExchangeSymbol, filterType: string) { return symbol.filters?.find((item) => item.filterType === filterType); }
 function mapFuturesSymbols(info: BinanceExchangeInfo, leverageBySymbol: Map<string, number>, fallbackMaxLeverage?: number): ExchangeSymbol[] {
   return (info.symbols ?? []).flatMap((symbol) => {
-    if (symbol.status !== 'TRADING' || symbol.quoteAsset !== 'USDT' || symbol.contractType !== 'PERPETUAL' || !symbol.symbol) return [];
+    if (symbol.status !== 'TRADING' || !['USDT', 'USDC'].includes(symbol.quoteAsset ?? '') || symbol.contractType !== 'PERPETUAL' || !symbol.symbol) return [];
     const price = filter(symbol, 'PRICE_FILTER');
     const lot = filter(symbol, 'LOT_SIZE');
     const marketLot = filter(symbol, 'MARKET_LOT_SIZE');
@@ -249,7 +249,7 @@ function mapFuturesSymbols(info: BinanceExchangeInfo, leverageBySymbol: Map<stri
     const maxLeverage = leverageBySymbol.get(symbol.symbol) ?? fallbackMaxLeverage;
     if (!price?.tickSize || !lot?.stepSize || !lot.minQty || !lot.maxQty || !notional?.notional || maxLeverage === undefined) return [];
     return [{
-      symbol: symbol.symbol, baseAsset: symbol.baseAsset ?? symbol.symbol.replace(/USDT$/, ''), quoteAsset: 'USDT', status: 'TRADING' as const,
+      symbol: symbol.symbol, baseAsset: symbol.baseAsset ?? symbol.symbol.replace(/(?:USDT|USDC)$/, ''), quoteAsset: symbol.quoteAsset!, status: 'TRADING' as const,
       tickSize: price.tickSize, stepSize: lot.stepSize, minQuantity: lot.minQty,
       maxQuantity: marketLot?.maxQty ?? lot.maxQty, minNotional: notional.notional, maxLeverage,
     }];

@@ -163,7 +163,7 @@ func (r *Reader) GetSymbols(ctx context.Context) ([]domain.SymbolRule, error) {
 	}
 	rules := make([]domain.SymbolRule, 0, len(info.Symbols))
 	for _, symbol := range info.Symbols {
-		if symbol.Status != "TRADING" || symbol.QuoteAsset != "USDT" || symbol.ContractType != "PERPETUAL" {
+		if symbol.Status != "TRADING" || (symbol.QuoteAsset != "USDT" && symbol.QuoteAsset != "USDC") || symbol.ContractType != "PERPETUAL" {
 			continue
 		}
 		filters := make(map[string]struct{ TickSize, StepSize, MinQty, MaxQty, Notional string })
@@ -182,7 +182,7 @@ func (r *Reader) GetSymbols(ctx context.Context) ([]domain.SymbolRule, error) {
 			maxQuantity = lot.MaxQty
 		}
 		rules = append(rules, domain.SymbolRule{
-			Symbol: symbol.Symbol, BaseAsset: symbol.BaseAsset, QuoteAsset: "USDT", Status: "TRADING",
+			Symbol: symbol.Symbol, BaseAsset: symbol.BaseAsset, QuoteAsset: symbol.QuoteAsset, Status: "TRADING",
 			TickSize: domain.Decimal(price.TickSize), StepSize: domain.Decimal(lot.StepSize),
 			MinQuantity: domain.Decimal(lot.MinQty), MaxQuantity: domain.Decimal(maxQuantity),
 			MinNotional: domain.Decimal(notional.Notional), MaxLeverage: maxLeverage,

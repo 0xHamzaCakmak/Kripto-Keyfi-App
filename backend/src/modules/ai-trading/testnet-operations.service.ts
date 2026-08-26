@@ -5,6 +5,8 @@ import { ApiError } from '../../utils/api-error.js';
 import { adapterFor, exchangeCall } from '../trading/exchange-account.service.js';
 import type { ExchangeOrder, ExchangePosition, ExchangeTrade } from '../trading/exchanges/exchange-adapter.js';
 import { getTradingEngineSnapshot } from '../trading/trading-engine.client.js';
+
+export const TESTNET_STARTING_BALANCE_USD = 10_000;
 import { autonomousDTO } from './autonomous-admin.service.js';
 
 const OPERATIONS_CACHE_MS = 60_000;
@@ -167,7 +169,7 @@ async function loadOperations(userId: string) {
 
 async function loadAccountSummary(userId: string, operations: Awaited<ReturnType<typeof loadOperations>>) {
   const account = await activeTestnetAccount(userId);
-  if (!account) return { connected: false as const, accountId: null, totalBalance: '0', availableBalance: '0', unrealizedPnl: '0', equity: '0', activeMargin: '0', activeNotional: '0', activeBots: 0, openPositions: 0, activeEntryOrders: 0 };
+  if (!account) return { connected: false as const, accountId: null, startingBalance: decimalText(TESTNET_STARTING_BALANCE_USD), totalBalance: '0', availableBalance: '0', unrealizedPnl: '0', equity: '0', activeMargin: '0', activeNotional: '0', activeBots: 0, openPositions: 0, activeEntryOrders: 0 };
   const snapshot = await loadTradingEngineSnapshot(account);
   const { stableBalances, collateral, totalBalance, availableBalance, unrealizedPnl } = accountFinancials(snapshot);
   // Binance one-way mode aggregates an account position by symbol. Summing the
@@ -182,20 +184,23 @@ async function loadAccountSummary(userId: string, operations: Awaited<ReturnType
   const activeNotional = positions.reduce((sum, position) => sum + Math.abs(Number(position.quantity) * Number(position.markPrice)), 0);
   const activeEntryOrders = operations.reduce((sum, operation) => sum + activeEntryOrderCount(operation), 0);
   const activeBots = operations.filter((operation) => activeEntryOrderCount(operation) > 0).length;
-  const checkpoint = await ensureAccountingCheckpoint(userId, account.id, totalBalance, unrealizedPnl);
-  const walletPnl = totalBalance - Number(checkpoint.baselineWalletBalance);
-  const openPnlChange = unrealizedPnl - Number(checkpoint.baselineUnrealizedPnl);
-  const netPnl = walletPnl + openPnlChange;
+  const performance = fixedTestnetPerformance(totalBalance, unrealizedPnl);
   return {
     connected: true as const, accountId: account.id,
+    startingBalance: decimalText(TESTNET_STARTING_BALANCE_USD),
     totalBalance: decimalText(totalBalance), availableBalance: decimalText(availableBalance), unrealizedPnl: decimalText(unrealizedPnl),
     equity: decimalText(totalBalance + unrealizedPnl), activeMargin: decimalText(activeMargin), activeNotional: decimalText(activeNotional),
     activeBots, openPositions: positions.length, activeEntryOrders,
-    walletPnl: decimalText(walletPnl), openPnlChange: decimalText(openPnlChange), netPnl: decimalText(netPnl),
-    pnlPercent: Number(checkpoint.baselineWalletBalance) > 0 ? netPnl / Number(checkpoint.baselineWalletBalance) : 0,
-    accounting: { number: checkpoint.number, startedAt: checkpoint.startedAt, baselineWalletBalance: checkpoint.baselineWalletBalance.toString(), baselineUnrealizedPnl: checkpoint.baselineUnrealizedPnl.toString(), note: checkpoint.note },
+    walletPnl: decimalText(performance.walletPnl), openPnlChange: decimalText(performance.openPnl), netPnl: decimalText(performance.netPnl),
+    pnlPercent: performance.pnlPercent,
     collateralAssets: stableBalances.map((balance) => ({ asset: balance.asset, walletBalance: balance.walletBalance, availableBalance: balance.availableBalance, marginAvailable: balance.asset === 'USDT' || balance.marginAvailable === true })),
   };
+}
+
+export function fixedTestnetPerformance(totalStableBalance: number, unrealizedPnl: number) {
+  const walletPnl = totalStableBalance - TESTNET_STARTING_BALANCE_USD;
+  const netPnl = totalStableBalance + unrealizedPnl - TESTNET_STARTING_BALANCE_USD;
+  return { startingBalance: TESTNET_STARTING_BALANCE_USD, walletPnl, openPnl: unrealizedPnl, netPnl, pnlPercent: netPnl / TESTNET_STARTING_BALANCE_USD };
 }
 
 async function activeTestnetAccount(userId: string) {
@@ -207,7 +212,9 @@ async function activeTestnetAccount(userId: string) {
 
 function accountFinancials(snapshot: Awaited<ReturnType<typeof loadTradingEngineSnapshot>>) {
   const stableBalances = snapshot.balances.filter((balance) => balance.walletType === 'USD_M_FUTURES' && ['USDT', 'USDC'].includes(balance.asset));
-  const collateral = stableBalances.filter((balance) => balance.asset === 'USDT' || balance.marginAvailable === true);
+  // Both native USD-M stablecoin wallets are account value. USDC may be idle
+  // for USDT contracts while remaining available for a USDC perpetual.
+  const collateral = stableBalances;
   const value = (balance: typeof stableBalances[number], field: 'walletBalance' | 'availableBalance' | 'unrealizedPnl') =>
     Number(balance[field] ?? 0) * Number(balance.priceUsdt || 1);
   return {

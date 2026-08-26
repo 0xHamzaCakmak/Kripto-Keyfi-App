@@ -36,14 +36,25 @@ describe('Binance manual trading adapter', () => {
           { filterType: 'MARKET_LOT_SIZE', maxQty: '100' },
           { filterType: 'MIN_NOTIONAL', notional: '5' },
         ],
+      }, {
+        symbol: 'BTCUSDC', status: 'TRADING', baseAsset: 'BTC', quoteAsset: 'USDC', contractType: 'PERPETUAL',
+        filters: [
+          { filterType: 'PRICE_FILTER', tickSize: '0.10' },
+          { filterType: 'LOT_SIZE', stepSize: '0.001', minQty: '0.001', maxQty: '500' },
+          { filterType: 'MARKET_LOT_SIZE', maxQty: '50' },
+          { filterType: 'MIN_NOTIONAL', notional: '5' },
+        ],
       }] });
-      if (url.includes('/fapi/v1/leverageBracket?')) return Response.json([{ symbol: 'BTCUSDT', brackets: [{ initialLeverage: 125 }] }]);
+      if (url.includes('/fapi/v1/leverageBracket?')) return Response.json([{ symbol: 'BTCUSDT', brackets: [{ initialLeverage: 125 }] }, { symbol: 'BTCUSDC', brackets: [{ initialLeverage: 75 }] }]);
       return Response.json({}, { status: 404 });
     }));
     const adapter = new BinanceFuturesAdapter({ apiKey: 'demo-key', apiSecret: 'demo-secret' });
     await expect(adapter.getSymbols()).resolves.toEqual([{
       symbol: 'BTCUSDT', baseAsset: 'BTC', quoteAsset: 'USDT', status: 'TRADING', tickSize: '0.10',
       stepSize: '0.001', minQuantity: '0.001', maxQuantity: '100', minNotional: '5', maxLeverage: 125,
+    }, {
+      symbol: 'BTCUSDC', baseAsset: 'BTC', quoteAsset: 'USDC', status: 'TRADING', tickSize: '0.10',
+      stepSize: '0.001', minQuantity: '0.001', maxQuantity: '50', minNotional: '5', maxLeverage: 75,
     }]);
   });
 

@@ -152,11 +152,12 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 		return e.block(ctx, resolved, order, "RISK_BALANCE_UNAVAILABLE", "Vadeli bakiye doğrulanamadı.", metrics, err)
 	}
 	available := domain.Decimal("0")
+	usdcContract := strings.HasSuffix(order.Symbol, "USDC")
 	for _, balance := range balances {
-		if balance.WalletType == domain.WalletUSDMFutures && balance.Asset == "USDT" {
+		if balance.WalletType == domain.WalletUSDMFutures && balance.Asset == "USDT" && (!usdcContract || balance.MarginAvailable) {
 			available, _ = add(available, balance.AvailableBalance)
 		}
-		if balance.WalletType == domain.WalletUSDMFutures && balance.Asset == "USDC" && (balance.MarginAvailable || strings.HasSuffix(order.Symbol, "USDC")) {
+		if balance.WalletType == domain.WalletUSDMFutures && balance.Asset == "USDC" && (balance.MarginAvailable || usdcContract) {
 			price := balance.PriceUSDT
 			if price == "" {
 				price = "1"

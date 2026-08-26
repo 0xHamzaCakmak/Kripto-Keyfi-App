@@ -33,9 +33,9 @@ func TestReaderNormalizesReadOnlySnapshot(t *testing.T) {
 		case "/fapi/v3/account":
 			_, _ = w.Write([]byte(`{"assets":[{"asset":"USDT","walletBalance":"100","availableBalance":"90","unrealizedProfit":"-2"}]}`))
 		case "/fapi/v1/exchangeInfo":
-			_, _ = w.Write([]byte(`{"symbols":[{"symbol":"ETHUSDT","status":"TRADING","baseAsset":"ETH","quoteAsset":"USDT","contractType":"PERPETUAL","filters":[{"filterType":"PRICE_FILTER","tickSize":"0.01"},{"filterType":"LOT_SIZE","stepSize":"0.001","minQty":"0.001","maxQty":"100"},{"filterType":"MARKET_LOT_SIZE","maxQty":"50"},{"filterType":"MIN_NOTIONAL","notional":"5"}]}]}`))
+			_, _ = w.Write([]byte(`{"symbols":[{"symbol":"ETHUSDT","status":"TRADING","baseAsset":"ETH","quoteAsset":"USDT","contractType":"PERPETUAL","filters":[{"filterType":"PRICE_FILTER","tickSize":"0.01"},{"filterType":"LOT_SIZE","stepSize":"0.001","minQty":"0.001","maxQty":"100"},{"filterType":"MARKET_LOT_SIZE","maxQty":"50"},{"filterType":"MIN_NOTIONAL","notional":"5"}]},{"symbol":"ETHUSDC","status":"TRADING","baseAsset":"ETH","quoteAsset":"USDC","contractType":"PERPETUAL","filters":[{"filterType":"PRICE_FILTER","tickSize":"0.01"},{"filterType":"LOT_SIZE","stepSize":"0.001","minQty":"0.001","maxQty":"100"},{"filterType":"MARKET_LOT_SIZE","maxQty":"40"},{"filterType":"MIN_NOTIONAL","notional":"5"}]}]}`))
 		case "/fapi/v1/leverageBracket":
-			_, _ = w.Write([]byte(`[{"symbol":"ETHUSDT","brackets":[{"initialLeverage":75}]}]`))
+			_, _ = w.Write([]byte(`[{"symbol":"ETHUSDT","brackets":[{"initialLeverage":75}]},{"symbol":"ETHUSDC","brackets":[{"initialLeverage":50}]}]`))
 		case "/fapi/v1/openOrders":
 			_, _ = w.Write([]byte(`[{"orderId":42,"clientOrderId":"kk_test","symbol":"ETHUSDT","side":"SELL","type":"STOP","status":"NEW","origQty":"0.5","executedQty":"0","price":"1900","stopPrice":"1950","reduceOnly":true,"time":1700000000000}]`))
 		case "/fapi/v1/openAlgoOrders":
@@ -59,7 +59,7 @@ func TestReaderNormalizesReadOnlySnapshot(t *testing.T) {
 		t.Fatalf("unexpected balances: %#v, err=%v", balances, err)
 	}
 	symbols, err := reader.GetSymbols(ctx)
-	if err != nil || len(symbols) != 1 || symbols[0].MaxLeverage != 75 || symbols[0].MaxQuantity != "50" {
+	if err != nil || len(symbols) != 2 || symbols[0].MaxLeverage != 75 || symbols[0].MaxQuantity != "50" || symbols[1].QuoteAsset != "USDC" || symbols[1].MaxLeverage != 50 {
 		t.Fatalf("unexpected symbols: %#v, err=%v", symbols, err)
 	}
 	orders, err := reader.GetOpenOrders(ctx)

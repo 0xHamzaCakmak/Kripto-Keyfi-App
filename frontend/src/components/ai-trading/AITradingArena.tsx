@@ -1,7 +1,7 @@
 import { Bot, ChevronRight, CircleX, Pause, Play, SlidersHorizontal, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiErrorMessage } from '../../services/apiClient';
-import { aiTradingApi, botSymbols, recordNumber, type AutonomousBot, type ChampionCandidate, type LeaderboardRow, type MarketRegime, type PaperPerformance, type TestnetAccountSummary, type TestnetBotOperation, type TradeSummary } from '../../services/aiTradingService';
+import { aiTradingApi, botSymbols, recordNumber, type AutonomousBot, type ChampionCandidate, type LeaderboardRow, type MarketRegime, type PaperPerformance, type TestnetBotOperation, type TradeSummary } from '../../services/aiTradingService';
 import { closeOpenPosition, type OpenPosition } from '../../services/tradingService';
 import { AITradingPage, EmptyState, ErrorState, formatDate, formatMoney, formatPercent, MetricCard, ModeBadge, RefreshButton, StatusBadge } from './AITradingUI';
 
@@ -17,11 +17,9 @@ export default function AITradingArena() {
   const [bots, setBots] = useState<AutonomousBot[]>([]); const [scores, setScores] = useState<LeaderboardRow[]>([]);
   const [summaries, setSummaries] = useState<TradeSummary[]>([]); const [champions, setChampions] = useState<ChampionCandidate[]>([]);
   const [operations, setOperations] = useState<TestnetBotOperation[]>([]);
-  const [testnetAccount, setTestnetAccount] = useState<TestnetAccountSummary | null>(null);
   const [regimeIds, setRegimeIds] = useState<Set<string> | null>(null); const [selected, setSelected] = useState<ArenaRow | null>(null);
   const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [fleetBusy, setFleetBusy] = useState(false); const [fleetNotice, setFleetNotice] = useState('');
-  const [accountingBusy, setAccountingBusy] = useState(false);
   const [filters, setFilters] = useState({ status: 'ALL', strategy: 'ALL', generation: 'ALL', regime: 'ALL' as 'ALL' | MarketRegime, minScore: '', minPnl: '' });
   const [sort, setSort] = useState<SortKey>('pnl');
   const [pageSize, setPageSize] = useState<10 | 'ALL'>(10); const [page, setPage] = useState(1);
@@ -33,15 +31,12 @@ export default function AITradingArena() {
         .catch((reason) => { setError(getApiErrorMessage(reason, 'Skor verileri geçici olarak alınamadı; botlar skor olmadan gösteriliyor.')); return null; });
       const operationRequest = aiTradingApi.testnetOperations()
         .catch((reason) => { setError(getApiErrorMessage(reason, 'TESTNET operasyon verileri geçici olarak alınamadı; PAPER ve skor verileri gösteriliyor.')); return null; });
-      const accountRequest = aiTradingApi.testnetAccountSummary()
-        .catch((reason) => { setError(getApiErrorMessage(reason, 'TESTNET bakiye bilgisi geçici olarak alınamadı.')); return null; });
       const [botRows, summaryRows, championRows] = await Promise.all([aiTradingApi.bots(), aiTradingApi.tradeSummary('BOT', 100), aiTradingApi.champions()]);
       // Defense in depth: archived/retired bots retain their financial history
       // in the database but must never reappear in the active Arena fleet.
       setBots(botRows.filter((bot) => bot.lifecycleStatus !== 'ARCHIVED')); setSummaries(summaryRows); setChampions(championRows);
       void scoreRequest.then((scoreRows) => { if (scoreRows) setScores(scoreRows); });
       void operationRequest.then((operationRows) => { if (operationRows) setOperations(operationRows.data); });
-      void accountRequest.then((accountRow) => { if (accountRow) setTestnetAccount(accountRow.data); });
     } catch (reason) { setError(getApiErrorMessage(reason, 'Arena verileri alınamadı.')); }
     finally { if (showSpinner) setLoading(false); }
   }, []);
@@ -85,15 +80,6 @@ export default function AITradingArena() {
     finally { setFleetBusy(false); }
   }
 
-  async function resetTestnetPnl() {
-    if (!window.confirm('Binance Demo işlem geçmişi silinmeden, toplam kâr/zarar bu andan itibaren sıfırdan izlensin mi? Açık pozisyonlar kapanmaz.')) return;
-    setAccountingBusy(true); setError('');
-    try {
-      await aiTradingApi.resetTestnetAccounting('Admin Binance Demo PnL başlangıç noktasını yeniledi.');
-      await load(false);
-    } catch (reason) { setError(getApiErrorMessage(reason, 'TESTNET PnL başlangıç noktası yenilenemedi.')); }
-    finally { setAccountingBusy(false); }
-  }
 
   const rows = useMemo(() => buildArenaRows(bots, scores, summaries, champions, operations), [bots, scores, summaries, champions, operations]);
   const strategies = useMemo(() => [...new Set(bots.map((bot) => bot.strategyVersion?.strategy.family).filter(Boolean))] as string[], [bots]);
@@ -117,7 +103,7 @@ export default function AITradingArena() {
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><MetricCard label="Toplam bot" value={bots.length} detail="PAPER + TESTNET" /><MetricCard label="Score üretilen" value={scores.length} /><MetricCard label="PAPER" value={bots.filter((bot) => bot.mode === 'PAPER').length} tone="warning" /><MetricCard label="TESTNET" value={operations.length} tone="safe" /><MetricCard label="Açık TESTNET pozisyon" value={operations.filter((item) => item.position).length} tone="safe" /></div>
     {error && <ErrorState message={error} />}
     {fleetNotice && <div className="rounded-2xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-sm font-bold text-secondary">{fleetNotice}</div>}
-    <section className="rounded-[24px] border border-outline/10 bg-surface p-5"><div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between"><div className="flex items-center gap-2 text-sm font-black text-white"><SlidersHorizontal size={18} className="text-primary" /> Filtreler ve sıralama</div><div className="flex flex-wrap items-center justify-end gap-2"><TestnetBalanceStrip summary={testnetAccount} /><button type="button" disabled={accountingBusy || !testnetAccount?.connected} onClick={() => void resetTestnetPnl()} className="rounded-xl border border-primary/25 px-3 py-2 text-[11px] font-black text-primary disabled:opacity-40">{accountingBusy ? 'Sıfırlanıyor…' : 'Demo PnL başlangıcını yenile'}</button></div></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+    <section className="rounded-[24px] border border-outline/10 bg-surface p-5"><div className="flex items-center gap-2 text-sm font-black text-white"><SlidersHorizontal size={18} className="text-primary" /> Filtreler ve sıralama</div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
       <Select label="Status" value={filters.status} onChange={(status) => setFilters((value) => ({ ...value, status }))} options={['ALL', ...statuses]} />
       <Select label="Strategy" value={filters.strategy} onChange={(strategy) => setFilters((value) => ({ ...value, strategy }))} options={['ALL', ...strategies]} />
       <Select label="Generation" value={filters.generation} onChange={(generation) => setFilters((value) => ({ ...value, generation }))} options={['ALL', ...generations]} />
@@ -170,23 +156,6 @@ function number(value: number | null | undefined) { return value === null || val
 function Cell({ value, strong = false, compact = false, tone = null }: { value: string; strong?: boolean; compact?: boolean; tone?: number | null }) { return <td className={`p-3 ${strong ? 'font-black text-primary' : tone === null ? 'text-on-surface-variant' : tone >= 0 ? 'font-bold text-secondary' : 'font-bold text-error'} ${compact ? 'max-w-32 truncate' : ''}`} title={compact ? value : undefined}>{value}</td>; }
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: readonly string[] }) { return <label className="text-xs font-bold text-on-surface-variant">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/40 p-2.5 text-xs text-white">{options.map((option) => <option key={option}>{option}</option>)}</select></label>; }
 function NumberFilter({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="text-xs font-bold text-on-surface-variant">{label}<input type="number" value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/40 p-2.5 text-xs text-white" placeholder="Tümü" /></label>; }
-function TestnetBalanceStrip({ summary }: { summary: TestnetAccountSummary | null }) {
-  if (!summary) return <div className="text-xs font-bold text-outline">TESTNET bakiyesi yükleniyor…</div>;
-  if (!summary.connected) return <div className="rounded-xl border border-outline/15 bg-background/30 px-3 py-2 text-xs font-bold text-outline">TESTNET hesabı bağlı değil</div>;
-  const assets = summary.collateralAssets?.map((item) => `${item.asset}: ${formatMoney(Number(item.walletBalance))}`).join(' · ') || 'USDT';
-  return <div className="flex max-w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-secondary/20 bg-secondary/5 px-3 py-2 text-xs" title={`Teminat: ${assets} · Açık notional: ${formatMoney(Number(summary.activeNotional))}`}>
-    <BalanceDatum label="TESTNET toplam" value={formatMoney(Number(summary.totalBalance))} />
-    <BalanceDatum label="Boşta" value={formatMoney(Number(summary.availableBalance))} />
-    <BalanceDatum label="İşlemde" value={formatMoney(Number(summary.activeMargin))} />
-    <BalanceDatum label="Açık aktivite" value={`${summary.activeBots} bot · ${summary.activeEntryOrders} işlem`} />
-    <BalanceDatum label="Gerçekleşmiş net" value={formatMoney(Number(summary.walletPnl))} tone={Number(summary.walletPnl)} />
-    <BalanceDatum label="Açık PnL" value={formatMoney(Number(summary.unrealizedPnl))} tone={Number(summary.unrealizedPnl)} />
-    <BalanceDatum label="Toplam net PnL" value={`${formatMoney(Number(summary.netPnl))} · ${formatPercent(summary.pnlPercent)}`} tone={Number(summary.netPnl)} />
-  </div>;
-}
-function BalanceDatum({ label, value, tone = null }: { label: string; value: string; tone?: number | null }) {
-  return <span className="whitespace-nowrap"><span className="text-on-surface-variant">{label}: </span><strong className={tone === null || tone >= 0 ? 'text-secondary' : 'text-error'}>{value}</strong></span>;
-}
 type PositionSnapshot = { symbol: string; entryPrice: number | null; side: 'LONG' | 'SHORT' | null; leverage: number | null; openPnl: number | null; active: boolean; idleReason?: string | null };
 function positionSnapshot(row: ArenaRow): PositionSnapshot {
   const testnetPosition = row.operation?.position;

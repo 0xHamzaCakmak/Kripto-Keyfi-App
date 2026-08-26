@@ -142,6 +142,7 @@ export type TestnetBotOperation = {
 export type TestnetAccountSummary = {
   connected: boolean;
   accountId: string | null;
+  startingBalance: string;
   totalBalance: string;
   availableBalance: string;
   unrealizedPnl: string;

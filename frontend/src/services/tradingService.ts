@@ -34,6 +34,22 @@ export type TradingExecutionProfile = {
   maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string;
   stopLossBps: number; takeProfitBps: number; maxOrdersPerMinute: number; entryPaused: boolean;
 };
+
+function normalizeTradingExecutionProfile(profile: TradingExecutionProfile): TradingExecutionProfile {
+  return {
+    minLeverage: profile.minLeverage,
+    maxLeverage: profile.maxLeverage,
+    botAllocationUsdt: profile.botAllocationUsdt,
+    minInitialMarginUsdt: profile.minInitialMarginUsdt,
+    maxOrderNotional: profile.maxOrderNotional,
+    maxInitialMargin: profile.maxInitialMargin,
+    maxAccountOpenNotional: profile.maxAccountOpenNotional,
+    stopLossBps: profile.stopLossBps,
+    takeProfitBps: profile.takeProfitBps,
+    maxOrdersPerMinute: profile.maxOrdersPerMinute,
+    entryPaused: profile.entryPaused === true,
+  };
+}
 export type TradingBotState = 'DRAFT' | 'VALIDATING' | 'STARTING' | 'RUNNING' | 'PAUSED' | 'STOPPED' | 'RISK_BLOCKED' | 'RECONCILING' | 'EMERGENCY_STOPPED' | 'ERROR';
 export type TradingBot = {
   id: string; exchangeAccountId: string; name: string; type: 'SCALPING' | 'GRID'; mode: 'SHADOW' | 'PAPER' | 'DEMO';
@@ -108,10 +124,19 @@ export async function getOpenPositions(exchangeAccountId: string) {
   return (await api.get<{ data: OpenPosition[] }>('/admin/trading/positions', { params: { exchangeAccountId } })).data.data;
 }
 export async function getTradingExecutionProfile(exchangeAccountId: string) {
-  return (await api.get<{ data: TradingExecutionProfile }>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`)).data.data;
+  const profile = (await api.get<{ data: TradingExecutionProfile }>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`)).data.data;
+  return normalizeTradingExecutionProfile(profile);
 }
 export async function updateTradingExecutionProfile(exchangeAccountId: string, input: TradingExecutionProfile) {
-  return (await api.patch<{ data: TradingExecutionProfile }>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`, input)).data.data;
+  // The GET response also contains server-managed fields (IDs, kill-switch
+  // state, timestamps and effective limits). Never echo those fields into the
+  // strict PATCH contract; send only the administrator-editable values.
+  const payload = normalizeTradingExecutionProfile(input);
+  const profile = (await api.patch<{ data: TradingExecutionProfile }>(
+    `/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`,
+    payload,
+  )).data.data;
+  return normalizeTradingExecutionProfile(profile);
 }
 export async function closeOpenPosition(
   exchangeAccountId: string,
