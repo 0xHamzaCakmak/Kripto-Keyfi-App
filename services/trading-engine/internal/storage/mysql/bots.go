@@ -424,10 +424,12 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 	if configured, ok := paperNumber(instance.Configuration["minimumNetProfitBps"]); !ok || configured < bot.PaperTrainingMinNetProfitBps {
 		instance.Configuration["minimumNetProfitBps"] = bot.PaperTrainingMinNetProfitBps
 	}
-	// Central execution pause freezes automatic PAPER position management as
-	// well as new entries. Decisions may still be observed, but no trade,
-	// position, stop or take-profit state is mutated until execution resumes.
-	if boolValue(instance.Configuration["entryPaused"]) {
+	// Central execution pause freezes automatic PAPER position management and
+	// new entries. An explicit admin manual-close request is the sole exception:
+	// it is risk-reducing, auditable and must remain usable while entries are
+	// paused. The entry guard below still prevents a replacement position.
+	manualCloseRequested := boolValue(instance.Configuration["paperManualCloseRequested"])
+	if paperExecutionPaused(instance.Configuration) {
 		return nil, nil
 	}
 	position, exists, err := loadPaperPosition(ctx, tx, instance.ID)
@@ -446,7 +448,6 @@ func persistPaperCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, d
 	}
 	if openTrade != nil {
 		retirementPending := boolValue(instance.Configuration["paperFleetRetirementPending"])
-		manualCloseRequested := boolValue(instance.Configuration["paperManualCloseRequested"])
 		manualCloseStopBot := boolValue(instance.Configuration["paperManualCloseStopBot"])
 		legacyOutsideCore, coreErr := paperTradeOutsideCoreUniverse(ctx, tx, instance.UserID, openTrade.Symbol)
 		if coreErr != nil {
@@ -741,6 +742,10 @@ VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, 'OPEN', ?, ?, ?, ?, 0, ?, 0, NULLIF(?, '')
 		return nil, err
 	}
 	return &execution, nil
+}
+
+func paperExecutionPaused(configuration map[string]any) bool {
+	return boolValue(configuration["entryPaused"]) && !boolValue(configuration["paperManualCloseRequested"])
 }
 
 func completeManualPaperClose(ctx context.Context, tx *sql.Tx, instance bot.Instance, stopBot bool, now time.Time) error {

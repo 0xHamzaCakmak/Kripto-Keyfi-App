@@ -120,6 +120,18 @@ func TestPaperTradesNeverMergeWhileTestnetKeepsExplicitPyramidingConfig(t *testi
 	}
 }
 
+func TestExplicitPaperCloseRemainsAvailableWhileEntriesArePaused(t *testing.T) {
+	if !paperExecutionPaused(map[string]any{"entryPaused": true}) {
+		t.Fatal("ordinary PAPER execution must remain frozen while entries are paused")
+	}
+	if paperExecutionPaused(map[string]any{"entryPaused": true, "paperManualCloseRequested": true}) {
+		t.Fatal("explicit risk-reducing PAPER close must not be blocked by the entry pause")
+	}
+	if paperExecutionPaused(map[string]any{"entryPaused": false}) {
+		t.Fatal("running PAPER execution was unexpectedly paused")
+	}
+}
+
 func TestConfiguredProtectionPrices(t *testing.T) {
 	config := map[string]any{"stopLossBps": float64(50), "takeProfitBps": float64(100)}
 	stop, take, err := configuredProtectionPrices(config, "BUY", "100")
