@@ -22,7 +22,7 @@ type BinanceExchangeSymbol = {
 type BinanceLeverageBracket = { symbol?: string; brackets?: Array<{ initialLeverage?: number }> };
 type BinanceOrder = {
   orderId?: number; clientOrderId?: string; symbol?: string; side?: string; type?: string; status?: string;
-  origQty?: string; executedQty?: string; price?: string; stopPrice?: string; reduceOnly?: boolean; time?: number; updateTime?: number;
+  origQty?: string; executedQty?: string; price?: string; stopPrice?: string; reduceOnly?: boolean; positionSide?: string; time?: number; updateTime?: number;
 };
 type BinancePosition = {
   symbol?: string; positionAmt?: string; entryPrice?: string; markPrice?: string; unRealizedProfit?: string;
@@ -30,7 +30,7 @@ type BinancePosition = {
 };
 type BinanceUserTrade = {
   id?: number; orderId?: number; symbol?: string; side?: string; price?: string; qty?: string; quoteQty?: string;
-  realizedPnl?: string; commission?: string; commissionAsset?: string; maker?: boolean; time?: number;
+  realizedPnl?: string; commission?: string; commissionAsset?: string; maker?: boolean; time?: number; positionSide?: string;
 };
 
 /**
@@ -125,8 +125,10 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
   async placeOrder(input: PlaceOrderInput): Promise<ExchangeOrder> {
     const params: Record<string, string> = {
       symbol: input.symbol, side: input.side, type: binanceOrderType(input.type), quantity: input.quantity,
-      reduceOnly: input.reduceOnly.toString(), newClientOrderId: input.clientOrderId, newOrderRespType: 'RESULT',
+      newClientOrderId: input.clientOrderId, newOrderRespType: 'RESULT',
     };
+    if (input.positionSide) params.positionSide = input.positionSide;
+    else params.reduceOnly = input.reduceOnly.toString();
     if (input.type === 'LIMIT' || input.type === 'STOP_LIMIT') params.timeInForce = 'GTC';
     if (input.price) params.price = input.price;
     if (input.stopPrice) params.stopPrice = input.stopPrice;
@@ -162,6 +164,16 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
     });
   }
 
+  async getHedgeMode(): Promise<boolean> {
+    const result = await this.signedRequest('/fapi/v1/positionSide/dual', 'GET') as { dualSidePosition?: boolean };
+    if (typeof result.dualSidePosition !== 'boolean') throw new ExchangeAdapterError('INVALID_EXCHANGE_RESPONSE', 'Binance pozisyon modu okunamadı.');
+    return result.dualSidePosition;
+  }
+
+  async setHedgeMode(enabled: boolean): Promise<void> {
+    await this.signedRequest('/fapi/v1/positionSide/dual', 'POST', { dualSidePosition: enabled.toString() });
+  }
+
   async getUserTrades(symbol: string, limit = 1000): Promise<ExchangeTrade[]> {
     const body = await this.signedRequest('/fapi/v1/userTrades', 'GET', {
       symbol, limit: Math.max(1, Math.min(1000, Math.trunc(limit))).toString(),
@@ -171,6 +183,7 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
       return [{
         tradeId: trade.id.toString(), exchangeOrderId: trade.orderId.toString(), symbol: trade.symbol,
         side: trade.side === 'SELL' ? 'SELL' as const : 'BUY' as const,
+        ...(['LONG', 'SHORT', 'BOTH'].includes(trade.positionSide ?? '') ? { positionSide: trade.positionSide as 'LONG' | 'SHORT' | 'BOTH' } : {}),
         price: trade.price ?? '0', quantity: trade.qty ?? '0', quoteQuantity: trade.quoteQty ?? '0',
         realizedPnl: trade.realizedPnl ?? '0', commission: trade.commission ?? '0',
         commissionAsset: trade.commissionAsset ?? 'UNKNOWN', maker: trade.maker === true,
@@ -261,7 +274,9 @@ function mapOrder(order: BinanceOrder): ExchangeOrder {
   if (order.orderId === undefined || !order.symbol) throw new ExchangeAdapterError('INVALID_EXCHANGE_RESPONSE', 'Binance emir cevabı doğrulanamadı.');
   return {
     exchangeOrderId: order.orderId.toString(), clientOrderId: order.clientOrderId ?? '', symbol: order.symbol,
-    side: order.side === 'SELL' ? 'SELL' : 'BUY', type: fromBinanceOrderType(order.type), status: order.status ?? 'UNKNOWN',
+    side: order.side === 'SELL' ? 'SELL' : 'BUY',
+    ...(['LONG', 'SHORT', 'BOTH'].includes(order.positionSide ?? '') ? { positionSide: order.positionSide as 'LONG' | 'SHORT' | 'BOTH' } : {}),
+    type: fromBinanceOrderType(order.type), status: order.status ?? 'UNKNOWN',
     quantity: order.origQty ?? '0', executedQuantity: order.executedQty ?? '0',
     ...(isNonZero(order.price) ? { price: order.price } : {}), ...(isNonZero(order.stopPrice) ? { stopPrice: order.stopPrice } : {}),
     reduceOnly: order.reduceOnly === true,

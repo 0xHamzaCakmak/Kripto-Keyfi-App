@@ -19,7 +19,7 @@ func (s *AccountStore) Claim(ctx context.Context, userID, accountID, orderID, id
 	defer func() { _ = transaction.Rollback() }()
 	const query = `SELECT id, userId, exchangeAccountId, idempotencyKey, clientOrderId,
 COALESCE(exchangeOrderId, ''), symbol, side, type, CAST(quantity AS CHAR),
-COALESCE(CAST(price AS CHAR), ''), COALESCE(CAST(stopPrice AS CHAR), ''), leverage,
+COALESCE(CAST(price AS CHAR), ''), COALESCE(CAST(stopPrice AS CHAR), ''), leverage, COALESCE(positionSide, ''),
 marginMode, reduceOnly, source, status, executionAttemptedAt, executionEngine
 FROM trading_orders WHERE id = ? AND userId = ? AND exchangeAccountId = ? FOR UPDATE`
 	var order execution.StoredOrder
@@ -28,7 +28,7 @@ FROM trading_orders WHERE id = ? AND userId = ? AND exchangeAccountId = ? FOR UP
 	err = transaction.QueryRowContext(ctx, query, orderID, userID, accountID).Scan(
 		&order.ID, &order.UserID, &order.ExchangeAccountID, &order.IdempotencyKey, &order.ClientOrderID,
 		&order.ExchangeOrderID, &order.Symbol, &order.Side, &order.Type, &order.Quantity,
-		&order.Price, &order.StopPrice, &order.Leverage, &order.MarginMode, &order.ReduceOnly, &order.Source,
+		&order.Price, &order.StopPrice, &order.Leverage, &order.PositionSide, &order.MarginMode, &order.ReduceOnly, &order.Source,
 		&order.Status, &attempted, &engine,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -112,7 +112,7 @@ func (s *AccountStore) ClaimCancel(ctx context.Context, userID, accountID, excha
 	defer func() { _ = transaction.Rollback() }()
 	const query = `SELECT id, userId, exchangeAccountId, idempotencyKey, clientOrderId,
 COALESCE(exchangeOrderId, ''), symbol, side, type, CAST(quantity AS CHAR),
-COALESCE(CAST(price AS CHAR), ''), COALESCE(CAST(stopPrice AS CHAR), ''), leverage,
+COALESCE(CAST(price AS CHAR), ''), COALESCE(CAST(stopPrice AS CHAR), ''), leverage, COALESCE(positionSide, ''),
 marginMode, reduceOnly, source, status, cancelIdempotencyKey, cancelClientOrderId, cancelAttemptedAt
 FROM trading_orders WHERE userId = ? AND exchangeAccountId = ? AND exchangeOrderId = ? FOR UPDATE`
 	var order execution.StoredOrder
@@ -121,7 +121,7 @@ FROM trading_orders WHERE userId = ? AND exchangeAccountId = ? AND exchangeOrder
 	err = transaction.QueryRowContext(ctx, query, userID, accountID, exchangeOrderID).Scan(
 		&order.ID, &order.UserID, &order.ExchangeAccountID, &order.IdempotencyKey, &order.ClientOrderID,
 		&order.ExchangeOrderID, &order.Symbol, &order.Side, &order.Type, &order.Quantity, &order.Price,
-		&order.StopPrice, &order.Leverage, &order.MarginMode, &order.ReduceOnly, &order.Source, &order.Status,
+		&order.StopPrice, &order.Leverage, &order.PositionSide, &order.MarginMode, &order.ReduceOnly, &order.Source, &order.Status,
 		&storedIdempotency, &storedClient, &attempted,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

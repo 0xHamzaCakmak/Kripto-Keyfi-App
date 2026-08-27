@@ -192,19 +192,20 @@ func (r *Reader) GetSymbols(ctx context.Context) ([]domain.SymbolRule, error) {
 }
 
 type order struct {
-	OrderID     int64  `json:"orderId"`
-	ClientID    string `json:"clientOrderId"`
-	Symbol      string `json:"symbol"`
-	Side        string `json:"side"`
-	Type        string `json:"type"`
-	Status      string `json:"status"`
-	OriginalQty string `json:"origQty"`
-	ExecutedQty string `json:"executedQty"`
-	Price       string `json:"price"`
-	StopPrice   string `json:"stopPrice"`
-	ReduceOnly  bool   `json:"reduceOnly"`
-	Time        int64  `json:"time"`
-	UpdateTime  int64  `json:"updateTime"`
+	OrderID      int64  `json:"orderId"`
+	ClientID     string `json:"clientOrderId"`
+	Symbol       string `json:"symbol"`
+	Side         string `json:"side"`
+	PositionSide string `json:"positionSide"`
+	Type         string `json:"type"`
+	Status       string `json:"status"`
+	OriginalQty  string `json:"origQty"`
+	ExecutedQty  string `json:"executedQty"`
+	Price        string `json:"price"`
+	StopPrice    string `json:"stopPrice"`
+	ReduceOnly   bool   `json:"reduceOnly"`
+	Time         int64  `json:"time"`
+	UpdateTime   int64  `json:"updateTime"`
 }
 
 type algoOrder struct {
@@ -213,6 +214,7 @@ type algoOrder struct {
 	OrderType     string `json:"orderType"`
 	Symbol        string `json:"symbol"`
 	Side          string `json:"side"`
+	PositionSide  string `json:"positionSide"`
 	Quantity      string `json:"quantity"`
 	AlgoStatus    string `json:"algoStatus"`
 	ActualOrderID string `json:"actualOrderId"`
@@ -451,9 +453,10 @@ func (r *Reader) PlaceOrder(ctx context.Context, input exchange.PlaceOrderInput)
 	}
 	params := url.Values{
 		"symbol": {input.Symbol}, "side": {string(input.Side)}, "type": {orderType},
-		"quantity": {string(input.Quantity)}, "reduceOnly": {strconv.FormatBool(input.ReduceOnly)},
+		"quantity":         {string(input.Quantity)},
 		"newClientOrderId": {input.ClientOrderID}, "newOrderRespType": {"RESULT"},
 	}
+	applyPositionSide(params, input)
 	if input.Type == domain.OrderLimit || input.Type == domain.OrderStopLimit {
 		params.Set("timeInForce", "GTC")
 	}
@@ -481,9 +484,10 @@ func (r *Reader) placeConditionalOrder(ctx context.Context, input exchange.Place
 	params := url.Values{
 		"algoType": {"CONDITIONAL"}, "symbol": {input.Symbol}, "side": {string(input.Side)},
 		"type": {orderType}, "quantity": {string(input.Quantity)},
-		"reduceOnly": {strconv.FormatBool(input.ReduceOnly)}, "clientAlgoId": {input.ClientOrderID},
+		"clientAlgoId":     {input.ClientOrderID},
 		"newOrderRespType": {"RESULT"}, "workingType": {"MARK_PRICE"},
 	}
+	applyPositionSide(params, input)
 	if input.Type == domain.OrderStopLimit {
 		params.Set("timeInForce", "GTC")
 	}
@@ -516,6 +520,32 @@ func (r *Reader) CancelConditionalOrder(ctx context.Context, symbol, exchangeOrd
 		return domain.Order{}, exchange.NewError(domain.ErrorInternal, "INVALID_EXCHANGE_RESPONSE", "", false, true)
 	}
 	return domain.Order{ExchangeOrderID: exchangeOrderID, ClientOrderID: result.ClientAlgoID, Symbol: symbol, Status: domain.OrderCanceled}, nil
+}
+
+func (r *Reader) GetHedgeMode(ctx context.Context) (bool, error) {
+	var result struct {
+		DualSidePosition bool `json:"dualSidePosition"`
+	}
+	if err := r.signedRequest(ctx, http.MethodGet, "/fapi/v1/positionSide/dual", nil, &result, nil); err != nil {
+		return false, err
+	}
+	return result.DualSidePosition, nil
+}
+
+func (r *Reader) SetHedgeMode(ctx context.Context, enabled bool) error {
+	return r.signedRequest(ctx, http.MethodPost, "/fapi/v1/positionSide/dual", url.Values{
+		"dualSidePosition": {strconv.FormatBool(enabled)},
+	}, &struct{}{}, nil)
+}
+
+func applyPositionSide(params url.Values, input exchange.PlaceOrderInput) {
+	if input.PositionSide != "" && input.PositionSide != domain.PositionBoth {
+		params.Set("positionSide", string(input.PositionSide))
+		// Binance Hedge Mode identifies the position leg with positionSide and
+		// rejects reduceOnly on new-order requests in that mode.
+		return
+	}
+	params.Set("reduceOnly", strconv.FormatBool(input.ReduceOnly))
 }
 
 func (r *Reader) CancelOrder(ctx context.Context, symbol, exchangeOrderID string) (domain.Order, error) {
@@ -611,7 +641,7 @@ func mapOrder(item order) domain.Order {
 	}
 	mapped := domain.Order{
 		ExchangeOrderID: strconv.FormatInt(item.OrderID, 10), ClientOrderID: item.ClientID,
-		Symbol: item.Symbol, Side: side, Type: orderType, Status: mapStatus(item.Status),
+		Symbol: item.Symbol, Side: side, PositionSide: domain.PositionSide(item.PositionSide), Type: orderType, Status: mapStatus(item.Status),
 		Quantity: domain.Decimal(item.OriginalQty), ExecutedQuantity: domain.Decimal(item.ExecutedQty),
 		ReduceOnly: item.ReduceOnly, CreatedAt: createdAt,
 	}
@@ -647,7 +677,7 @@ func mapAlgoOrder(item algoOrder) domain.Order {
 	}
 	mapped := domain.Order{
 		ExchangeOrderID: exchangeOrderID, ClientOrderID: item.ClientAlgoID,
-		Symbol: item.Symbol, Side: side, Type: orderType, Status: mapStatus(item.AlgoStatus),
+		Symbol: item.Symbol, Side: side, PositionSide: domain.PositionSide(item.PositionSide), Type: orderType, Status: mapStatus(item.AlgoStatus),
 		Quantity: domain.Decimal(item.Quantity), ExecutedQuantity: domain.Decimal(item.ActualQty), ReduceOnly: item.ReduceOnly,
 	}
 	if item.CreateTime > 0 {

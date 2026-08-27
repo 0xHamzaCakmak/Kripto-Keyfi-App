@@ -106,7 +106,7 @@ async function loadOperations(userId: string) {
       userId, exchangeAccountId: account.id, source: 'SYSTEM',
       OR: [...prefixes.values()].map((prefix) => ({ clientOrderId: { startsWith: prefix } })),
     },
-    select: { exchangeOrderId: true, clientOrderId: true, symbol: true, type: true, reduceOnly: true, status: true, createdAt: true },
+    select: { decisionId: true, exchangeOrderId: true, clientOrderId: true, symbol: true, positionSide: true, type: true, reduceOnly: true, status: true, createdAt: true },
     orderBy: { createdAt: 'desc' }, take: 2_000,
   });
   const snapshot = await loadTradingEngineSnapshot(account);
@@ -121,8 +121,11 @@ async function loadOperations(userId: string) {
     if (!local) return [];
     const bot = bots.find((item) => local.clientOrderId.startsWith(prefixes.get(item.id)!));
     if (!bot) return [];
+    const positionSide = local.positionSide === 'LONG' || local.positionSide === 'SHORT' ? local.positionSide : trade.positionSide;
     return [{
       ...trade, botId: bot.id, orderType: local.type, reduceOnly: local.reduceOnly,
+      ...(positionSide ? { positionSide } : {}),
+      decisionId: local.decisionId,
       clientOrderId: local.clientOrderId, strategyVersionId: bot.strategyVersionId,
       netRealizedPnl: netPnl(trade),
     }];
@@ -138,7 +141,9 @@ async function loadOperations(userId: string) {
 
   return bots.map((bot) => {
     const prefix = prefixes.get(bot.id)!;
-    const position = snapshot.positions.find((item) => item.symbol === bot.symbol) ?? null;
+    const latestEntry = localOrders.find((order) => order.clientOrderId.startsWith(prefix) && !order.reduceOnly && order.symbol === bot.symbol);
+    const ownedPositionSide = latestEntry?.positionSide === 'LONG' || latestEntry?.positionSide === 'SHORT' ? latestEntry.positionSide : null;
+    const position = snapshot.positions.find((item) => item.symbol === bot.symbol && (!ownedPositionSide || item.side === ownedPositionSide)) ?? null;
     const protection = snapshot.orders.filter((item) => item.symbol === bot.symbol && item.clientOrderId.startsWith(prefix));
     const fills = persisted.filter((item) => item.tradingBotId === bot.id).slice(0, 200).map(persistedFillView);
     const realizedPnl = fills.reduce((sum, item) => sum + Number(item.realizedPnl), 0);
@@ -257,10 +262,12 @@ function decimalText(value: number) { return Number.isFinite(value) ? value.toFi
 
 type AttributedTestnetFill = ExchangeTrade & {
   botId: string;
+  decisionId: bigint | null;
   strategyVersionId: string | null;
   clientOrderId: string;
   orderType: ExchangeOrder['type'];
   reduceOnly: boolean;
+  positionSide?: 'LONG' | 'SHORT' | 'BOTH';
   netRealizedPnl: number;
 };
 
@@ -269,16 +276,16 @@ async function persistActualTestnetFills(userId: string, exchangeAccountId: stri
   await prisma.$transaction(fills.map((fill) => prisma.testnetExecutionFill.upsert({
     where: { exchangeAccountId_symbol_tradeId: { exchangeAccountId, symbol: fill.symbol, tradeId: fill.tradeId } },
     create: {
-      userId, exchangeAccountId, tradingBotId: fill.botId, strategyVersionId: fill.strategyVersionId,
+      userId, exchangeAccountId, tradingBotId: fill.botId, decisionId: fill.decisionId, strategyVersionId: fill.strategyVersionId,
       tradeId: fill.tradeId, exchangeOrderId: fill.exchangeOrderId, clientOrderId: fill.clientOrderId,
-      symbol: fill.symbol, side: fill.side, orderType: fill.orderType, reduceOnly: fill.reduceOnly,
+      symbol: fill.symbol, side: fill.side, positionSide: fill.positionSide ?? null, orderType: fill.orderType, reduceOnly: fill.reduceOnly,
       price: new Prisma.Decimal(fill.price), quantity: new Prisma.Decimal(fill.quantity), quoteQuantity: new Prisma.Decimal(fill.quoteQuantity),
       realizedPnl: new Prisma.Decimal(fill.realizedPnl), commission: new Prisma.Decimal(fill.commission), commissionAsset: fill.commissionAsset,
       netRealizedPnl: new Prisma.Decimal(fill.netRealizedPnl), maker: fill.maker, occurredAt: new Date(fill.occurredAt),
     },
     update: {
-      tradingBotId: fill.botId, strategyVersionId: fill.strategyVersionId, exchangeOrderId: fill.exchangeOrderId, clientOrderId: fill.clientOrderId,
-      orderType: fill.orderType, reduceOnly: fill.reduceOnly, price: new Prisma.Decimal(fill.price), quantity: new Prisma.Decimal(fill.quantity),
+      tradingBotId: fill.botId, decisionId: fill.decisionId, strategyVersionId: fill.strategyVersionId, exchangeOrderId: fill.exchangeOrderId, clientOrderId: fill.clientOrderId,
+      positionSide: fill.positionSide ?? null, orderType: fill.orderType, reduceOnly: fill.reduceOnly, price: new Prisma.Decimal(fill.price), quantity: new Prisma.Decimal(fill.quantity),
       quoteQuantity: new Prisma.Decimal(fill.quoteQuantity), realizedPnl: new Prisma.Decimal(fill.realizedPnl), commission: new Prisma.Decimal(fill.commission),
       commissionAsset: fill.commissionAsset, netRealizedPnl: new Prisma.Decimal(fill.netRealizedPnl), maker: fill.maker, occurredAt: new Date(fill.occurredAt),
     },
@@ -325,7 +332,7 @@ function positionView(position: ExchangePosition) {
 function persistedFillView(fill: Awaited<ReturnType<typeof prisma.testnetExecutionFill.findMany>>[number]) {
   return {
     tradeId: fill.tradeId, exchangeOrderId: fill.exchangeOrderId, botId: fill.tradingBotId, symbol: fill.symbol,
-    side: fill.side, price: fill.price.toString(), quantity: fill.quantity.toString(), quoteQuantity: fill.quoteQuantity.toString(),
+    side: fill.side, positionSide: fill.positionSide, price: fill.price.toString(), quantity: fill.quantity.toString(), quoteQuantity: fill.quoteQuantity.toString(),
     realizedPnl: fill.realizedPnl.toString(), commission: fill.commission.toString(), commissionAsset: fill.commissionAsset,
     netRealizedPnl: Number(fill.netRealizedPnl), maker: fill.maker, occurredAt: fill.occurredAt.toISOString(),
     orderType: fill.orderType, reduceOnly: fill.reduceOnly, clientOrderId: fill.clientOrderId, strategyVersionId: fill.strategyVersionId,

@@ -40,6 +40,10 @@ export function universeCandidate(symbols: string[], slot: number, index: number
   return symbols[(offset + index) % symbols.length]!;
 }
 
+export function sharedUniverseCandidate(symbols: string[], slot: number, index: number, cohortSize: number, botsPerSymbol = 2) {
+  return universeCandidate(symbols, slot, Math.floor(index / Math.max(1, botsPerSymbol)), Math.ceil(cohortSize / Math.max(1, botsPerSymbol)));
+}
+
 export function fleetLeverage(index: number, population: number, minimum = 5, maximum = 20) {
   const min = Math.max(1, Math.min(20, Math.round(minimum)));
   const max = Math.max(min, Math.min(20, Math.round(maximum)));
@@ -48,7 +52,7 @@ export function fleetLeverage(index: number, population: number, minimum = 5, ma
 }
 
 export function staleAutonomousProtection(order: ExchangeOrder, occupiedSymbols: Set<string>) {
-  return order.reduceOnly && order.clientOrderId.startsWith('ka')
+  return order.clientOrderId.startsWith('ka')
     && ['STOP_MARKET', 'TAKE_PROFIT_MARKET'].includes(order.type) && !occupiedSymbols.has(order.symbol);
 }
 
@@ -114,6 +118,10 @@ export function testnetExecutionConfiguration(value: Prisma.JsonValue, leverage:
     fixedTestnetProtectionTargets: true,
     riskRewardRatio: 1.5,
     pyramidingEnabled: true,
+    aiAutonomyLevel: env.AI_TRADING_MENTOR_AUTONOMY_LEVEL,
+    aiConfidenceThreshold: env.AI_TRADING_MENTOR_CONFIDENCE_THRESHOLD,
+    aiAutonomousApproved: env.AI_TRADING_MENTOR_AUTONOMOUS_APPROVED,
+    hedgeModeEnabled: env.AI_TRADING_HEDGE_MODE_ENABLED,
   };
 }
 
@@ -186,7 +194,8 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
     // The admin universe is coin-based and persisted with its canonical USDT
     // symbol. TESTNET may route alternating bots to that coin's USDC perpetual
     // when Binance lists it, allowing both native stablecoin balances to train.
-    const demoSymbols = configuredSymbols.map((symbol, index) => {
+    const sharedConfiguredSymbols = configuredSymbols.slice(0, env.AI_TRADING_SHARED_UNIVERSE_MAX_SYMBOLS);
+    const demoSymbols = sharedConfiguredSymbols.map((symbol, index) => {
       const base = symbol.endsWith('USDT') ? symbol.slice(0, -4) : symbol;
       const preferred = `${base}${index % 2 === 0 ? 'USDT' : 'USDC'}`;
       return demoAllowed.has(preferred) ? preferred : symbol;
@@ -285,12 +294,14 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       let target = bot.symbol;
       if (pending && !hasPosition) {
         for (let attempt = 0; attempt < demoSymbols.length; attempt += 1) {
-          const candidate = universeCandidate(demoSymbols, slot, index + attempt, demo.length);
-          if (!reserved.has(candidate)) { target = candidate; break; }
+          const candidate = env.AI_TRADING_HEDGE_MODE_ENABLED
+            ? sharedUniverseCandidate(demoSymbols, slot + attempt, index, demo.length)
+            : universeCandidate(demoSymbols, slot, index + attempt, demo.length);
+          if (env.AI_TRADING_HEDGE_MODE_ENABLED || !reserved.has(candidate)) { target = candidate; break; }
         }
       }
       if (!demoAllowed.has(target)) continue;
-      reserved.add(target);
+      if (!env.AI_TRADING_HEDGE_MODE_ENABLED) reserved.add(target);
       const changedSymbol = target !== bot.symbol;
       if (!hasPosition && !pending) {
       updates.push(prisma.tradingBot.updateMany({ where: availableBotWhere(bot.id, now), data: {
@@ -305,7 +316,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
         continue;
       }
       updates.push(prisma.tradingBot.updateMany({ where: availableBotWhere(bot.id, now), data: {
-        symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { ...testnetSizing, universeRotationPending: false }),
+        symbol: target, symbols: demoSymbols, timeframe: '15m', intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { ...testnetSizing, universeRotationPending: false }),
         ...(allocation > botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber()) ? { startingPaperBalance: allocation } : {}),
         ...(pending ? { desiredState: 'RUNNING', state: 'STARTING', schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
           stateReason: hasPosition ? 'A position appeared during staged rotation; original symbol preserved.' : 'Staged flat TESTNET bot rotated safely through the Futures universe.' } : {}),

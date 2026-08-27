@@ -38,6 +38,9 @@ type Decision struct {
 type AIObservation struct {
 	Action, Rationale, Provider, Model, PromptVersion string
 	Confidence                                        float64
+	InvalidationLevel                                 float64
+	SuggestedLeverage                                 int
+	AgreesWithRuleEngine                              bool
 	ExpiresAt                                         time.Time
 }
 
@@ -189,10 +192,12 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 	if s.observer != nil {
 		observation, observeErr := s.observer.Observe(ctx, *instance, decision)
 		if observeErr != nil {
-			s.logger.Warn("AI observer cycle failed; rule decision remains active", "bot_id", instance.ID, "error", observeErr)
+			s.logger.Warn("AI mentor cycle failed; new entries fail closed", "bot_id", instance.ID, "error", observeErr)
+			decision.AIObservation = &AIObservation{Action: "HOLD", Confidence: 0, Rationale: "AI mentor unavailable; safe HOLD fallback.", Provider: "FAIL_SAFE", Model: "none", PromptVersion: "fallback-v1", ExpiresAt: now.Add(time.Minute)}
 		} else {
 			decision.AIObservation = observation
 		}
+		decision = ApplyAIMentorPolicy(*instance, decision)
 	}
 	cycle, err := s.store.CompleteCycle(ctx, *instance, s.owner, decision, now, now.Add(s.leaseDuration))
 	if err != nil {

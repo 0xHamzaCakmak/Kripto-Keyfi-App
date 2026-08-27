@@ -11,6 +11,7 @@ import { scheduleShadowComparison } from './shadow-compare.js';
 import { cancelTradingEngineOrder, executeTradingEngineOrder, getTradingEngineSnapshot, previewTradingEngineOrder } from './trading-engine.client.js';
 import { appendTradingEvent } from './trading-events.service.js';
 import { assertCentralRiskExecution } from './execution-safety.js';
+import { env } from '../../config/env.js';
 
 const PREVIEW_TTL_MS = 2 * 60 * 1000;
 
@@ -59,9 +60,13 @@ export async function createOrderPreview(userId: string, input: PreviewOrderInpu
   }
 
   const expiresAt = new Date(Date.now() + PREVIEW_TTL_MS);
+  const positionSide = account.provider === 'BINANCE' && env.AI_TRADING_HEDGE_MODE_ENABLED
+    ? input.positionSide ?? positionSideForOrder(input.side, input.reduceOnly)
+    : undefined;
   const preview = await prisma.manualOrderPreview.create({
     data: {
       userId, exchangeAccountId: account.id, symbol: input.symbol, side: input.side, type: input.type,
+      ...(positionSide ? { positionSide } : {}),
       quantity, ...(price ? { price } : {}), ...(stopPrice ? { stopPrice } : {}), leverage: input.leverage,
       marginMode: input.marginMode, reduceOnly: input.reduceOnly, markPrice, estimatedNotional, expiresAt,
     },
@@ -101,6 +106,7 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
         data: {
           userId, exchangeAccountId: preview.exchangeAccountId, previewId: preview.id, idempotencyKey: input.idempotencyKey,
           clientOrderId, symbol: preview.symbol, side: preview.side, type: preview.type, quantity: preview.quantity,
+          positionSide: preview.positionSide,
           price: preview.price, stopPrice: preview.stopPrice, leverage: preview.leverage, marginMode: preview.marginMode,
           reduceOnly: preview.reduceOnly, source: 'MANUAL',
           executionEngine: preview.exchangeAccount.executionEngine,
@@ -374,6 +380,7 @@ export async function closePosition(userId: string, positionKey: string, input: 
     exchangeAccountId: input.exchangeAccountId, symbol: position.symbol, side: position.side === 'LONG' ? 'SELL' : 'BUY',
     type: input.type, quantity, ...(input.type === 'LIMIT' && input.price ? { price: input.price } : {}),
     leverage: Math.max(1, Math.trunc(Number(position.leverage))), marginMode: position.marginMode, reduceOnly: true,
+    positionSide: position.side,
   });
   await guardAutonomousReentryAfterManualClose(userId, input.exchangeAccountId, position.symbol, positionKey, input.type, ipAddress);
   let result;
@@ -443,7 +450,7 @@ async function readableTradingAccount(userId: string, exchangeAccountId: string)
 
 async function submitTypeScriptOrder(adapter: ExchangeAdapter, preview: {
   symbol: string; side: 'BUY' | 'SELL'; type: 'MARKET' | 'LIMIT' | 'STOP_MARKET' | 'STOP_LIMIT'; quantity: Prisma.Decimal;
-  price: Prisma.Decimal | null; stopPrice: Prisma.Decimal | null; leverage: number; marginMode: 'ISOLATED' | 'CROSS'; reduceOnly: boolean;
+  price: Prisma.Decimal | null; stopPrice: Prisma.Decimal | null; leverage: number; marginMode: 'ISOLATED' | 'CROSS'; reduceOnly: boolean; positionSide?: string | null;
 }, clientOrderId: string) {
   assertCentralRiskExecution({ executionEngine: 'TYPESCRIPT', reduceOnly: preview.reduceOnly });
   if (!preview.reduceOnly) await exchangeCall(() => adapter.configurePosition(preview.symbol, preview.leverage, preview.marginMode));
@@ -451,7 +458,12 @@ async function submitTypeScriptOrder(adapter: ExchangeAdapter, preview: {
     symbol: preview.symbol, side: preview.side, type: preview.type, quantity: preview.quantity.toString(),
     ...(preview.price ? { price: preview.price.toString() } : {}), ...(preview.stopPrice ? { stopPrice: preview.stopPrice.toString() } : {}),
     reduceOnly: preview.reduceOnly, clientOrderId,
+    ...(preview.positionSide === 'LONG' || preview.positionSide === 'SHORT' ? { positionSide: preview.positionSide } : {}),
   }));
+}
+
+function positionSideForOrder(side: 'BUY' | 'SELL', reduceOnly: boolean): 'LONG' | 'SHORT' {
+  return (side === 'BUY' && !reduceOnly) || (side === 'SELL' && reduceOnly) ? 'LONG' : 'SHORT';
 }
 
 function assertTradableAccount(account: { isActive: boolean; canTrade: boolean; connectionStatus: string }) {

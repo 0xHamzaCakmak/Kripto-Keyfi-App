@@ -154,6 +154,42 @@ func TestReaderNormalizesPermissionErrors(t *testing.T) {
 	}
 }
 
+func TestWriterUsesPositionSideAndManagesHedgeMode(t *testing.T) {
+	var modeEnabled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		assertBinanceSignature(t, request)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/fapi/v1/positionSide/dual":
+			_, _ = w.Write([]byte(`{"dualSidePosition":true}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/fapi/v1/positionSide/dual":
+			modeEnabled = request.URL.Query().Get("dualSidePosition") == "true"
+			_, _ = w.Write([]byte(`{"code":200}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/fapi/v1/order":
+			query := request.URL.Query()
+			if query.Get("positionSide") != "LONG" || query.Has("reduceOnly") {
+				t.Fatalf("unsafe hedge order params: %s", request.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"orderId":101,"clientOrderId":"kk_hedge","symbol":"BTCUSDT","side":"BUY","positionSide":"LONG","type":"MARKET","status":"FILLED","origQty":"0.001","executedQty":"0.001"}`))
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer server.Close()
+	reader := New(Options{Credentials: exchange.Credentials{APIKey: "test-key", APISecret: testSecret}, Client: server.Client(), FuturesURL: server.URL})
+	hedge, err := reader.GetHedgeMode(t.Context())
+	if err != nil || !hedge {
+		t.Fatalf("unexpected hedge mode: %v err=%v", hedge, err)
+	}
+	if err := reader.SetHedgeMode(t.Context(), true); err != nil || !modeEnabled {
+		t.Fatalf("hedge mode change was not sent: enabled=%v err=%v", modeEnabled, err)
+	}
+	placed, err := reader.PlaceOrder(t.Context(), exchange.PlaceOrderInput{Symbol: "BTCUSDT", Side: domain.SideBuy, PositionSide: domain.PositionLong, Type: domain.OrderMarket, Quantity: "0.001", ClientOrderID: "kk_hedge"})
+	if err != nil || placed.PositionSide != domain.PositionLong {
+		t.Fatalf("unexpected hedge order: %#v err=%v", placed, err)
+	}
+}
+
 func TestReaderQueriesOrderByOriginalClientID(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		assertBinanceSignature(t, request)

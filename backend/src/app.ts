@@ -23,6 +23,7 @@ import { videoReactionRouter } from './modules/videos/video-reaction.routes.js';
 import { adminYoutubeScoreRouter } from './modules/videos/youtube-score.routes.js';
 import { adminAnalyticsRouter, analyticsRouter } from './modules/analytics/analytics.routes.js';
 import { adminChatRouter, chatRouter } from './modules/chat/chat.routes.js';
+import { aiMentorRouter } from './modules/ai-trading/ai-mentor.routes.js';
 
 export function createApp() {
   const app = express();
@@ -46,6 +47,7 @@ export function createApp() {
   app.use(cors({ origin: env.FRONTEND_URL, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] }));
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
+  app.use('/internal/ai-mentor', aiMentorRouter);
   app.use(API_PREFIX, rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 300,

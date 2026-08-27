@@ -53,6 +53,8 @@ import { addUniverseAsset, changeTradingUniverseAsset, searchUniverse, tradingUn
 import { addTradingUniverseAssetSchema, searchTradingUniverseSchema, tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../ai-trading/trading-universe.schema.js';
 import { coinPerformance } from '../ai-trading/coin-performance.controller.js';
 import { coinPerformanceQuerySchema } from '../ai-trading/coin-performance.schema.js';
+import { aiMentorPerformance } from '../ai-trading/ai-mentor-performance.controller.js';
+import { aiMentorPerformanceQuerySchema } from '../ai-trading/ai-mentor-performance.schema.js';
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
@@ -66,6 +68,7 @@ tradingRouter.get('/autonomous/trading-universe/search', validateRequest({ query
 tradingRouter.post('/autonomous/trading-universe', validateRequest({ body: addTradingUniverseAssetSchema }), asyncHandler(addUniverseAsset));
 tradingRouter.patch('/autonomous/trading-universe/:symbol', validateRequest({ params: tradingUniverseAssetParamsSchema, body: updateTradingUniverseAssetSchema }), asyncHandler(changeTradingUniverseAsset));
 tradingRouter.get('/autonomous/coin-performance', validateRequest({ query: coinPerformanceQuerySchema }), asyncHandler(coinPerformance));
+tradingRouter.get('/autonomous/ai-mentor-performance', validateRequest({ query: aiMentorPerformanceQuerySchema }), asyncHandler(aiMentorPerformance));
 tradingRouter.get('/autonomous/generations', validateRequest({ query: autonomousGenerationQuerySchema }), asyncHandler(generations));
 tradingRouter.get('/autonomous/live-eligibility', asyncHandler(liveEligibilityStatus));
 tradingRouter.get('/autonomous/testnet-operations', asyncHandler(testnetOperations));

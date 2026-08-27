@@ -126,8 +126,8 @@ func TestSchedulerReconcilesRunningBotAfterLeaseTakeover(t *testing.T) {
 	}
 }
 
-func TestSchedulerAttachesAIObservationWithoutChangingRuleDecision(t *testing.T) {
-	store := &schedulerStore{instance: &Instance{ID: "bot-ai", State: StateRunning, Mode: "SHADOW"}, gate: Gate{Ready: true}}
+func TestSchedulerAdvisoryObservationDoesNotChangeRuleDecision(t *testing.T) {
+	store := &schedulerStore{instance: &Instance{ID: "bot-ai", State: StateRunning, Mode: "SHADOW", Configuration: map[string]any{"aiAutonomyLevel": "advisory"}}, gate: Gate{Ready: true}}
 	scheduler := NewScheduler(Options{Store: store, Runner: fixedRunner{}, Observer: fixedObserver{}, Owner: "test", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	scheduler.runOnce(t.Context())
 	if store.decision.Kind != "BUY" || store.decision.AIObservation == nil || store.decision.AIObservation.Action != "HOLD" {
@@ -135,12 +135,12 @@ func TestSchedulerAttachesAIObservationWithoutChangingRuleDecision(t *testing.T)
 	}
 }
 
-func TestSchedulerKeepsRuleDecisionWhenAIObserverFails(t *testing.T) {
+func TestSchedulerFailsClosedWhenAIObserverFails(t *testing.T) {
 	store := &schedulerStore{instance: &Instance{ID: "bot-ai-fail", State: StateRunning, Mode: "PAPER"}, gate: Gate{Ready: true}}
 	scheduler := NewScheduler(Options{Store: store, Runner: fixedRunner{}, Observer: fixedObserver{err: errors.New("observer unavailable")}, Owner: "test", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	scheduler.runOnce(t.Context())
-	if store.decision.Kind != "BUY" || store.decision.AIObservation != nil {
-		t.Fatalf("observer failure changed rule decision: %#v", store.decision)
+	if store.decision.Kind != "HOLD" || store.decision.AIObservation == nil || store.decision.AIObservation.Provider != "FAIL_SAFE" {
+		t.Fatalf("observer failure did not produce safe HOLD: %#v", store.decision)
 	}
 }
 

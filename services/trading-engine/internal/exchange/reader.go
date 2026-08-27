@@ -31,7 +31,13 @@ type PlaceOrderInput struct {
 	StopPrice     domain.Decimal
 	ReduceOnly    bool
 	ClientOrderID string
+	PositionSide  domain.PositionSide
 	PositionIndex *int
+}
+
+type PositionModeManager interface {
+	GetHedgeMode(context.Context) (bool, error)
+	SetHedgeMode(context.Context, bool) error
 }
 
 type Writer interface {

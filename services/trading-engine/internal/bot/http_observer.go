@@ -56,10 +56,16 @@ type observerRequest struct {
 }
 
 type observerResponse struct {
-	Action           string  `json:"action"`
-	Confidence       float64 `json:"confidence"`
-	Rationale        string  `json:"rationale"`
-	ExpiresInSeconds int     `json:"expiresInSeconds"`
+	Action               string  `json:"action"`
+	Confidence           float64 `json:"confidence"`
+	Rationale            string  `json:"rationale"`
+	InvalidationLevel    float64 `json:"invalidationLevel"`
+	SuggestedLeverage    int     `json:"suggestedLeverage"`
+	AgreesWithRuleEngine bool    `json:"agreesWithRuleEngine"`
+	Provider             string  `json:"provider"`
+	Model                string  `json:"model"`
+	PromptVersion        string  `json:"promptVersion"`
+	ExpiresInSeconds     int     `json:"expiresInSeconds"`
 }
 
 func NewHTTPObserver(options HTTPObserverOptions) (*HTTPObserver, error) {
@@ -95,7 +101,10 @@ func (o *HTTPObserver) Observe(ctx context.Context, instance Instance, decision 
 	payload.RuleDecision.Kind, payload.RuleDecision.Action, payload.RuleDecision.Summary = decision.Kind, signalActionForObserver(decision.Kind), decision.Summary
 	payload.RuleDecision.Metrics = decision.Metrics
 	payload.Constraints.AllowedActions = []string{"HOLD", "BUY", "SELL"}
-	payload.Constraints.ExecutionAllowed, payload.Constraints.SubmittedToExchange, payload.Constraints.ComparisonOnly = false, false, true
+	level := strings.ToLower(strings.TrimSpace(stringValue(instance.Configuration["aiAutonomyLevel"])))
+	payload.Constraints.ExecutionAllowed = level == "co_signal" || level == "autonomous"
+	payload.Constraints.SubmittedToExchange = false
+	payload.Constraints.ComparisonOnly = level == "advisory"
 	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return nil, fmt.Errorf("encode AI observer request: %w", err)
@@ -130,8 +139,14 @@ func (o *HTTPObserver) Observe(ctx context.Context, instance Instance, decision 
 	if math.IsNaN(result.Confidence) || math.IsInf(result.Confidence, 0) || result.Confidence < 0 || result.Confidence > 1 {
 		return nil, errors.New("AI observer confidence must be between 0 and 1")
 	}
-	if utf8.RuneCountInString(result.Rationale) < 5 || utf8.RuneCountInString(result.Rationale) > 1000 {
-		return nil, errors.New("AI observer rationale must contain 5 to 1000 characters")
+	if math.IsNaN(result.InvalidationLevel) || math.IsInf(result.InvalidationLevel, 0) || result.InvalidationLevel < 0 {
+		return nil, errors.New("AI observer invalidation level must be a non-negative finite number")
+	}
+	if result.SuggestedLeverage < 0 || result.SuggestedLeverage > 125 {
+		return nil, errors.New("AI observer suggested leverage must be between 0 and 125")
+	}
+	if utf8.RuneCountInString(result.Rationale) < 5 || utf8.RuneCountInString(result.Rationale) > 200 {
+		return nil, errors.New("AI observer rationale must contain 5 to 200 characters")
 	}
 	if result.ExpiresInSeconds == 0 {
 		result.ExpiresInSeconds = 60
@@ -139,8 +154,22 @@ func (o *HTTPObserver) Observe(ctx context.Context, instance Instance, decision 
 	if result.ExpiresInSeconds < 1 || result.ExpiresInSeconds > 900 {
 		return nil, errors.New("AI observer expiry must be between 1 and 900 seconds")
 	}
+	provider, model, promptVersion := strings.TrimSpace(result.Provider), strings.TrimSpace(result.Model), strings.TrimSpace(result.PromptVersion)
+	if provider == "" {
+		provider = o.provider
+	}
+	if model == "" {
+		model = o.model
+	}
+	if promptVersion == "" {
+		promptVersion = o.promptVersion
+	}
+	if len(provider) > 80 || len(model) > 120 || len(promptVersion) > 80 {
+		return nil, errors.New("AI observer provider metadata exceeds ledger limits")
+	}
 	return &AIObservation{Action: result.Action, Confidence: result.Confidence, Rationale: result.Rationale,
-		Provider: o.provider, Model: o.model, PromptVersion: o.promptVersion,
+		InvalidationLevel: result.InvalidationLevel, SuggestedLeverage: result.SuggestedLeverage, AgreesWithRuleEngine: result.AgreesWithRuleEngine,
+		Provider: provider, Model: model, PromptVersion: promptVersion,
 		ExpiresAt: o.now().UTC().Add(time.Duration(result.ExpiresInSeconds) * time.Second)}, nil
 }
 

@@ -43,6 +43,7 @@ export type PlaceOrderInput = {
   stopPrice?: string;
   reduceOnly: boolean;
   clientOrderId: string;
+  positionSide?: 'LONG' | 'SHORT';
   positionIndex?: number;
 };
 
@@ -51,6 +52,7 @@ export type ExchangeOrder = {
   clientOrderId: string;
   symbol: string;
   side: OrderSide;
+  positionSide?: 'LONG' | 'SHORT' | 'BOTH';
   type: OrderType;
   status: string;
   quantity: string;
@@ -80,6 +82,7 @@ export type ExchangeTrade = {
   exchangeOrderId: string;
   symbol: string;
   side: OrderSide;
+  positionSide?: 'LONG' | 'SHORT' | 'BOTH';
   price: string;
   quantity: string;
   quoteQuantity: string;
@@ -101,6 +104,8 @@ export interface ExchangeAdapter {
   cancelOrder(symbol: string, exchangeOrderId: string): Promise<ExchangeOrder>;
   getPositions(): Promise<ExchangePosition[]>;
   getUserTrades?(symbol: string, limit?: number): Promise<ExchangeTrade[]>;
+  getHedgeMode?(): Promise<boolean>;
+  setHedgeMode?(enabled: boolean): Promise<void>;
 }
 
 export class ExchangeAdapterError extends Error {

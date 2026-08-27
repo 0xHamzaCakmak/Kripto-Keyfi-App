@@ -115,8 +115,8 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	aiTimeout, err := time.ParseDuration(valueOrDefault("TRADING_ENGINE_AI_OBSERVER_TIMEOUT", "1500ms"))
-	if err != nil || aiTimeout <= 0 || aiTimeout > 2*time.Second {
-		return Config{}, errors.New("TRADING_ENGINE_AI_OBSERVER_TIMEOUT must be positive and at most 2s")
+	if err != nil || aiTimeout <= 0 || aiTimeout > 30*time.Second {
+		return Config{}, errors.New("TRADING_ENGINE_AI_OBSERVER_TIMEOUT must be positive and at most 30s")
 	}
 	aiURL := strings.TrimSpace(os.Getenv("TRADING_ENGINE_AI_OBSERVER_URL"))
 	aiToken := strings.TrimSpace(os.Getenv("TRADING_ENGINE_AI_OBSERVER_TOKEN"))
@@ -124,8 +124,8 @@ func Load() (Config, error) {
 	aiModel := strings.TrimSpace(os.Getenv("TRADING_ENGINE_AI_OBSERVER_MODEL"))
 	aiPromptVersion := valueOrDefault("TRADING_ENGINE_AI_OBSERVER_PROMPT_VERSION", "v1")
 	if aiObserver {
-		if mode != "shadow" || !botScheduler {
-			return Config{}, errors.New("AI observer requires shadow mode and the bot scheduler")
+		if !botScheduler {
+			return Config{}, errors.New("AI observer requires the bot scheduler")
 		}
 		if aiURL == "" || len(aiToken) < 32 || aiModel == "" {
 			return Config{}, errors.New("enabled AI observer requires URL, 32-character token and model")

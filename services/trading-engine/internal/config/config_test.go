@@ -88,8 +88,26 @@ func TestLoadRequiresSafeAIObserverConfiguration(t *testing.T) {
 		t.Fatalf("valid AI observer configuration rejected: %#v, err=%v", cfg, err)
 	}
 
-	t.Setenv("TRADING_ENGINE_AI_OBSERVER_TIMEOUT", "3s")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_TIMEOUT", "31s")
 	if _, err := Load(); err == nil {
 		t.Fatal("observer timeout above scheduler safety limit must be rejected")
+	}
+}
+
+func TestLoadAllowsMentorObserverInCutoverMode(t *testing.T) {
+	t.Setenv("TRADING_ENGINE_TOKEN", "0123456789abcdef0123456789abcdef")
+	t.Setenv("TRADING_ENGINE_MODE", "cutover")
+	t.Setenv("TRADING_ENGINE_BOT_SCHEDULER_ENABLED", "true")
+	t.Setenv("TRADING_ENGINE_SHADOW_READ_ENABLED", "true")
+	t.Setenv("DATABASE_URL", "mysql://user:pass@127.0.0.1:3306/app")
+	t.Setenv("TRADING_CREDENTIALS_MASTER_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_ENABLED", "true")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_URL", "http://127.0.0.1:3000/internal/ai-mentor")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_TOKEN", "0123456789abcdef0123456789abcdef")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_MODEL", "deepseek-groq-mentor")
+	t.Setenv("TRADING_ENGINE_AI_OBSERVER_TIMEOUT", "12s")
+	cfg, err := Load()
+	if err != nil || !cfg.AIObserver || cfg.AIObserverTimeout != 12*time.Second {
+		t.Fatalf("cutover mentor observer configuration rejected: %#v, err=%v", cfg, err)
 	}
 }

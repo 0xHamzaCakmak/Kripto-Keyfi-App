@@ -8,6 +8,7 @@ export const previewOrderBodySchema = z.object({
   exchangeAccountId: z.string().cuid(),
   symbol: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,40}$/),
   side: z.enum(['BUY', 'SELL']),
+  positionSide: z.enum(['LONG', 'SHORT']).optional(),
   type: z.enum(['MARKET', 'LIMIT', 'STOP_MARKET', 'STOP_LIMIT']),
   quantity: decimal,
   price: decimal.optional(),
@@ -21,6 +22,14 @@ export const previewOrderBodySchema = z.object({
   }
   if ((value.type === 'STOP_MARKET' || value.type === 'STOP_LIMIT') && !value.stopPrice) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['stopPrice'], message: 'Koşullu emirlerde tetikleme fiyatı zorunludur' });
+  }
+  if (value.positionSide) {
+    const expected = value.reduceOnly
+      ? value.side === 'SELL' ? 'LONG' : 'SHORT'
+      : value.side === 'BUY' ? 'LONG' : 'SHORT';
+    if (value.positionSide !== expected) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ['positionSide'], message: 'positionSide emir yönü ve reduce-only durumu ile uyumlu olmalıdır' });
+    }
   }
 });
 

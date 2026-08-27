@@ -72,6 +72,12 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 	result.Metrics["analysisTimeframes"], result.Metrics["directionWindowsHours"] = []string{"15m", "1h"}, []int{24, 48}
 	result.Metrics["atrBps15m"] = roundFloat(analysis.ATRBps15m, 4)
 	result.Metrics["derivativesAvailable"] = !snapshot.DerivativesUnavailable
+	result.Metrics["fundingRate"], result.Metrics["openInterest"], result.Metrics["previousOpenInterest"] = snapshot.Derivatives.FundingRate, snapshot.Derivatives.OpenInterest, snapshot.Derivatives.PreviousOpenInterest
+	if currentOI, currentOK := parseMarketDecimal(snapshot.Derivatives.OpenInterest); currentOK {
+		if previousOI, previousOK := parseMarketDecimal(snapshot.Derivatives.PreviousOpenInterest); previousOK && previousOI > 0 {
+			result.Metrics["openInterestChangePct"] = roundFloat((currentOI-previousOI)/previousOI*100, 6)
+		}
+	}
 	result.Metrics["newsAvailable"], result.Metrics["newsBias"], result.Metrics["newsScore"], result.Metrics["newsConfidence"] = snapshot.News.Available, snapshot.News.Bias, roundFloat(snapshot.News.Score, 4), roundFloat(snapshot.News.Confidence, 4)
 	result.Metrics["newsArticleIds"], result.Metrics["newsObservedAt"] = snapshot.News.ArticleIDs, snapshot.News.ObservedAt
 	result.Metrics["liquidationAvailable"], result.Metrics["liquidationSource"], result.Metrics["liquidationCluster"] = snapshot.Liquidations.Available, snapshot.Liquidations.Source, snapshot.Liquidations.Cluster
@@ -82,6 +88,7 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 	order := result.HypotheticalOrder
 	order["marketRegime"], order["higherTimeframeAligned"], order["confirmedTimeframes"], order["derivativesAligned"] = analysis.Regime, analysis.HigherTimeframeAligned, analysis.ConfirmedTimeframes, analysis.DerivativesAligned
 	order["oiConfirmed"], order["regimeConfidence"] = analysis.OIConfirmed, roundFloat(analysis.RegimeConfidence, 4)
+	result.Metrics["oiConfirmed"], result.Metrics["derivativesAligned"] = analysis.OIConfirmed, analysis.DerivativesAligned
 	latestCandle := snapshot.Candles["15m"][len(snapshot.Candles["15m"])-1]
 	order["signalKey"] = fmt.Sprintf("%s:%d:%s", instance.Symbol, latestCandle.OpenTimeMS, side)
 	result.Metrics["marketDataOpenTimeMs"] = latestCandle.OpenTimeMS

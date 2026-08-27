@@ -9,7 +9,7 @@ import { assessEvolutionReadiness, evolutionConfigForPopulation } from './evolut
 import { getBinanceFuturesPublicSymbols } from '../trading/exchanges/binance-futures.adapter.js';
 import { getEnabledTradingSymbols } from './trading-universe.service.js';
 import { getTradingEngineSnapshot } from '../trading/trading-engine.client.js';
-import { fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, TESTNET_DECISION_INTERVAL_SECONDS, paperTrainingConfiguration, testnetExecutionConfiguration } from './universe.worker.js';
+import { fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, TESTNET_DECISION_INTERVAL_SECONDS, paperTrainingConfiguration, sharedUniverseCandidate, testnetExecutionConfiguration } from './universe.worker.js';
 
 export const AUTONOMOUS_ADMIN_API_VERSION = 'v1' as const;
 
@@ -415,12 +415,20 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
   const available = new Set(exchangeSymbols.filter((item) => item.status === 'TRADING' && item.quoteAsset === 'USDT').map((item) => item.symbol));
   const validUniverse = configuredSymbols.filter((symbol) => available.has(symbol));
   const existingDemoSymbols = new Set(bots.filter((bot) => bot.mode === 'DEMO').map((bot) => bot.symbol));
-  const assignable = validUniverse.filter((symbol) => !existingDemoSymbols.has(symbol));
+  const assignable = env.AI_TRADING_HEDGE_MODE_ENABLED
+    ? validUniverse
+    : validUniverse.filter((symbol) => !existingDemoSymbols.has(symbol));
   const paperBots = bots.filter((bot) => bot.mode === 'PAPER');
   if (new Set(validUniverse).size < bots.length || assignable.length < paperBots.length) {
     throw new ApiError(409, `At least ${bots.length} different enabled Binance Futures symbols are required for this shared TESTNET fleet.`, 'AUTONOMOUS_TESTNET_UNIVERSE_TOO_SMALL');
   }
-  const assignments = new Map(paperBots.map((bot, index) => [bot.id, assignable[index]!]));
+  const assignments = new Map(paperBots.map((bot, index) => [
+    bot.id,
+    env.AI_TRADING_HEDGE_MODE_ENABLED
+      ? sharedUniverseCandidate(assignable, 0, index, paperBots.length)
+      : assignable[index]!,
+  ]));
+  const sharedUniverse = [...new Set(validUniverse)].slice(0, env.AI_TRADING_SHARED_UNIVERSE_MAX_SYMBOLS);
   const allocations = bots.map(() => profile.testnetBotAllocationUsdt.toNumber());
   const fleetAllocation = allocations.reduce((sum, value) => sum + value, 0);
   const maximumBotAllocation = Math.max(...allocations);
@@ -436,7 +444,7 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
       maxInitialMargin: Math.max(profile.maxInitialMargin.toNumber(), maximumBotAllocation).toFixed(2),
       maxAccountOpenNotional: Math.max(profile.maxAccountOpenNotional.toNumber(), fleetNotionalCapacity).toFixed(2),
       maxSymbolOpenNotional: Math.max(profile.maxSymbolOpenNotional.toNumber(), maximumBotNotional).toFixed(2),
-      allowedSymbols: bots.map((bot) => assignments.get(bot.id) ?? bot.symbol),
+      allowedSymbols: sharedUniverse,
     } });
     for (let index = 0; index < bots.length; index += 1) {
       const bot = bots[index]!;
@@ -454,7 +462,7 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
           lifecycleStatus: { not: 'ARCHIVED' },
         },
         data: {
-          mode: 'DEMO', symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, fleetLeverage(index, bots.length, profile.minLeverage, profile.maxLeverage), { allocationUsdt: allocations[index]!, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage, stopLossBps: profile.testnetStopLossBps, takeProfitBps: profile.testnetTakeProfitBps }), startingPaperBalance: allocations[index]!, state: 'STARTING', desiredState: 'RUNNING',
+          mode: 'DEMO', symbol: target, symbols: sharedUniverse, timeframe: '15m', intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, fleetLeverage(index, bots.length, profile.minLeverage, profile.maxLeverage), { allocationUsdt: allocations[index]!, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage, stopLossBps: profile.testnetStopLossBps, takeProfitBps: profile.testnetTakeProfitBps }), startingPaperBalance: allocations[index]!, state: 'STARTING', desiredState: 'RUNNING',
           schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
           stateReason: 'Explicit admin bulk Binance TESTNET activation; scheduler lease pending.', version: { increment: 1 },
         },
@@ -463,7 +471,7 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
     }
     await tx.tradingAuditLog.create({ data: {
       userId, exchangeAccountId, action: 'AI_TESTNET_FLEET_ACTIVATED', entityType: 'AUTONOMOUS_FLEET', entityId: exchangeAccountId,
-      metadata: { note: input.note, confirmation: input.confirmation, botCount: bots.length, symbols: bots.map((bot) => assignments.get(bot.id) ?? bot.symbol), fleetAllocationUsdt: fleetAllocation, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toString(), fleetNotionalCapacity, maxOpenPositions: env.AI_TRADING_FIXED_FLEET_SIZE, environment: 'TESTNET', executionEngine: 'GO', productionLive: false, liveChanged: false, riskEngineBypassed: false },
+      metadata: { note: input.note, confirmation: input.confirmation, botCount: bots.length, symbols: bots.map((bot) => assignments.get(bot.id) ?? bot.symbol), sharedUniverse, hedgeModeEnabled: env.AI_TRADING_HEDGE_MODE_ENABLED, fleetAllocationUsdt: fleetAllocation, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toString(), fleetNotionalCapacity, maxOpenPositions: env.AI_TRADING_FIXED_FLEET_SIZE, environment: 'TESTNET', executionEngine: 'GO', productionLive: false, liveChanged: false, riskEngineBypassed: false },
       ...(ipAddress ? { ipAddress } : {}),
     } });
     return bots.map((bot) => ({ botId: bot.id, name: bot.name, symbol: assignments.get(bot.id) ?? bot.symbol, mode: 'DEMO' as const, desiredState: 'RUNNING' as const }));

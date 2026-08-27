@@ -1630,6 +1630,7 @@ model ManualOrderPreview {
   exchangeAccountId String
   symbol            String            @db.VarChar(40)
   side              TradingOrderSide
+  positionSide      String?           @db.VarChar(10)
   type              TradingOrderType
   quantity          Decimal           @db.Decimal(36, 18)
   price             Decimal?          @db.Decimal(36, 18)
@@ -1657,11 +1658,13 @@ model TradingOrder {
   userId               String
   exchangeAccountId    String
   previewId            String?                @unique
+  decisionId           BigInt?                @db.UnsignedBigInt
   idempotencyKey       String                 @db.VarChar(80)
   clientOrderId        String                 @unique @db.VarChar(36)
   exchangeOrderId      String?                @db.VarChar(100)
   symbol               String                 @db.VarChar(40)
   side                 TradingOrderSide
+  positionSide         String?                @db.VarChar(10)
   type                 TradingOrderType
   quantity             Decimal                @db.Decimal(36, 18)
   price                Decimal?               @db.Decimal(36, 18)
@@ -1692,6 +1695,7 @@ model TradingOrder {
   @@index([exchangeAccountId, status])
   @@index([userId, createdAt])
   @@index([executionEngine, status])
+  @@index([decisionId])
   @@map("trading_orders")
 }
 
@@ -1700,12 +1704,14 @@ model TestnetExecutionFill {
   userId            String
   exchangeAccountId String
   tradingBotId      String
+  decisionId        BigInt?           @db.UnsignedBigInt
   strategyVersionId String?
   tradeId           String           @db.VarChar(100)
   exchangeOrderId   String           @db.VarChar(100)
   clientOrderId     String           @db.VarChar(36)
   symbol            String           @db.VarChar(40)
   side              TradingOrderSide
+  positionSide      String?           @db.VarChar(10)
   orderType         TradingOrderType
   reduceOnly        Boolean          @default(false)
   price             Decimal          @db.Decimal(36, 18)
@@ -1729,6 +1735,7 @@ model TestnetExecutionFill {
   @@index([tradingBotId, occurredAt])
   @@index([strategyVersionId, occurredAt])
   @@index([userId, occurredAt])
+  @@index([decisionId])
   @@map("testnet_execution_fills")
 }
 

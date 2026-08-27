@@ -316,6 +316,7 @@ func (s *Service) Place(ctx context.Context, command tradingv1.PlaceOrderCommand
 	result, err := writer.PlaceOrder(ctx, exchange.PlaceOrderInput{
 		Symbol: stored.Symbol, Side: stored.Side, Type: stored.Type, Quantity: stored.Quantity,
 		Price: stored.Price, StopPrice: stored.StopPrice, ReduceOnly: stored.ReduceOnly, ClientOrderID: stored.ClientOrderID,
+		PositionSide: stored.PositionSide,
 	})
 	if err != nil {
 		failure := normalizeFailure(err, true)
@@ -438,7 +439,8 @@ func verifyPlacedOrder(stored StoredOrder, result domain.Order) *domain.Exchange
 func commandMatchesStored(command tradingv1.PlaceOrderCommand, stored StoredOrder) bool {
 	return command.Symbol == stored.Symbol && command.Side == stored.Side && command.Type == stored.Type &&
 		decimalEqual(command.Quantity, stored.Quantity) && decimalEqual(command.Price, stored.Price) && decimalEqual(command.StopPrice, stored.StopPrice) &&
-		command.Leverage == stored.Leverage && command.MarginMode == stored.MarginMode && command.ReduceOnly == stored.ReduceOnly
+		command.Leverage == stored.Leverage && command.MarginMode == stored.MarginMode && command.ReduceOnly == stored.ReduceOnly &&
+		command.PositionSide == stored.PositionSide
 }
 
 func decimalEqual(left, right domain.Decimal) bool {
@@ -454,7 +456,8 @@ func storedDomainOrder(stored StoredOrder) domain.Order {
 	return domain.Order{ID: stored.ID, ExchangeAccountID: stored.ExchangeAccountID, ExchangeOrderID: stored.ExchangeOrderID,
 		ClientOrderID: stored.ClientOrderID, IdempotencyKey: stored.IdempotencyKey, Symbol: stored.Symbol,
 		Side: stored.Side, Type: stored.Type, Status: stored.Status, Quantity: stored.Quantity,
-		Price: stored.Price, StopPrice: stored.StopPrice, Leverage: stored.Leverage, MarginMode: stored.MarginMode, ReduceOnly: stored.ReduceOnly}
+		PositionSide: stored.PositionSide,
+		Price:        stored.Price, StopPrice: stored.StopPrice, Leverage: stored.Leverage, MarginMode: stored.MarginMode, ReduceOnly: stored.ReduceOnly}
 }
 
 func validationError(code string) error {

@@ -88,7 +88,12 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		}
 		takeText = adjusted
 	}
+	desiredPositionSide := positionSideForOrder(side, false)
+	hedgeMode := instance.Configuration["hedgeModeEnabled"] == true
 	executionKey := instance.ExchangeAccountID + ":" + instance.Symbol
+	if hedgeMode {
+		executionKey += ":" + string(desiredPositionSide)
+	}
 	executionLock := e.lockFor(executionKey)
 	executionLock.Lock()
 	defer executionLock.Unlock()
@@ -113,7 +118,7 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	}
 	var current *domain.Position
 	for index := range positions {
-		if positions[index].Symbol == instance.Symbol && decimalSign(string(positions[index].Quantity)) != 0 {
+		if positions[index].Symbol == instance.Symbol && (!hedgeMode || positions[index].Side == desiredPositionSide || positions[index].Side == "") && decimalSign(string(positions[index].Quantity)) != 0 {
 			current = &positions[index]
 			break
 		}
@@ -128,6 +133,9 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		return e.store.MarkAutonomousExecution(ctx, decisionID, false, "exchange position closed outside this execution cycle; waiting for a fresh 15m market signal")
 	}
 	if current != nil {
+		if instance.Configuration["hedgeModeEnabled"] == true && !hasBotProtection(openOrders, instance.Symbol, botClientPrefix(instance.ID)) {
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "the existing hedge leg is owned by another bot or manual trade; same-side merge rejected")
+		}
 		handled, protectionErr := e.closeReachedProtection(ctx, instance, decisionID, *current, openOrders, reference, now)
 		if protectionErr != nil {
 			return protectionErr
@@ -914,14 +922,35 @@ func build(instance bot.Instance, decisionID int64, suffix string, side domain.O
 	}
 	idempotency := "autonomous_" + hash + "_" + sequence + "_" + suffix
 	localID := "auto_" + hash + "_" + sequence + "_" + suffix
-	input := mysqlstore.AutonomousOrderInput{ID: localID, IdempotencyKey: idempotency, ClientOrderID: client, Side: side, Type: orderType, Quantity: quantity, StopPrice: stop, ReduceOnly: reduceOnly, Leverage: leverage}
-	command := tradingv1.PlaceOrderCommand{Meta: tradingv1.CommandMeta{RequestID: localID, ActorUserID: instance.UserID, IdempotencyKey: idempotency, ClientOrderID: client, RequestedAt: now}, TradingOrderID: localID, Account: account, Symbol: instance.Symbol, Side: side, Type: orderType, Quantity: quantity, StopPrice: stop, Leverage: leverage, MarginMode: domain.MarginIsolated, ReduceOnly: reduceOnly}
+	positionSide := domain.PositionSide("")
+	if instance.Configuration["hedgeModeEnabled"] == true {
+		positionSide = positionSideForOrder(side, reduceOnly)
+	}
+	input := mysqlstore.AutonomousOrderInput{ID: localID, DecisionID: decisionID, IdempotencyKey: idempotency, ClientOrderID: client, Side: side, PositionSide: positionSide, Type: orderType, Quantity: quantity, StopPrice: stop, ReduceOnly: reduceOnly, Leverage: leverage}
+	command := tradingv1.PlaceOrderCommand{Meta: tradingv1.CommandMeta{RequestID: localID, ActorUserID: instance.UserID, IdempotencyKey: idempotency, ClientOrderID: client, RequestedAt: now}, TradingOrderID: localID, Account: account, Symbol: instance.Symbol, Side: side, PositionSide: positionSide, Type: orderType, Quantity: quantity, StopPrice: stop, Leverage: leverage, MarginMode: domain.MarginIsolated, ReduceOnly: reduceOnly}
 	return input, command
+}
+
+func positionSideForOrder(side domain.OrderSide, reduceOnly bool) domain.PositionSide {
+	if (side == domain.SideBuy && !reduceOnly) || (side == domain.SideSell && reduceOnly) {
+		return domain.PositionLong
+	}
+	return domain.PositionShort
 }
 
 func botClientPrefix(botID string) string {
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(botID)))[:8]
 	return "ka" + hash
+}
+
+func hasBotProtection(orders []domain.Order, symbol, prefix string) bool {
+	for _, order := range orders {
+		if order.Symbol == symbol && strings.HasPrefix(order.ClientOrderID, prefix) &&
+			(order.ReduceOnly || order.Type == domain.OrderStopMarket || order.Type == domain.OrderTakeProfitMarket) {
+			return true
+		}
+	}
+	return false
 }
 
 var _ bot.TestnetExecutor = (*Executor)(nil)

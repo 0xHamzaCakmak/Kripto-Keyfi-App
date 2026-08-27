@@ -147,4 +147,26 @@ describe('Binance manual trading adapter', () => {
     }]);
     expect(fetchMock.mock.calls[0]?.[0].toString()).toContain('symbol=BTCUSDT');
   });
+
+  it('queries Hedge Mode and sends positionSide without reduceOnly', async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = input.toString(); const method = init?.method ?? 'GET';
+      if (url.includes('/fapi/v1/positionSide/dual?') && method === 'GET') return Response.json({ dualSidePosition: true });
+      if (url.includes('/fapi/v1/positionSide/dual?') && method === 'POST') return Response.json({ code: 200 });
+      if (url.includes('/fapi/v1/order?') && method === 'POST') return Response.json({
+        orderId: 92, clientOrderId: 'kk_hedge', symbol: 'BTCUSDT', side: 'BUY', positionSide: 'LONG',
+        type: 'MARKET', status: 'FILLED', origQty: '0.002', executedQty: '0.002', reduceOnly: false,
+      });
+      return Response.json({}, { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = new BinanceFuturesAdapter({ apiKey: 'demo-key', apiSecret: 'demo-secret' });
+    await expect(adapter.getHedgeMode()).resolves.toBe(true);
+    await expect(adapter.setHedgeMode(true)).resolves.toBeUndefined();
+    await expect(adapter.placeOrder({ symbol: 'BTCUSDT', side: 'BUY', positionSide: 'LONG', type: 'MARKET', quantity: '0.002', reduceOnly: false, clientOrderId: 'kk_hedge' }))
+      .resolves.toMatchObject({ exchangeOrderId: '92', positionSide: 'LONG' });
+    const orderUrl = fetchMock.mock.calls.find(([url, init]) => url.toString().includes('/fapi/v1/order?') && init?.method === 'POST')?.[0].toString() ?? '';
+    expect(orderUrl).toContain('positionSide=LONG');
+    expect(orderUrl).not.toContain('reduceOnly=');
+  });
 });

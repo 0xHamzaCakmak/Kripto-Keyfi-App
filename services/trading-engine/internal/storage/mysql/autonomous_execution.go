@@ -15,7 +15,9 @@ import (
 
 type AutonomousOrderInput struct {
 	ID, IdempotencyKey, ClientOrderID string
+	DecisionID                        int64
 	Side                              domain.OrderSide
+	PositionSide                      domain.PositionSide
 	Type                              domain.OrderType
 	Quantity                          domain.Decimal
 	StopPrice                         domain.Decimal
@@ -140,11 +142,11 @@ WHERE b.id = ? AND b.userId = ? AND b.exchangeAccountId = ? AND b.type = 'AUTONO
 		return errors.New("autonomous TESTNET order exceeds canary constraints")
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO trading_orders
-(id, userId, exchangeAccountId, previewId, idempotencyKey, clientOrderId, symbol, side, type, quantity,
+(id, userId, exchangeAccountId, previewId, decisionId, idempotencyKey, clientOrderId, symbol, side, positionSide, type, quantity,
 stopPrice, leverage, marginMode, reduceOnly, source, executionEngine, status, createdAt, updatedAt)
-VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, 'ISOLATED', ?, 'SYSTEM', 'GO', 'SUBMITTING', ?, ?)`,
-		input.ID, instance.UserID, instance.ExchangeAccountID, input.IdempotencyKey, input.ClientOrderID,
-		instance.Symbol, input.Side, input.Type, input.Quantity, input.StopPrice, input.Leverage, input.ReduceOnly, now.UTC(), now.UTC())
+VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), ?, 'ISOLATED', ?, 'SYSTEM', 'GO', 'SUBMITTING', ?, ?)`,
+		input.ID, instance.UserID, instance.ExchangeAccountID, input.DecisionID, input.IdempotencyKey, input.ClientOrderID,
+		instance.Symbol, input.Side, input.PositionSide, input.Type, input.Quantity, input.StopPrice, input.Leverage, input.ReduceOnly, now.UTC(), now.UTC())
 	if err != nil {
 		return fmt.Errorf("create autonomous TESTNET order: %w", err)
 	}

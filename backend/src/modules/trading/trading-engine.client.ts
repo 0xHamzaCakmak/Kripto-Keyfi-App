@@ -25,6 +25,7 @@ export async function executeTradingEngineOrder(account: Account, preview: Manua
     method: 'POST', body: JSON.stringify({
       meta: commandMeta(account.userId, order.idempotencyKey, order.clientOrderId), tradingOrderId: order.id,
       account: accountRef(account), symbol: preview.symbol, side: preview.side, type: preview.type,
+      positionSide: preview.positionSide,
       quantity: preview.quantity.toString(), price: preview.price?.toString(), stopPrice: preview.stopPrice?.toString(),
       leverage: preview.leverage, marginMode: preview.marginMode, reduceOnly: preview.reduceOnly,
     }),

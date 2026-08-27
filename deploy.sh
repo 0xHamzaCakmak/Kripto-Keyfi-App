@@ -144,6 +144,16 @@ NODE
   BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-http://127.0.0.1:${BACKEND_PORT}/api/health}"
   FRONTEND_HEALTH_URL="${FRONTEND_HEALTH_URL:-${FRONTEND_URL:-}}"
 
+  if [ "${AI_TRADING_MENTOR_ENABLED:-false}" = "true" ]; then
+    export TRADING_ENGINE_AI_OBSERVER_ENABLED=true
+    export TRADING_ENGINE_AI_OBSERVER_URL="${TRADING_ENGINE_AI_OBSERVER_URL:-http://127.0.0.1:${BACKEND_PORT}/internal/ai-mentor}"
+    export TRADING_ENGINE_AI_OBSERVER_TOKEN="${TRADING_ENGINE_AI_OBSERVER_TOKEN:-${TRADING_ENGINE_TOKEN}}"
+    export TRADING_ENGINE_AI_OBSERVER_PROVIDER="${TRADING_ENGINE_AI_OBSERVER_PROVIDER:-DEEPSEEK_GROQ_GATEWAY}"
+    export TRADING_ENGINE_AI_OBSERVER_MODEL="${TRADING_ENGINE_AI_OBSERVER_MODEL:-deepseek-groq-mentor}"
+    export TRADING_ENGINE_AI_OBSERVER_PROMPT_VERSION="${TRADING_ENGINE_AI_OBSERVER_PROMPT_VERSION:-mentor-v1}"
+    export TRADING_ENGINE_AI_OBSERVER_TIMEOUT="${TRADING_ENGINE_AI_OBSERVER_TIMEOUT:-12s}"
+  fi
+
   local required=(DATABASE_URL JWT_ACCESS_SECRET JWT_REFRESH_SECRET TRADING_ENGINE_URL TRADING_ENGINE_TOKEN TRADING_CREDENTIALS_MASTER_KEY)
   local variable
   for variable in "${required[@]}"; do
@@ -184,6 +194,17 @@ NODE
       exit 1
     fi
   done
+
+  if [ "${AI_TRADING_HEDGE_MODE_ENABLED:-false}" = "true" ]; then
+    local hedge_status
+    hedge_status="$(npm --prefix "$BACKEND_DIR" run configure:testnet-hedge-mode)"
+    if [[ "$hedge_status" != *'"hedgeMode": true'* ]]; then
+      printf 'AI_TRADING_HEDGE_MODE_ENABLED=true ancak Binance TESTNET hesabi Hedge Mode olarak dogrulanamadi.\n' >&2
+      printf 'Once dry-run ve acik pozisyon/emir kontrollerini tamamlayip configure:testnet-hedge-mode komutunu onayli calistirin.\n' >&2
+      exit 1
+    fi
+    log "Binance TESTNET Hedge Mode borsa uzerinden dogrulandi"
+  fi
 }
 
 validate_and_build() {

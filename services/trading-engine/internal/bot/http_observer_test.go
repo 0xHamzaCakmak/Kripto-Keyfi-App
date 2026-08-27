@@ -22,18 +22,20 @@ func TestHTTPObserverProducesComparisonOnlyObservation(t *testing.T) {
 		if payload.Constraints.ExecutionAllowed || payload.Constraints.SubmittedToExchange || !payload.Constraints.ComparisonOnly {
 			t.Fatalf("unsafe observer constraints: %#v", payload.Constraints)
 		}
-		_ = json.NewEncoder(response).Encode(observerResponse{Action: "BUY", Confidence: 0.82, Rationale: "Momentum gözlemi BUY yönünü destekliyor.", ExpiresInSeconds: 90})
+		_ = json.NewEncoder(response).Encode(observerResponse{Action: "BUY", Confidence: 0.82, Rationale: "Momentum gözlemi BUY yönünü destekliyor.",
+			InvalidationLevel: 69000, SuggestedLeverage: 5, AgreesWithRuleEngine: true,
+			Provider: "GROQ", Model: "llama-test", PromptVersion: "mentor-v1", ExpiresInSeconds: 90})
 	}))
 	defer server.Close()
 	observer, err := NewHTTPObserver(HTTPObserverOptions{Endpoint: server.URL, Token: "0123456789abcdef0123456789abcdef", Provider: "TEST", Model: "observer-test", PromptVersion: "v1", Client: server.Client(), Now: func() time.Time { return fixedNow }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := observer.Observe(t.Context(), Instance{ID: "bot-1", Type: "SCALPING", Mode: "SHADOW", Symbol: "BTCUSDT"}, Decision{Kind: "BUY", MarkPrice: "70000", Summary: "rule"})
+	result, err := observer.Observe(t.Context(), Instance{ID: "bot-1", Type: "SCALPING", Mode: "SHADOW", Symbol: "BTCUSDT", Configuration: map[string]any{"aiAutonomyLevel": "advisory"}}, Decision{Kind: "BUY", MarkPrice: "70000", Summary: "rule"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Action != "BUY" || result.Confidence != 0.82 || !result.ExpiresAt.Equal(fixedNow.Add(90*time.Second)) {
+	if result.Action != "BUY" || result.Confidence != 0.82 || result.InvalidationLevel != 69000 || result.SuggestedLeverage != 5 || !result.AgreesWithRuleEngine || result.Provider != "GROQ" || !result.ExpiresAt.Equal(fixedNow.Add(90*time.Second)) {
 		t.Fatalf("unexpected observation: %#v", result)
 	}
 }

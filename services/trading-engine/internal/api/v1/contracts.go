@@ -87,6 +87,7 @@ type PlaceOrderCommand struct {
 	Account        domain.ExchangeAccountRef `json:"account"`
 	Symbol         string                    `json:"symbol"`
 	Side           domain.OrderSide          `json:"side"`
+	PositionSide   domain.PositionSide       `json:"positionSide,omitempty"`
 	Type           domain.OrderType          `json:"type"`
 	Quantity       domain.Decimal            `json:"quantity"`
 	Price          domain.Decimal            `json:"price,omitempty"`
@@ -102,16 +103,17 @@ type PlaceOrderCommand struct {
 }
 
 type PreviewOrderRequest struct {
-	Account    domain.ExchangeAccountRef `json:"account"`
-	Symbol     string                    `json:"symbol"`
-	Side       domain.OrderSide          `json:"side"`
-	Type       domain.OrderType          `json:"type"`
-	Quantity   domain.Decimal            `json:"quantity"`
-	Price      domain.Decimal            `json:"price,omitempty"`
-	StopPrice  domain.Decimal            `json:"stopPrice,omitempty"`
-	Leverage   int                       `json:"leverage"`
-	MarginMode domain.MarginMode         `json:"marginMode"`
-	ReduceOnly bool                      `json:"reduceOnly"`
+	Account      domain.ExchangeAccountRef `json:"account"`
+	Symbol       string                    `json:"symbol"`
+	Side         domain.OrderSide          `json:"side"`
+	PositionSide domain.PositionSide       `json:"positionSide,omitempty"`
+	Type         domain.OrderType          `json:"type"`
+	Quantity     domain.Decimal            `json:"quantity"`
+	Price        domain.Decimal            `json:"price,omitempty"`
+	StopPrice    domain.Decimal            `json:"stopPrice,omitempty"`
+	Leverage     int                       `json:"leverage"`
+	MarginMode   domain.MarginMode         `json:"marginMode"`
+	ReduceOnly   bool                      `json:"reduceOnly"`
 }
 
 type PreviewOrderResponse struct {

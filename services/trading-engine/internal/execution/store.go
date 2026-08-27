@@ -16,6 +16,7 @@ type StoredOrder struct {
 	ExchangeOrderID   string
 	Symbol            string
 	Side              domain.OrderSide
+	PositionSide      domain.PositionSide
 	Type              domain.OrderType
 	Quantity          domain.Decimal
 	Price             domain.Decimal

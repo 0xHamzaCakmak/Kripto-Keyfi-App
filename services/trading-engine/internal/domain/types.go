@@ -102,29 +102,31 @@ const (
 )
 
 type Order struct {
-	ID                string      `json:"id,omitempty"`
-	ExchangeAccountID string      `json:"exchangeAccountId"`
-	ExchangeOrderID   string      `json:"exchangeOrderId,omitempty"`
-	ClientOrderID     string      `json:"clientOrderId"`
-	IdempotencyKey    string      `json:"idempotencyKey"`
-	Symbol            string      `json:"symbol"`
-	Side              OrderSide   `json:"side"`
-	Type              OrderType   `json:"type"`
-	Status            OrderStatus `json:"status"`
-	Quantity          Decimal     `json:"quantity"`
-	ExecutedQuantity  Decimal     `json:"executedQuantity"`
-	Price             Decimal     `json:"price,omitempty"`
-	StopPrice         Decimal     `json:"stopPrice,omitempty"`
-	Leverage          int         `json:"leverage"`
-	MarginMode        MarginMode  `json:"marginMode"`
-	ReduceOnly        bool        `json:"reduceOnly"`
-	CreatedAt         time.Time   `json:"createdAt"`
-	UpdatedAt         time.Time   `json:"updatedAt"`
+	ID                string       `json:"id,omitempty"`
+	ExchangeAccountID string       `json:"exchangeAccountId"`
+	ExchangeOrderID   string       `json:"exchangeOrderId,omitempty"`
+	ClientOrderID     string       `json:"clientOrderId"`
+	IdempotencyKey    string       `json:"idempotencyKey"`
+	Symbol            string       `json:"symbol"`
+	Side              OrderSide    `json:"side"`
+	PositionSide      PositionSide `json:"positionSide,omitempty"`
+	Type              OrderType    `json:"type"`
+	Status            OrderStatus  `json:"status"`
+	Quantity          Decimal      `json:"quantity"`
+	ExecutedQuantity  Decimal      `json:"executedQuantity"`
+	Price             Decimal      `json:"price,omitempty"`
+	StopPrice         Decimal      `json:"stopPrice,omitempty"`
+	Leverage          int          `json:"leverage"`
+	MarginMode        MarginMode   `json:"marginMode"`
+	ReduceOnly        bool         `json:"reduceOnly"`
+	CreatedAt         time.Time    `json:"createdAt"`
+	UpdatedAt         time.Time    `json:"updatedAt"`
 }
 
 type PositionSide string
 
 const (
+	PositionBoth  PositionSide = "BOTH"
 	PositionLong  PositionSide = "LONG"
 	PositionShort PositionSide = "SHORT"
 )

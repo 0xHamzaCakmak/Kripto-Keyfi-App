@@ -254,15 +254,23 @@ VALUES (?, ?, ?, ?, 'RULE_ENGINE', ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
 		return bot.CycleResult{}, fmt.Errorf("insert bot signal: %w", err)
 	}
 	if decision.AIObservation != nil {
+		ruleKindBeforeMentor := decision.Metrics["aiRuleDecisionKindBeforeMentor"]
+		ruleActionBeforeMentor := decision.Metrics["aiRuleActionBeforeMentor"]
 		comparisonFeatures, marshalErr := json.Marshal(map[string]any{
-			"ruleDecisionKind": decision.Kind, "ruleAction": signalAction(decision.Kind),
-			"agreement": signalAction(decision.Kind) == decision.AIObservation.Action,
+			"ruleDecisionKind": ruleKindBeforeMentor, "ruleAction": ruleActionBeforeMentor,
+			"agreement":              decision.Metrics["aiMentorAgreement"],
+			"modelReportedAgreement": decision.AIObservation.AgreesWithRuleEngine,
+			"invalidationLevel":      decision.AIObservation.InvalidationLevel,
+			"suggestedLeverage":      decision.AIObservation.SuggestedLeverage,
+			"contextPackage":         decision.Metrics,
 		})
 		if marshalErr != nil {
 			return bot.CycleResult{}, fmt.Errorf("marshal AI comparison features: %w", marshalErr)
 		}
 		observerSafetyChecks, marshalErr := json.Marshal(map[string]any{
-			"mode": instance.Mode, "comparisonOnly": true, "riskGatePassed": true,
+			"mode": instance.Mode, "autonomyLevel": decision.Metrics["aiAutonomyLevel"],
+			"comparisonOnly":   decision.Metrics["aiMentorComparisonOnly"] == true,
+			"mentorGatePassed": decision.Metrics["aiMentorGatePassed"], "riskGatePassed": riskApproved,
 			"submittedToExchange": false, "orderExecutionAllowed": false, "paperFillAllowed": false,
 		})
 		if marshalErr != nil {
@@ -271,8 +279,9 @@ VALUES (?, ?, ?, ?, 'RULE_ENGINE', ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
 		_, err = tx.ExecContext(ctx, `INSERT INTO trading_bot_signals
 (tradingBotId, userId, exchangeAccountId, decisionId, source, action, status, confidence, rationale,
  modelProvider, modelName, promptVersion, features, safetyChecks, expiresAt, decidedAt, createdAt)
-VALUES (?, ?, ?, ?, 'AI_MODEL', ?, 'OBSERVED', ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
+VALUES (?, ?, ?, ?, 'AI_MODEL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
 			instance.ID, instance.UserID, instance.ExchangeAccountID, decisionID, decision.AIObservation.Action,
+			aiSignalStatus(decision.Metrics),
 			strconv.FormatFloat(decision.AIObservation.Confidence, 'f', 4, 64), decision.AIObservation.Rationale,
 			decision.AIObservation.Provider, decision.AIObservation.Model, decision.AIObservation.PromptVersion,
 			comparisonFeatures, observerSafetyChecks, decision.AIObservation.ExpiresAt, now)
@@ -418,6 +427,16 @@ func signalConfidence(kind string) string {
 	default:
 		return "0.5000"
 	}
+}
+
+func aiSignalStatus(metrics map[string]any) string {
+	if metrics["aiMentorComparisonOnly"] == true {
+		return "OBSERVED"
+	}
+	if metrics["aiMentorGatePassed"] == true {
+		return "ACCEPTED"
+	}
+	return "REJECTED"
 }
 
 type openPaperTrade struct {
