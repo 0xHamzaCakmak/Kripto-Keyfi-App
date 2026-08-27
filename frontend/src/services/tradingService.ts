@@ -39,6 +39,7 @@ export type TradingExecutionProfile = {
   maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string;
   stopLossBps: number; takeProfitBps: number; maxOrdersPerMinute: number; entryPaused: boolean;
 };
+export type TradingExecutionProfileUpdate = Partial<TradingExecutionProfile>;
 
 function normalizeTradingExecutionProfile(profile: TradingExecutionProfile): TradingExecutionProfile {
   return {
@@ -141,11 +142,23 @@ export async function getTradingExecutionProfile(exchangeAccountId: string) {
   const profile = (await api.get<{ data: TradingExecutionProfile }>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`)).data.data;
   return normalizeTradingExecutionProfile(profile);
 }
-export async function updateTradingExecutionProfile(exchangeAccountId: string, input: TradingExecutionProfile) {
+export async function updateTradingExecutionProfile(exchangeAccountId: string, input: TradingExecutionProfileUpdate) {
   // The GET response also contains server-managed fields (IDs, kill-switch
   // state, timestamps and effective limits). Never echo those fields into the
   // strict PATCH contract; send only the administrator-editable values.
-  const payload = normalizeTradingExecutionProfile(input);
+  const payload: TradingExecutionProfileUpdate = {
+    ...(input.minLeverage !== undefined ? { minLeverage: input.minLeverage } : {}),
+    ...(input.maxLeverage !== undefined ? { maxLeverage: input.maxLeverage } : {}),
+    ...(input.botAllocationUsdt !== undefined ? { botAllocationUsdt: input.botAllocationUsdt } : {}),
+    ...(input.minInitialMarginUsdt !== undefined ? { minInitialMarginUsdt: input.minInitialMarginUsdt } : {}),
+    ...(input.maxOrderNotional !== undefined ? { maxOrderNotional: input.maxOrderNotional } : {}),
+    ...(input.maxInitialMargin !== undefined ? { maxInitialMargin: input.maxInitialMargin } : {}),
+    ...(input.maxAccountOpenNotional !== undefined ? { maxAccountOpenNotional: input.maxAccountOpenNotional } : {}),
+    ...(input.stopLossBps !== undefined ? { stopLossBps: input.stopLossBps } : {}),
+    ...(input.takeProfitBps !== undefined ? { takeProfitBps: input.takeProfitBps } : {}),
+    ...(input.maxOrdersPerMinute !== undefined ? { maxOrdersPerMinute: input.maxOrdersPerMinute } : {}),
+    ...(input.entryPaused !== undefined ? { entryPaused: input.entryPaused } : {}),
+  };
   const profile = (await api.patch<{ data: TradingExecutionProfile }>(
     `/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`,
     payload,

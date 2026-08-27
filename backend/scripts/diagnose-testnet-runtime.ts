@@ -10,7 +10,7 @@ async function main() {
   const account = await prisma.exchangeAccount.findFirstOrThrow({
     where: { environment: 'TESTNET', isActive: true },
   });
-  const [decisions, signals, entries, fills, shortTermBots, snapshot] = await Promise.all([
+  const [decisions, signals, entries, fills, runtimeBots, snapshot] = await Promise.all([
     prisma.tradingBotDecision.findMany({
       where: { exchangeAccountId: account.id, mode: 'DEMO', occurredAt: { gte: since } },
       select: { tradingBotId: true, kind: true, symbol: true, metrics: true },
@@ -27,8 +27,9 @@ async function main() {
       where: { exchangeAccountId: account.id, reduceOnly: false, occurredAt: { gte: since } },
       select: { tradingBotId: true, symbol: true },
     }),
-    prisma.tradingBot.count({
+    prisma.tradingBot.findMany({
       where: { exchangeAccountId: account.id, mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' }, timeframe: '15m' },
+      select: { id: true, desiredState: true, configuration: true },
     }),
     getTradingEngineSnapshot(account),
   ]);
@@ -43,6 +44,7 @@ async function main() {
       && JSON.stringify(metrics?.directionWindowsHours) === JSON.stringify([24, 48]);
   });
   const positions = snapshot.positions.filter((position) => Number(position.quantity) !== 0);
+  const entryPausedBots = runtimeBots.filter((bot) => jsonObject(bot.configuration)?.entryPaused === true).length;
   const riskOutcomes = signals.reduce<Record<string, number>>((counts, signal) => {
     const safety = jsonObject(signal.safetyChecks);
     const risk = jsonObject(safety?.autonomousRiskDecision);
@@ -64,7 +66,10 @@ async function main() {
     guardedTransitionDecisions: transitions.length,
     guardedTransitionBots: new Set(transitions.map((decision) => decision.tradingBotId)).size,
     shortTermAnalysisDecisions: shortTermDecisions.length,
-    shortTermConfiguredBots: shortTermBots,
+    shortTermConfiguredBots: runtimeBots.length,
+    desiredRunningBots: runtimeBots.filter((bot) => bot.desiredState === 'RUNNING').length,
+    entryPausedBots,
+    automaticEntriesPaused: runtimeBots.length > 0 && entryPausedBots === runtimeBots.length,
     riskOutcomes,
     executionOutcomes,
     submittedEntries: entries.length,

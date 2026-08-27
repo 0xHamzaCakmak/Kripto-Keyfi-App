@@ -18,6 +18,11 @@ import (
 const (
 	paperTrainingMaxConcurrentPositions = 100
 	testnetMaxConcurrentPositions       = 20
+	// The administrator explicitly selects fixed TESTNET stop/take targets in
+	// the central execution profile. The editable range permits 1% reward with
+	// a 10% stop, so DEMO must not re-impose the profile's LIVE-oriented 1.5 RR
+	// floor after those targets have already passed validation.
+	testnetAdminMinRiskReward = "0.1"
 )
 
 func evaluateAutonomousPaperRisk(ctx context.Context, tx *sql.Tx, instance bot.Instance, decision bot.Decision, now time.Time) (autonomousrisk.Decision, error) {
@@ -280,6 +285,9 @@ func autonomousPolicyForMode(policy autonomousrisk.Policy, mode string, paperCon
 	// concurrency when PAPER is configured aggressively.
 	if policy.MaxConcurrentPositions > testnetMaxConcurrentPositions {
 		policy.MaxConcurrentPositions = testnetMaxConcurrentPositions
+	}
+	if mode == "DEMO" {
+		policy.MinRiskReward = testnetAdminMinRiskReward
 	}
 	return policy
 }

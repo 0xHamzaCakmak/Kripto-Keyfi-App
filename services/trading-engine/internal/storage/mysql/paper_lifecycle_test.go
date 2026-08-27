@@ -56,12 +56,13 @@ func TestPaperAccountingIncludesEntryAndExitCosts(t *testing.T) {
 }
 
 func TestPaperTrainingPolicyIsSeparateFromTestnetAndSupportsOneHundredPositions(t *testing.T) {
-	base := autonomousrisk.Policy{MaxConcurrentPositions: 100}
+	base := autonomousrisk.Policy{MaxConcurrentPositions: 100, MinRiskReward: "1.5"}
 	if got := autonomousPolicyForMode(base, "PAPER", 100).MaxConcurrentPositions; got != 100 {
 		t.Fatalf("paper maximum: %d", got)
 	}
-	if got := autonomousPolicyForMode(base, "DEMO", 100).MaxConcurrentPositions; got != 20 {
-		t.Fatalf("testnet maximum changed: %d", got)
+	testnet := autonomousPolicyForMode(base, "DEMO", 100)
+	if testnet.MaxConcurrentPositions != 20 || testnet.MinRiskReward != testnetAdminMinRiskReward {
+		t.Fatalf("testnet policy did not honor its admin protection range: %#v", testnet)
 	}
 	base.MaxConcurrentPositions = 5
 	if got := autonomousPolicyForMode(base, "PAPER", 40).MaxConcurrentPositions; got != 40 {
