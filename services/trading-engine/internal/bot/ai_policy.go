@@ -13,7 +13,7 @@ func ApplyAIMentorPolicy(instance Instance, decision Decision) Decision {
 	}
 	level := strings.ToLower(strings.TrimSpace(stringValue(instance.Configuration["aiAutonomyLevel"])))
 	if level == "" {
-		level = "co_signal"
+		level = "advisory"
 	}
 	threshold := configNumberOr(instance.Configuration, "aiConfidenceThreshold", defaultAIConfidenceThreshold)
 	if threshold < 0.5 || threshold > 0.99 {

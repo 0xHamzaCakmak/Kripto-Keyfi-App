@@ -136,7 +136,7 @@ func TestSchedulerAdvisoryObservationDoesNotChangeRuleDecision(t *testing.T) {
 }
 
 func TestSchedulerFailsClosedWhenAIObserverFails(t *testing.T) {
-	store := &schedulerStore{instance: &Instance{ID: "bot-ai-fail", State: StateRunning, Mode: "PAPER"}, gate: Gate{Ready: true}}
+	store := &schedulerStore{instance: &Instance{ID: "bot-ai-fail", State: StateRunning, Mode: "PAPER", Configuration: map[string]any{"aiAutonomyLevel": "co_signal"}}, gate: Gate{Ready: true}}
 	scheduler := NewScheduler(Options{Store: store, Runner: fixedRunner{}, Observer: fixedObserver{err: errors.New("observer unavailable")}, Owner: "test", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	scheduler.runOnce(t.Context())
 	if store.decision.Kind != "HOLD" || store.decision.AIObservation == nil || store.decision.AIObservation.Provider != "FAIL_SAFE" {

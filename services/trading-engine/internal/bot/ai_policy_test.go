@@ -2,6 +2,14 @@ package bot
 
 import "testing"
 
+func TestAIMentorDefaultsToAdvisorySoTrainingEntriesContinue(t *testing.T) {
+	decision := Decision{Kind: "BUY", Metrics: map[string]any{}, HypotheticalOrder: map[string]any{"side": "BUY"}, AIObservation: &AIObservation{Action: "HOLD"}}
+	result := ApplyAIMentorPolicy(Instance{Configuration: map[string]any{}}, decision)
+	if result.Kind != "BUY" || result.HypotheticalOrder == nil || result.Metrics["aiMentorComparisonOnly"] != true {
+		t.Fatalf("default advisory mentor unexpectedly blocked TESTNET training: %#v", result)
+	}
+}
+
 func TestAIMentorCoSignalRequiresAgreementOrDirectionalConfidence(t *testing.T) {
 	instance := Instance{Configuration: map[string]any{"aiAutonomyLevel": "co_signal", "aiConfidenceThreshold": 0.75}}
 	base := Decision{Kind: "BUY", Metrics: map[string]any{}, HypotheticalOrder: map[string]any{"side": "BUY"}}

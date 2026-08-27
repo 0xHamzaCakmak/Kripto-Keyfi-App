@@ -407,7 +407,11 @@ func (e *Executor) pyramidPosition(ctx context.Context, instance bot.Instance, d
 	}
 	var updated *domain.Position
 	for index := range positions {
-		if positions[index].Symbol == instance.Symbol && decimalSign(string(positions[index].Quantity)) != 0 {
+		// In Hedge Mode Binance can return both LONG and SHORT legs for the same
+		// symbol. Refresh the leg that this bot just increased; selecting the
+		// first symbol match could mistake the opposite leg for the pyramid fill
+		// and unnecessarily roll the addition back.
+		if positions[index].Symbol == instance.Symbol && positions[index].Side == previous.Side && decimalSign(string(positions[index].Quantity)) != 0 {
 			updated = &positions[index]
 			break
 		}

@@ -35,7 +35,7 @@ const envSchema = z.object({
   AI_TRADING_MENTOR_ENABLED: booleanString.default('false'),
   AI_TRADING_MENTOR_PROVIDER_ORDER: z.string().trim().regex(/^(?:deepseek|groq)(?:,(?:deepseek|groq))*$/).default('deepseek,groq'),
   AI_TRADING_MENTOR_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(12_000),
-  AI_TRADING_MENTOR_AUTONOMY_LEVEL: z.enum(['advisory', 'co_signal', 'autonomous']).default('co_signal'),
+  AI_TRADING_MENTOR_AUTONOMY_LEVEL: z.enum(['advisory', 'co_signal', 'autonomous']).default('advisory'),
   AI_TRADING_MENTOR_CONFIDENCE_THRESHOLD: z.coerce.number().min(0.5).max(0.99).default(0.75),
   AI_TRADING_MENTOR_AUTONOMOUS_APPROVED: booleanString.default('false'),
   AI_TRADING_SHARED_UNIVERSE_MAX_SYMBOLS: z.coerce.number().int().min(20).max(40).default(40),

@@ -396,12 +396,16 @@ func configNumberOr(configuration map[string]any, key string, fallback float64) 
 }
 
 func testnetContinuousMarketConfirmation(configuration map[string]any, analysis MarketAnalysis) (bool, bool) {
-	if !analysis.DerivativesAligned {
-		return false, false
-	}
 	regime := strings.ToUpper(strings.TrimSpace(analysis.Regime))
 	if (regime == "TREND" || regime == "RANGE" || regime == "HIGH_VOLATILITY") && analysis.ConfirmedTimeframes >= 1 {
+		// TESTNET continuous training must keep collecting fills when funding/OI
+		// does not confirm an otherwise established market regime. The order is
+		// still protected and the existing OI branch halves its quantity below;
+		// both central risk engines remain authoritative.
 		return true, false
+	}
+	if !analysis.DerivativesAligned {
+		return false, false
 	}
 
 	// Default-on preserves continuity for TESTNET bots created before this

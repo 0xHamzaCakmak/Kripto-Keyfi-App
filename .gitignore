@@ -10,6 +10,7 @@ coverage/
 .tmp-go-cache/
 services/trading-engine/.gocache/
 services/trading-engine/.gotmp/
+.cache/go-build/
 .tmp/
 .runtime/
 .deploy-maintenance-bots.json

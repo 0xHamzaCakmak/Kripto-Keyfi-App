@@ -157,11 +157,17 @@ func TestExecutorRepairsUnprotectedPositionBeforePyramiding(t *testing.T) {
 func TestExecutorPyramidsSameDirectionWithinAllocationAndResizesProtection(t *testing.T) {
 	store := &fakeStore{}
 	instance := bot.Instance{ID: "bot-1", UserID: "user-1", ExchangeAccountID: "account-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "ETHUSDT"}
-	instance.Configuration = map[string]any{"stopLossBps": float64(50), "takeProfitBps": float64(100), "allocationUsdt": float64(100), "positionNotionalPct": float64(.10), "pyramidingEnabled": true}
+	instance.Configuration = map[string]any{"stopLossBps": float64(50), "takeProfitBps": float64(100), "allocationUsdt": float64(100), "positionNotionalPct": float64(.10), "pyramidingEnabled": true, "hedgeModeEnabled": true}
 	prefix := botClientPrefix(instance.ID)
 	exchange := &fakeExecution{
-		positions:           []domain.Position{{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.02", EntryPrice: "2500", MarkPrice: "2500", Leverage: "7"}},
-		positionsAfterPlace: []domain.Position{{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.024", EntryPrice: "2500", MarkPrice: "2500", Leverage: "7"}},
+		positions: []domain.Position{
+			{Symbol: "ETHUSDT", Side: domain.PositionShort, Quantity: "0.01", EntryPrice: "2550", MarkPrice: "2500", Leverage: "7"},
+			{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.02", EntryPrice: "2500", MarkPrice: "2500", Leverage: "7"},
+		},
+		positionsAfterPlace: []domain.Position{
+			{Symbol: "ETHUSDT", Side: domain.PositionShort, Quantity: "0.01", EntryPrice: "2550", MarkPrice: "2500", Leverage: "7"},
+			{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.024", EntryPrice: "2500", MarkPrice: "2500", Leverage: "7"},
+		},
 		orders: []domain.Order{
 			{ExchangeOrderID: "old-stop", ClientOrderID: prefix + "olds", Symbol: "ETHUSDT", Type: domain.OrderStopMarket, Quantity: "0.02"},
 			{ExchangeOrderID: "old-take", ClientOrderID: prefix + "oldt", Symbol: "ETHUSDT", Type: domain.OrderTakeProfitMarket, Quantity: "0.02"},
@@ -177,6 +183,9 @@ func TestExecutorPyramidsSameDirectionWithinAllocationAndResizesProtection(t *te
 	for _, command := range exchange.commands {
 		if command.Leverage != 7 {
 			t.Fatalf("pyramid must preserve open isolated position leverage, got %d", command.Leverage)
+		}
+		if command.PositionSide != domain.PositionLong {
+			t.Fatalf("pyramid entry/protection must stay on the owned LONG hedge leg, got %s", command.PositionSide)
 		}
 	}
 	if !exchange.commands[0].PositionConfigurationVerified {

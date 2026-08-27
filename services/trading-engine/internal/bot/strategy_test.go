@@ -259,6 +259,10 @@ func TestTestnetContinuousMarketConfirmationAcceptsOnlyGuardedTransition(t *test
 	if !accepted || !transitionAccepted {
 		t.Fatalf("guarded TESTNET transition was rejected: accepted=%v transition=%v", accepted, transitionAccepted)
 	}
+	establishedWithoutOIGrowth := MarketAnalysis{Regime: "TREND", ConfirmedTimeframes: 1, ATRBps15m: 12, DerivativesAligned: false}
+	if accepted, transition := testnetContinuousMarketConfirmation(configuration, establishedWithoutOIGrowth); !accepted || transition {
+		t.Fatalf("established TESTNET regime should use reduced sizing instead of an OI veto: accepted=%v transition=%v", accepted, transition)
+	}
 
 	for name, rejected := range map[string]MarketAnalysis{
 		"missing derivatives": {Regime: "UNCERTAIN", ConfirmedTimeframes: 2, ATRBps15m: 38, DerivativesAligned: false},

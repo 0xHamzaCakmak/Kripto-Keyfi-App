@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getApiErrorMessage } from '../../services/apiClient';
 import { aiTradingApi, botSymbols, recordNumber, type AutonomousBot, type ChampionCandidate, type LeaderboardRow, type MarketRegime, type PaperPerformance, type TestnetBotOperation, type TradeSummary } from '../../services/aiTradingService';
 import { closeOpenPosition, type OpenPosition } from '../../services/tradingService';
+import { getTradingExecutionProfile, updateTradingExecutionProfile } from '../../services/tradingService';
 import { AITradingPage, EmptyState, ErrorState, formatDate, formatMoney, formatPercent, MetricCard, ModeBadge, RefreshButton, StatusBadge } from './AITradingUI';
 
 type ArenaRow = {
@@ -20,6 +21,9 @@ export default function AITradingArena() {
   const [regimeIds, setRegimeIds] = useState<Set<string> | null>(null); const [selected, setSelected] = useState<ArenaRow | null>(null);
   const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [fleetBusy, setFleetBusy] = useState(false); const [fleetNotice, setFleetNotice] = useState('');
+  const [executionAccountId, setExecutionAccountId] = useState('');
+  const [entryPaused, setEntryPaused] = useState<boolean | null>(null);
+  const [executionBusy, setExecutionBusy] = useState(false);
   const [filters, setFilters] = useState({ status: 'ALL', strategy: 'ALL', generation: 'ALL', regime: 'ALL' as 'ALL' | MarketRegime, minScore: '', minPnl: '' });
   const [sort, setSort] = useState<SortKey>('openPnl');
   const [pageSize, setPageSize] = useState<10 | 'ALL'>(10); const [page, setPage] = useState(1);
@@ -34,7 +38,17 @@ export default function AITradingArena() {
       const [botRows, summaryRows, championRows] = await Promise.all([aiTradingApi.bots(), aiTradingApi.tradeSummary('BOT', 100), aiTradingApi.champions()]);
       // Defense in depth: archived/retired bots retain their financial history
       // in the database but must never reappear in the active Arena fleet.
-      setBots(botRows.filter((bot) => bot.lifecycleStatus !== 'ARCHIVED' && bot.mode === 'DEMO')); setSummaries(summaryRows); setChampions(championRows);
+      const activeTestnetBots = botRows.filter((bot) => bot.lifecycleStatus !== 'ARCHIVED' && bot.mode === 'DEMO');
+      setBots(activeTestnetBots); setSummaries(summaryRows); setChampions(championRows);
+      const accountId = activeTestnetBots[0]?.exchangeAccountId ?? '';
+      setExecutionAccountId(accountId);
+      if (accountId) {
+        void getTradingExecutionProfile(accountId)
+          .then((profile) => setEntryPaused(profile.entryPaused))
+          .catch((reason) => setError(getApiErrorMessage(reason, 'Bot çalışma durumu okunamadı.')));
+      } else {
+        setEntryPaused(null);
+      }
       void scoreRequest.then((scoreRows) => { if (scoreRows) setScores(scoreRows); });
       void operationRequest.then((operationRows) => { if (operationRows) setOperations(operationRows.data); });
     } catch (reason) { setError(getApiErrorMessage(reason, 'Arena verileri alınamadı.')); }
@@ -66,6 +80,25 @@ export default function AITradingArena() {
     finally { setFleetBusy(false); }
   }
 
+  async function toggleAutomaticExecution() {
+    if (!executionAccountId || entryPaused === null) return;
+    const nextPaused = !entryPaused;
+    const action = nextPaused ? 'yeni girişleri ve otomatik pozisyon yönetimini durdurmak' : 'otomatik işlemleri yeniden başlatmak';
+    if (!window.confirm(`20 TESTNET botunda ${action} istiyor musunuz?`)) return;
+    setExecutionBusy(true); setError(''); setFleetNotice('');
+    try {
+      const profile = await updateTradingExecutionProfile(executionAccountId, { entryPaused: nextPaused });
+      setEntryPaused(profile.entryPaused);
+      setFleetNotice(profile.entryPaused
+        ? 'Otomatik işlemler durduruldu. Botlar yeni emir göndermeyecek veya açık pozisyonları değiştirmeyecek.'
+        : 'Otomatik işlemler başlatıldı. Botlar mevcut TESTNET durumundan devam edecek.');
+    } catch (reason) {
+      setError(getApiErrorMessage(reason, 'Bot çalışma durumu değiştirilemedi.'));
+    } finally {
+      setExecutionBusy(false);
+    }
+  }
+
   const rows = useMemo(() => buildArenaRows(bots, scores, summaries, champions, operations), [bots, scores, summaries, champions, operations]);
   const strategies = useMemo(() => [...new Set(bots.map((bot) => bot.strategyVersion?.strategy.family).filter(Boolean))] as string[], [bots]);
   const generations = useMemo(() => [...new Set(bots.map((bot) => bot.generationId).filter((id): id is string => Boolean(id)))], [bots]);
@@ -84,7 +117,8 @@ export default function AITradingArena() {
   useEffect(() => { setPage(1); }, [filters, regimeIds, sort, pageSize]);
   useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
 
-  return <AITradingPage title="Bot Arena" description="20 Binance TESTNET botunun skorunu, işlem geçmişini ve sermaye kotasını tek yerden izleyin." icon={Bot} action={<div className="flex flex-wrap items-center justify-end gap-2">{bots.length === 20 ? <span className="rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-xs font-black text-secondary">20 TESTNET botu korunuyor</span> : <button type="button" disabled={fleetBusy} onClick={() => void activateTestnetFleet()} className="rounded-xl bg-error px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{fleetBusy ? 'TESTNET hazırlanıyor…' : '20 botu TESTNET başlat'}</button>}<RefreshButton onClick={() => void load()} busy={loading} /></div>}>
+  return <AITradingPage title="Bot Arena" description="20 Binance TESTNET botunun skorunu, işlem geçmişini ve sermaye kotasını tek yerden izleyin." icon={Bot} action={<div className="flex flex-wrap items-center justify-end gap-2">{bots.length === 20 ? <><span className="rounded-xl border border-outline/20 bg-surface-high px-4 py-3 text-xs font-black text-on-surface-variant">20 TESTNET botu</span><button type="button" disabled={executionBusy || entryPaused === null || !executionAccountId} onClick={() => void toggleAutomaticExecution()} className={`rounded-xl border px-4 py-3 text-xs font-black disabled:cursor-not-allowed disabled:opacity-40 ${entryPaused ? 'border-secondary/40 bg-secondary/10 text-secondary' : 'border-error/40 bg-error/10 text-error'}`}>{executionBusy ? 'İşleniyor…' : entryPaused === null ? 'Durum okunuyor…' : entryPaused ? 'Yeni işlemleri başlat' : 'Yeni işlemleri durdur'}</button></> : <button type="button" disabled={fleetBusy} onClick={() => void activateTestnetFleet()} className="rounded-xl bg-error px-4 py-3 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{fleetBusy ? 'TESTNET hazırlanıyor…' : '20 botu TESTNET başlat'}</button>}<RefreshButton onClick={() => void load()} busy={loading} /></div>}>
+    {bots.length === 20 && entryPaused !== null && <div className={`rounded-2xl border px-4 py-3 text-sm font-bold ${entryPaused ? 'border-error/30 bg-error/10 text-error' : 'border-secondary/30 bg-secondary/10 text-secondary'}`}>{entryPaused ? 'Botlar durduruldu: yeni emir girişi ve otomatik açık pozisyon yönetimi kapalıdır.' : 'Botlar aktif: yeni emir girişi ve otomatik açık pozisyon yönetimi açıktır.'}</div>}
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"><MetricCard label="TESTNET botu" value={bots.length} detail="Sabit filo: 20" tone="safe" /><MetricCard label="Score üretilen" value={scores.filter((score) => bots.some((bot) => bot.id === score.tradingBotId)).length} /><MetricCard label="Challenger" value={bots.filter((bot) => bot.lifecycleStatus === 'CHALLENGER').length} tone="warning" /><MetricCard label="Kapanmış TESTNET işlem" value={operations.reduce((sum, item) => sum + item.closedFills, 0)} /><MetricCard label="Açık TESTNET pozisyon" value={operations.filter((item) => item.position).length} tone="safe" /></div>
     {error && <ErrorState message={error} />}
     {fleetNotice && <div className="rounded-2xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-sm font-bold text-secondary">{fleetNotice}</div>}
