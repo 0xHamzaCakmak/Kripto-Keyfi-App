@@ -9,7 +9,7 @@ import { assessEvolutionReadiness, evolutionConfigForPopulation } from './evolut
 import { getBinanceFuturesPublicSymbols } from '../trading/exchanges/binance-futures.adapter.js';
 import { getEnabledTradingSymbols } from './trading-universe.service.js';
 import { getTradingEngineSnapshot } from '../trading/trading-engine.client.js';
-import { fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, paperTrainingConfiguration, testnetExecutionConfiguration } from './universe.worker.js';
+import { fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, TESTNET_DECISION_INTERVAL_SECONDS, paperTrainingConfiguration, testnetExecutionConfiguration } from './universe.worker.js';
 
 export const AUTONOMOUS_ADMIN_API_VERSION = 'v1' as const;
 
@@ -379,7 +379,7 @@ export async function activateAutonomousTestnet(userId: string, id: string, inpu
   if (activeSymbol >= 1) throw new ApiError(409, 'Only one TESTNET bot may own a symbol on the shared exchange account.', 'AUTONOMOUS_TESTNET_SYMBOL_IN_USE');
   if (paperPosition && !paperPosition.netQuantity.isZero()) throw new ApiError(409, 'Choose a bot with a flat PAPER position before TESTNET activation.', 'AUTONOMOUS_TESTNET_BOT_NOT_FLAT');
   const leverage = Math.max(profile.minLeverage, Math.min(profile.maxLeverage, Math.round(Number((bot.configuration as Prisma.JsonObject | null)?.leverage) || profile.minLeverage)));
-  return persistBotUpdate(userId, bot, { mode: 'DEMO', timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { allocationUsdt: profile.testnetBotAllocationUsdt.toNumber(), minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage, stopLossBps: profile.testnetStopLossBps, takeProfitBps: profile.testnetTakeProfitBps }), startingPaperBalance: profile.testnetBotAllocationUsdt, state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Explicit admin Binance TESTNET canary activation; scheduler lease pending.' }, 'AI_TESTNET_CANARY_ACTIVATED', ipAddress, {
+  return persistBotUpdate(userId, bot, { mode: 'DEMO', timeframe: '15m', intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { allocationUsdt: profile.testnetBotAllocationUsdt.toNumber(), minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage, stopLossBps: profile.testnetStopLossBps, takeProfitBps: profile.testnetTakeProfitBps }), startingPaperBalance: profile.testnetBotAllocationUsdt, state: 'STARTING', desiredState: 'RUNNING', stateReason: 'Explicit admin Binance TESTNET canary activation; scheduler lease pending.' }, 'AI_TESTNET_CANARY_ACTIVATED', ipAddress, {
     note: input.note, confirmation: input.confirmation, environment: 'TESTNET', productionLive: false, maxActiveTestnetBots: env.AI_TRADING_FIXED_FLEET_SIZE,
   }, true);
 }
@@ -454,7 +454,7 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
           lifecycleStatus: { not: 'ARCHIVED' },
         },
         data: {
-          mode: 'DEMO', symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, fleetLeverage(index, bots.length, profile.minLeverage, profile.maxLeverage), { allocationUsdt: allocations[index]!, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage, stopLossBps: profile.testnetStopLossBps, takeProfitBps: profile.testnetTakeProfitBps }), startingPaperBalance: allocations[index]!, state: 'STARTING', desiredState: 'RUNNING',
+          mode: 'DEMO', symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, fleetLeverage(index, bots.length, profile.minLeverage, profile.maxLeverage), { allocationUsdt: allocations[index]!, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage, stopLossBps: profile.testnetStopLossBps, takeProfitBps: profile.testnetTakeProfitBps }), startingPaperBalance: allocations[index]!, state: 'STARTING', desiredState: 'RUNNING',
           schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
           stateReason: 'Explicit admin bulk Binance TESTNET activation; scheduler lease pending.', version: { increment: 1 },
         },

@@ -13,11 +13,11 @@ async function main() {
   const [decisions, signals, entries, fills, runtimeBots, snapshot] = await Promise.all([
     prisma.tradingBotDecision.findMany({
       where: { exchangeAccountId: account.id, mode: 'DEMO', occurredAt: { gte: since } },
-      select: { tradingBotId: true, kind: true, symbol: true, metrics: true },
+      select: { tradingBotId: true, kind: true, symbol: true, summary: true, metrics: true, occurredAt: true },
     }),
     prisma.tradingBotSignal.findMany({
       where: { exchangeAccountId: account.id, source: 'RULE_ENGINE', createdAt: { gte: since }, decision: { kind: { not: 'HOLD' } } },
-      select: { status: true, safetyChecks: true },
+      select: { tradingBotId: true, status: true, safetyChecks: true },
     }),
     prisma.tradingOrder.findMany({
       where: { exchangeAccountId: account.id, source: 'SYSTEM', reduceOnly: false, createdAt: { gte: since } },
@@ -29,7 +29,7 @@ async function main() {
     }),
     prisma.tradingBot.findMany({
       where: { exchangeAccountId: account.id, mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' }, timeframe: '15m' },
-      select: { id: true, desiredState: true, configuration: true },
+      select: { id: true, name: true, symbol: true, state: true, desiredState: true, configuration: true, lastDecisionAt: true, lastErrorCode: true },
     }),
     getTradingEngineSnapshot(account),
   ]);
@@ -58,6 +58,37 @@ async function main() {
     counts[key] = (counts[key] ?? 0) + 1;
     return counts;
   }, {});
+  const botActivity = runtimeBots.map((bot) => {
+    const botDecisions = decisions.filter((decision) => decision.tradingBotId === bot.id);
+    const botSignals = signals.filter((signal) => signal.tradingBotId === bot.id);
+    const botFills = fills.filter((fill) => fill.tradingBotId === bot.id);
+    const latestDecision = botDecisions.reduce<(typeof botDecisions)[number] | null>(
+      (latest, decision) => !latest || decision.occurredAt > latest.occurredAt ? decision : latest,
+      null,
+    );
+    return {
+      name: bot.name,
+      symbol: bot.symbol,
+      state: bot.state,
+      desiredState: bot.desiredState,
+      entryPaused: jsonObject(bot.configuration)?.entryPaused === true,
+      decisions: botDecisions.length,
+      decisionKinds: botDecisions.reduce<Record<string, number>>((counts, decision) => {
+        counts[decision.kind] = (counts[decision.kind] ?? 0) + 1;
+        return counts;
+      }, {}),
+      riskOutcomes: botSignals.reduce<Record<string, number>>((counts, signal) => {
+        const risk = jsonObject(jsonObject(signal.safetyChecks)?.autonomousRiskDecision);
+        const key = String(risk?.code ?? risk?.Code ?? risk?.status ?? risk?.Status ?? signal.status);
+        counts[key] = (counts[key] ?? 0) + 1;
+        return counts;
+      }, {}),
+      entryFills: botFills.length,
+      latestDecision: latestDecision ? { kind: latestDecision.kind, summary: latestDecision.summary, occurredAt: latestDecision.occurredAt } : null,
+      lastDecisionAt: bot.lastDecisionAt,
+      lastErrorCode: bot.lastErrorCode,
+    };
+  });
 
   console.log(JSON.stringify({
     windowMinutes: 5,
@@ -79,6 +110,7 @@ async function main() {
     rejectedEntries: entries.filter((entry) => ['REJECTED', 'FAILED'].includes(entry.status)).length,
     exchangeOpenPositions: positions.length,
     exchangePositionSymbols: positions.map((position) => position.symbol).sort(),
+    botActivity,
     productionLive: false,
   }, null, 2));
 }

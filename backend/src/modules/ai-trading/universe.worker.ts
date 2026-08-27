@@ -19,6 +19,11 @@ export const PAPER_TRAINING_MIN_NET_PROFIT_BPS = 300;
 // per minute keeps execution responsive while leaving ample request-weight
 // headroom for reconciliation and protective orders.
 export const PAPER_TRAINING_INTERVAL_SECONDS = 60;
+// TESTNET may evaluate slightly more often than PAPER while remaining far
+// above the old burst-prone five-second cadence. Twenty bots at this interval
+// produce about 27 decision cycles/minute; order writes remain independently
+// rate-limited and same-candle duplicate entries are still suppressed.
+export const TESTNET_DECISION_INTERVAL_SECONDS = 45;
 export const PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT = 20;
 export const PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT = 0.05;
 export const TESTNET_TREND_GRID_STEP_BPS = 25;
@@ -267,7 +272,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       };
       if (schedulerLeaseActive(bot.schedulerOwner, bot.leaseExpiresAt, now)) {
         updates.push(prisma.tradingBot.updateMany({ where: { id: bot.id, mode: 'DEMO' }, data: {
-          intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS,
+          intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS,
           configuration: testnetExecutionConfiguration(bot.configuration, leverage, testnetSizing),
           timeframe: '15m',
           startingPaperBalance: allocation,
@@ -289,7 +294,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
       const changedSymbol = target !== bot.symbol;
       if (!hasPosition && !pending) {
       updates.push(prisma.tradingBot.updateMany({ where: availableBotWhere(bot.id, now), data: {
-          intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS,
+          intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS,
           configuration: testnetExecutionConfiguration(bot.configuration, leverage, { ...testnetSizing, universeRotationPending: true }),
           timeframe: '15m',
           ...(allocation > botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber()) ? { startingPaperBalance: allocation } : {}),
@@ -300,7 +305,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
         continue;
       }
       updates.push(prisma.tradingBot.updateMany({ where: availableBotWhere(bot.id, now), data: {
-        symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { ...testnetSizing, universeRotationPending: false }),
+        symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { ...testnetSizing, universeRotationPending: false }),
         ...(allocation > botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber()) ? { startingPaperBalance: allocation } : {}),
         ...(pending ? { desiredState: 'RUNNING', state: 'STARTING', schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
           stateReason: hasPosition ? 'A position appeared during staged rotation; original symbol preserved.' : 'Staged flat TESTNET bot rotated safely through the Futures universe.' } : {}),
@@ -324,7 +329,7 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
             maximumRiskPerTradePct: PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, alwaysInMarket: true },
           riskProfileOwnership: 'ADMIN_MANAGED_NOT_MUTATED_BY_UNIVERSE_WORKER',
           automaticScaleRule: { minimumClosedTrades: 200, profitableEquityRequired: true, targetAllocationUsdt: 200 },
-          testnetSizingPolicy: { botAllocationUsdt: testnetFleetAllocation, minimumInitialMarginUsdt: testnetMinimumMargin, allocationMode: 'INITIAL_MARGIN' },
+          testnetSizingPolicy: { botAllocationUsdt: testnetFleetAllocation, minimumInitialMarginUsdt: testnetMinimumMargin, allocationMode: 'INITIAL_MARGIN', decisionIntervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS },
           projectedDemoAllocation, leverageMin: leverageMinimum, leverageMax: leverageMaximum, productionLive: false, occupiedSymbolsPreserved: [...occupied] },
       } }),
     ]);

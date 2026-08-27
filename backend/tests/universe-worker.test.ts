@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { automaticCapitalScaleTarget, botAllocationUsdt, fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, PAPER_TRAINING_MAX_OPEN_POSITIONS, PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT, PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, PAPER_TRAINING_STOP_LOSS_BPS, PAPER_TRAINING_TAKE_PROFIT_BPS, paperTrainingConfiguration, rotationPending, schedulerLeaseActive, staleAutonomousProtection, TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS, TESTNET_MIN_TAKE_PROFIT_BPS, TESTNET_ROTATION_SETTLE_MS, TESTNET_TRANSITION_MIN_ATR_BPS, TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES, TESTNET_TREND_GRID_STEP_BPS, testnetExecutionConfiguration, universeCandidate } from '../src/modules/ai-trading/universe.worker.js';
+import { automaticCapitalScaleTarget, botAllocationUsdt, fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, PAPER_TRAINING_MAX_OPEN_POSITIONS, PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT, PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT, PAPER_TRAINING_STOP_LOSS_BPS, PAPER_TRAINING_TAKE_PROFIT_BPS, paperTrainingConfiguration, rotationPending, schedulerLeaseActive, staleAutonomousProtection, TESTNET_DECISION_INTERVAL_SECONDS, TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS, TESTNET_MIN_TAKE_PROFIT_BPS, TESTNET_ROTATION_SETTLE_MS, TESTNET_TRANSITION_MIN_ATR_BPS, TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES, TESTNET_TREND_GRID_STEP_BPS, testnetExecutionConfiguration, universeCandidate } from '../src/modules/ai-trading/universe.worker.js';
 import { CORE_TRADING_UNIVERSE } from '../src/modules/ai-trading/trading-universe.service.js';
 import { addTradingUniverseAssetSchema, searchTradingUniverseSchema, tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../src/modules/ai-trading/trading-universe.schema.js';
 
@@ -78,6 +78,7 @@ describe('autonomous Futures universe', () => {
       stopLossBps: 200, takeProfitBps: 250, estimatedRoundTripCostBps: TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS, minimumTakeProfitBps: 250, adaptiveStopMaxBps: 200, fixedTestnetProtectionTargets: true,
       testnetTransitionRegimeEnabled: true, testnetTransitionMinConfirmedTimeframes: TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES, testnetTransitionMinAtrBps: TESTNET_TRANSITION_MIN_ATR_BPS,
       analysisTimeframes: ['15m', '1h'], directionWindowsHours: [24, 48] });
+    expect(TESTNET_DECISION_INTERVAL_SECONDS).toBe(45);
   });
 
   it('does not rotate a bot while a scheduler cycle owns its lease', () => {
