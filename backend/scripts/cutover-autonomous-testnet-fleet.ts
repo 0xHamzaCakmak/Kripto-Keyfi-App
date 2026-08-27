@@ -2,7 +2,9 @@ import 'dotenv/config';
 import { prisma } from '../src/database/prisma.js';
 import { env } from '../src/config/env.js';
 import { activateAutonomousTestnetFleet } from '../src/modules/ai-trading/autonomous-admin.service.js';
+import { getEnabledTradingSymbols } from '../src/modules/ai-trading/trading-universe.service.js';
 import { updateExecutionEngine } from '../src/modules/trading/exchange-account.service.js';
+import { getBinanceFuturesPublicSymbols } from '../src/modules/trading/exchanges/binance-futures.adapter.js';
 import { updateKillSwitch, updateRiskProfile } from '../src/modules/trading/risk.service.js';
 import { getTradingEngineSnapshot } from '../src/modules/trading/trading-engine.client.js';
 
@@ -26,7 +28,7 @@ async function main() {
     throw new Error('TESTNET icin stop-loss zorunlu ve margin policy ISOLATED_ONLY olmalidir.');
   }
 
-  const [bots, global, inFlightOrders, snapshot] = await Promise.all([
+  const [bots, global, inFlightOrders, snapshot, configuredSymbols, exchangeSymbols] = await Promise.all([
     prisma.tradingBot.findMany({
       where: { userId: account.userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } },
       select: { id: true, name: true, mode: true, paperPosition: { select: { netQuantity: true } } },
@@ -37,6 +39,8 @@ async function main() {
       where: { exchangeAccountId: account.id, status: { in: ['PENDING', 'SUBMITTING', 'OPEN', 'PARTIALLY_FILLED', 'CANCELING', 'CLOSING', 'RECONCILIATION_REQUIRED'] } },
     }),
     getTradingEngineSnapshot(account),
+    getEnabledTradingSymbols(account.userId),
+    getBinanceFuturesPublicSymbols(),
   ]);
   if (bots.length !== env.AI_TRADING_FIXED_FLEET_SIZE || bots.some((bot) => bot.mode !== 'PAPER')) {
     throw new Error(`Tam ${env.AI_TRADING_FIXED_FLEET_SIZE} aktif PAPER botu bekleniyordu; toplam=${bots.length}, PAPER=${bots.filter((bot) => bot.mode === 'PAPER').length}.`);
@@ -47,6 +51,11 @@ async function main() {
     throw new Error(`GUVENLIK: Gecis icin hesap tamamen bos olmalidir; PAPER acik=${nonFlatPaper.length}, Binance pozisyon=${exchangePositions.length}, Binance emir=${snapshot.orders.length}, DB bekleyen emir=${inFlightOrders}.`);
   }
   if (!global) throw new Error('Global risk kontrol kaydi bulunamadi.');
+  const availableUsdtSymbols = new Set(exchangeSymbols.filter((symbol) => symbol.status === 'TRADING' && symbol.quoteAsset === 'USDT').map((symbol) => symbol.symbol));
+  const validConfiguredSymbols = [...new Set(configuredSymbols.filter((symbol) => availableUsdtSymbols.has(symbol)))];
+  if (validConfiguredSymbols.length < env.AI_TRADING_FIXED_FLEET_SIZE) {
+    throw new Error(`GUVENLIK: ${env.AI_TRADING_FIXED_FLEET_SIZE} farkli etkin Binance USDT Futures paritesi gerekiyor; ${validConfiguredSymbols.length} bulundu (${validConfiguredSymbols.join(', ')}).`);
+  }
 
   console.log(JSON.stringify({
     status: confirmed ? 'CUTOVER_CONFIRMED' : 'DRY_RUN',
@@ -57,6 +66,8 @@ async function main() {
     accountKillSwitch: account.riskProfile.accountKillSwitch,
     exchangePositions: exchangePositions.length,
     exchangeOrders: snapshot.orders.length,
+    configuredSymbols: configuredSymbols.length,
+    validBinanceUsdtSymbols: validConfiguredSymbols.length,
     productionLive: false,
     confirmationRequired: confirmed ? null : CONFIRMATION,
   }, null, 2));

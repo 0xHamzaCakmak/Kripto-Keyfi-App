@@ -17,7 +17,7 @@ describe('autonomous Futures universe', () => {
   it('uses the exact 20-coin Core Universe and spreads 100 bots independently across it', () => {
     const symbols = CORE_TRADING_UNIVERSE.map(([, , baseAsset]) => `${baseAsset}USDT`);
     expect(symbols).toHaveLength(20); expect(new Set(symbols).size).toBe(20);
-    expect(symbols).toEqual(['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'BCHUSDT', 'LINKUSDT', 'AVAXUSDT', 'LTCUSDT', 'DOTUSDT', 'TONUSDT', 'SUIUSDT', 'UNIUSDT', 'AAVEUSDT', 'NEARUSDT', 'ETCUSDT', 'XLMUSDT']);
+    expect(symbols).toEqual(['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'BCHUSDT', 'LINKUSDT', 'AVAXUSDT', 'LTCUSDT', 'DOTUSDT', 'PUMPUSDT', 'SUIUSDT', 'UNIUSDT', 'AAVEUSDT', 'NEARUSDT', 'ETCUSDT', 'XLMUSDT']);
     const assignments = Array.from({ length: 100 }, (_, index) => universeCandidate(symbols, 0, index, 100));
     expect(symbols.every((symbol) => assignments.filter((item) => item === symbol).length === 5)).toBe(true);
     expect(tradingUniverseAssetParamsSchema.parse({ symbol: 'btcusdt' }).symbol).toBe('BTCUSDT');

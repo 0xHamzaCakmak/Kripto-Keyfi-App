@@ -11,7 +11,7 @@ export const CORE_TRADING_UNIVERSE = [
   ['solana', 'Solana', 'SOL'], ['ripple', 'XRP', 'XRP'], ['tron', 'TRON', 'TRX'],
   ['dogecoin', 'Dogecoin', 'DOGE'], ['cardano', 'Cardano', 'ADA'], ['bitcoin-cash', 'Bitcoin Cash', 'BCH'],
   ['chainlink', 'Chainlink', 'LINK'], ['avalanche-2', 'Avalanche', 'AVAX'], ['litecoin', 'Litecoin', 'LTC'],
-  ['polkadot', 'Polkadot', 'DOT'], ['the-open-network', 'Toncoin', 'TON'], ['sui', 'Sui', 'SUI'],
+  ['polkadot', 'Polkadot', 'DOT'], ['pump-fun', 'Pump.fun', 'PUMP'], ['sui', 'Sui', 'SUI'],
   ['uniswap', 'Uniswap', 'UNI'], ['aave', 'Aave', 'AAVE'], ['near', 'NEAR', 'NEAR'],
   ['ethereum-classic', 'Ethereum Classic', 'ETC'], ['stellar', 'Stellar', 'XLM'],
 ] as const;
