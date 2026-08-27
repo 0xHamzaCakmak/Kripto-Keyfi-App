@@ -18,8 +18,6 @@ BACKEND_PORT="${BACKEND_PORT:-}"
 BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-}"
 ENGINE_HEALTH_URL="${ENGINE_HEALTH_URL:-http://127.0.0.1:8081/health/ready}"
 ENGINE_STATUS_URL="${ENGINE_STATUS_URL:-http://127.0.0.1:8081/internal/v1/status}"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/kriptokeyfi}"
-BACKUP_RETENTION_COUNT="${BACKUP_RETENTION_COUNT:-1}"
 MAINTENANCE_RESUME_MINUTES="${MAINTENANCE_RESUME_MINUTES:-180}"
 ENABLE_PM2_STARTUP="${ENABLE_PM2_STARTUP:-true}"
 PM2_RUNTIME_USER="${PM2_RUNTIME_USER:-$(id -un)}"
@@ -223,59 +221,8 @@ validate_and_build() {
   test -x "$ENGINE_CANDIDATE"
 }
 
-backup_database() {
-  step "5/14 Veritabani yedegi aliniyor"
-  require_command mysqldump
-  require_command gzip
-  if [ -z "$BACKUP_DIR" ] || [ "$BACKUP_DIR" = "/" ]; then
-    printf 'Guvenli olmayan BACKUP_DIR reddedildi: %s\n' "$BACKUP_DIR" >&2
-    exit 1
-  fi
-  if ! [[ "$BACKUP_RETENTION_COUNT" =~ ^[1-9][0-9]*$ ]]; then
-    printf 'BACKUP_RETENTION_COUNT pozitif bir tam sayi olmalidir.\n' >&2
-    exit 1
-  fi
-  mkdir -p "$BACKUP_DIR"
-  chmod 0700 "$BACKUP_DIR"
-
-  local db_host db_port db_user db_password db_name defaults_file backup_file remove_count index
-  local -a backup_files
-  db_host="$(node -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.hostname)' )"
-  db_port="$(node -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(u.port || "3306")' )"
-  db_user="$(node -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.username))' )"
-  db_password="$(node -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.password))' )"
-  db_name="$(node -e 'const u=new URL(process.env.DATABASE_URL); process.stdout.write(decodeURIComponent(u.pathname.replace(/^\//, "")))' )"
-  if [ -z "$db_host" ] || [ -z "$db_user" ] || [ -z "$db_name" ]; then
-    printf 'DATABASE_URL mysqldump icin ayrisamadi.\n' >&2
-    exit 1
-  fi
-
-  defaults_file="$(mktemp)"
-  chmod 0600 "$defaults_file"
-  printf '[client]\nhost=%s\nport=%s\nuser=%s\npassword=%s\n' \
-    "$db_host" "$db_port" "$db_user" "$db_password" > "$defaults_file"
-  backup_file="$BACKUP_DIR/${db_name}_$(date '+%Y%m%d_%H%M%S').sql.gz"
-  if ! mysqldump --defaults-extra-file="$defaults_file" --single-transaction --routines --triggers --no-tablespaces "$db_name" | gzip -9 > "$backup_file"; then
-    rm -f "$defaults_file" "$backup_file"
-    return 1
-  fi
-  rm -f "$defaults_file"
-  chmod 0600 "$backup_file"
-  test -s "$backup_file"
-  log "Veritabani yedegi olusturuldu: $backup_file"
-
-  mapfile -d '' -t backup_files < <(find "$BACKUP_DIR" -maxdepth 1 -type f \( -name "${db_name}_*.sql" -o -name "${db_name}_*.sql.gz" \) -print0 | sort -z)
-  remove_count=$((${#backup_files[@]} - BACKUP_RETENTION_COUNT))
-  if [ "$remove_count" -gt 0 ]; then
-    for ((index = 0; index < remove_count; index += 1)); do
-      rm -f -- "${backup_files[$index]}"
-    done
-    log "Eski veritabani yedekleri temizlendi; son $BACKUP_RETENTION_COUNT yedek tutuluyor."
-  fi
-}
-
 pause_testnet_fleet() {
-  step "7/14 TESTNET filosu bakim moduna aliniyor"
+  step "6/13 TESTNET filosu bakim moduna aliniyor"
   if [ -e "$MAINTENANCE_STATE_FILE" ]; then
     printf 'Onceki deploydan kalan TESTNET bakim kaydi var: %s\n' "$MAINTENANCE_STATE_FILE" >&2
     printf 'Engine ve Binance durumunu kontrol edip onceki bakimi sonlandirmadan yeni deploy baslatmayin.\n' >&2
@@ -289,7 +236,7 @@ pause_testnet_fleet() {
 }
 
 validate_migrations() {
-  step "6/14 Pending Prisma migrationlari guvenlik kontrolunden geciyor"
+  step "5/13 Pending Prisma migrationlari guvenlik kontrolunden geciyor"
   if [ "$APPLY_MIGRATIONS" = "true" ]; then
     # Production veri kaybi veya breaking schema degisikligi otomatik deploy
     # yetkisinin disindadir. Yalniz henuz uygulanmamis migration dosyalari
@@ -328,7 +275,7 @@ NODE
 }
 
 apply_migrations() {
-  step "8/14 Prisma migrationlari uygulaniyor"
+  step "7/13 Prisma migrationlari uygulaniyor"
   if [ "$APPLY_MIGRATIONS" = "true" ]; then
     (cd "$BACKEND_DIR" && npx prisma migrate deploy)
   else
@@ -338,7 +285,7 @@ apply_migrations() {
 }
 
 install_frontend() {
-  step "9/14 Frontend yayina hazirlaniyor"
+  step "8/13 Frontend yayina hazirlaniyor"
   if [ -n "$WEB_ROOT" ]; then
     mkdir -p "$WEB_ROOT"
     cp -a "$FRONTEND_DIR/dist/." "$WEB_ROOT/"
@@ -371,7 +318,7 @@ verify_frontend_release() {
 }
 
 restart_backend() {
-  step "10/14 Backend PM2 ile yeniden baslatiliyor"
+  step "9/13 Backend PM2 ile yeniden baslatiliyor"
   if pm2 describe "$BACKEND_PM2_NAME" >/dev/null 2>&1; then
     pm2 restart "$BACKEND_PM2_NAME" --update-env
   else
@@ -385,7 +332,7 @@ restart_backend() {
 }
 
 install_and_restart_engine() {
-  step "11/14 Go Trading Engine atomik guncelleniyor"
+  step "10/13 Go Trading Engine atomik guncelleniyor"
   if [ -x "$ENGINE_BINARY" ]; then
     cp -p "$ENGINE_BINARY" "$ENGINE_ROLLBACK"
   else
@@ -462,7 +409,7 @@ wait_for_engine_contract() {
 }
 
 health_checks() {
-  step "12/14 Backend ve Engine health/reconciliation kontrol ediliyor"
+  step "11/13 Backend ve Engine health/reconciliation kontrol ediliyor"
   wait_for_backend
   verify_frontend_release
   if ! wait_for_url "Trading Engine" "$ENGINE_HEALTH_URL" "$ENGINE_PM2_NAME"; then
@@ -477,7 +424,7 @@ health_checks() {
 }
 
 resume_testnet_fleet() {
-  step "13/14 Yalniz bu deployun durdurdugu TESTNET botlari devam ettiriliyor"
+  step "12/13 Yalniz bu deployun durdurdugu TESTNET botlari devam ettiriliyor"
   npm --prefix "$BACKEND_DIR" run control:ai-testnet-fleet -- \
     --action=resume \
     --state-file="$MAINTENANCE_STATE_FILE" \
@@ -488,7 +435,7 @@ resume_testnet_fleet() {
 }
 
 finalize() {
-  step "14/14 Deploy sonucu dogrulaniyor"
+  step "13/13 Deploy sonucu dogrulaniyor"
   pm2 save
   if [ "$ENABLE_PM2_STARTUP" = "true" ]; then
     if [ "$(id -u)" -ne 0 ]; then
@@ -535,7 +482,6 @@ main() {
   install_dependencies
   load_environment
   validate_and_build
-  backup_database
   validate_migrations
   pause_testnet_fleet
   apply_migrations
