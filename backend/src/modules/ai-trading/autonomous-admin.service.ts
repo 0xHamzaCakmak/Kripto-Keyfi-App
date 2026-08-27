@@ -442,14 +442,24 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
       const bot = bots[index]!;
       const target = assignments.get(bot.id) ?? bot.symbol;
       const changed = await tx.tradingBot.updateMany({
-        where: { id: bot.id, userId, type: 'AUTONOMOUS', version: bot.version },
+        // Scheduler lease/heartbeat updates increment version continuously.
+        // Identity, account, mode and lifecycle are the relevant invariants for
+        // this explicit fleet cutover; a heartbeat alone must not abort it.
+        where: {
+          id: bot.id,
+          userId,
+          exchangeAccountId,
+          type: 'AUTONOMOUS',
+          mode: bot.mode,
+          lifecycleStatus: { not: 'ARCHIVED' },
+        },
         data: {
           mode: 'DEMO', symbol: target, symbols: [target], timeframe: '15m', intervalSeconds: PAPER_TRAINING_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, fleetLeverage(index, bots.length, profile.minLeverage, profile.maxLeverage), { allocationUsdt: allocations[index]!, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toNumber(), leverageMin: profile.minLeverage, leverageMax: profile.maxLeverage, stopLossBps: profile.testnetStopLossBps, takeProfitBps: profile.testnetTakeProfitBps }), startingPaperBalance: allocations[index]!, state: 'STARTING', desiredState: 'RUNNING',
           schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
           stateReason: 'Explicit admin bulk Binance TESTNET activation; scheduler lease pending.', version: { increment: 1 },
         },
       });
-      if (changed.count !== 1) throw new ApiError(409, 'Fleet changed concurrently; refresh and retry.', 'BOT_VERSION_CONFLICT');
+      if (changed.count !== 1) throw new ApiError(409, 'Fleet identity or mode changed concurrently; refresh and retry.', 'BOT_VERSION_CONFLICT');
     }
     await tx.tradingAuditLog.create({ data: {
       userId, exchangeAccountId, action: 'AI_TESTNET_FLEET_ACTIVATED', entityType: 'AUTONOMOUS_FLEET', entityId: exchangeAccountId,
