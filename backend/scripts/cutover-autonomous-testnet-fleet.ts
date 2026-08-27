@@ -3,7 +3,7 @@ import { prisma } from '../src/database/prisma.js';
 import { env } from '../src/config/env.js';
 import { activateAutonomousTestnetFleet } from '../src/modules/ai-trading/autonomous-admin.service.js';
 import { updateExecutionEngine } from '../src/modules/trading/exchange-account.service.js';
-import { updateKillSwitch } from '../src/modules/trading/risk.service.js';
+import { updateKillSwitch, updateRiskProfile } from '../src/modules/trading/risk.service.js';
 import { getTradingEngineSnapshot } from '../src/modules/trading/trading-engine.client.js';
 
 const CONFIRMATION = 'CUTOVER_20_BOTS_TO_BINANCE_TESTNET';
@@ -21,9 +21,7 @@ async function main() {
   if (accounts.length !== 1) throw new Error(`Tam bir aktif Binance TESTNET USD-M hesabi bekleniyordu; ${accounts.length} bulundu.`);
   const account = accounts[0]!;
   if (account.connectionStatus !== 'CONNECTED') throw new Error('Binance TESTNET hesabi CONNECTED degil.');
-  if (!account.riskProfile?.enabled || account.riskProfile.accountKillSwitch) {
-    throw new Error('Risk profili etkin olmali ve hesap kill switch kapali olmalidir.');
-  }
+  if (!account.riskProfile) throw new Error('Binance TESTNET risk profili bulunamadi.');
   if (!account.riskProfile.stopLossRequired || account.riskProfile.marginModePolicy !== 'ISOLATED_ONLY') {
     throw new Error('TESTNET icin stop-loss zorunlu ve margin policy ISOLATED_ONLY olmalidir.');
   }
@@ -55,6 +53,7 @@ async function main() {
     account: { id: account.id, name: account.name, executionEngine: account.executionEngine, connectionStatus: account.connectionStatus },
     bots: bots.length,
     globalKillSwitch: global.globalKillSwitch,
+    riskProfileEnabled: account.riskProfile.enabled,
     accountKillSwitch: account.riskProfile.accountKillSwitch,
     exchangePositions: exchangePositions.length,
     exchangeOrders: snapshot.orders.length,
@@ -64,8 +63,14 @@ async function main() {
   if (!confirmed) return;
 
   const releasedGlobalKill = global.globalKillSwitch;
+  const enabledRiskProfile = !account.riskProfile.enabled;
+  const releasedAccountKill = account.riskProfile.accountKillSwitch;
   const changedExecutor = account.executionEngine !== 'GO';
   try {
+    if (enabledRiskProfile) await updateRiskProfile(account.userId, account.id, { enabled: true });
+    if (releasedAccountKill) {
+      await updateKillSwitch(account.userId, { scope: 'ACCOUNT', exchangeAccountId: account.id, active: false, reason: 'Explicit 20-bot Binance TESTNET cutover.' });
+    }
     if (releasedGlobalKill) {
       await updateKillSwitch(account.userId, { scope: 'GLOBAL', active: false, reason: 'Explicit 20-bot Binance TESTNET cutover.' });
     }
@@ -82,6 +87,10 @@ async function main() {
     if (releasedGlobalKill) {
       await updateKillSwitch(account.userId, { scope: 'GLOBAL', active: true, reason: 'TESTNET cutover failed; automatic safety rollback.' }).catch(() => undefined);
     }
+    if (releasedAccountKill) {
+      await updateKillSwitch(account.userId, { scope: 'ACCOUNT', exchangeAccountId: account.id, active: true, reason: 'TESTNET cutover failed; automatic safety rollback.' }).catch(() => undefined);
+    }
+    if (enabledRiskProfile) await updateRiskProfile(account.userId, account.id, { enabled: false }).catch(() => undefined);
     throw error;
   }
 }
