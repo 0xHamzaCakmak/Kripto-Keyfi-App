@@ -9,7 +9,7 @@ type ArenaRow = {
   bot: AutonomousBot; score: LeaderboardRow | null; summary: TradeSummary | null; champion: ChampionCandidate | null;
   operation: TestnetBotOperation | null; pnl: number | null; roi: number | null; profitFactor: number | null; drawdown: number | null; trades: number; winRate: number | null; regimeCoverage: number | null;
 };
-type SortKey = 'score' | 'pnl' | 'profitFactor' | 'drawdown' | 'trades';
+type SortKey = 'openPnl' | 'score' | 'pnl' | 'profitFactor' | 'drawdown' | 'trades';
 
 const regimes: Array<'ALL' | MarketRegime> = ['ALL', 'TRENDING_UP', 'TRENDING_DOWN', 'RANGING', 'BREAKOUT', 'HIGH_VOLATILITY', 'LOW_VOLATILITY', 'CHAOTIC', 'UNKNOWN'];
 
@@ -21,7 +21,7 @@ export default function AITradingArena() {
   const [loading, setLoading] = useState(true); const [error, setError] = useState('');
   const [fleetBusy, setFleetBusy] = useState(false); const [fleetNotice, setFleetNotice] = useState('');
   const [filters, setFilters] = useState({ status: 'ALL', strategy: 'ALL', generation: 'ALL', regime: 'ALL' as 'ALL' | MarketRegime, minScore: '', minPnl: '' });
-  const [sort, setSort] = useState<SortKey>('pnl');
+  const [sort, setSort] = useState<SortKey>('openPnl');
   const [pageSize, setPageSize] = useState<10 | 'ALL'>(10); const [page, setPage] = useState(1);
 
   const load = useCallback(async (showSpinner = true) => {
@@ -95,7 +95,7 @@ export default function AITradingArena() {
       <Select label="Regime" value={filters.regime} onChange={(regime) => setFilters((value) => ({ ...value, regime: regime as 'ALL' | MarketRegime }))} options={regimes} />
       <NumberFilter label="Min score" value={filters.minScore} onChange={(minScore) => setFilters((value) => ({ ...value, minScore }))} />
       <NumberFilter label="Min PnL" value={filters.minPnl} onChange={(minPnl) => setFilters((value) => ({ ...value, minPnl }))} />
-      <Select label="Sırala" value={sort} onChange={(value) => setSort(value as SortKey)} options={['score', 'pnl', 'profitFactor', 'drawdown', 'trades']} />
+      <Select label="Sırala" value={sort} onChange={(value) => setSort(value as SortKey)} options={['openPnl', 'score', 'pnl', 'profitFactor', 'drawdown', 'trades']} />
     </div></section>
     {loading ? <div className="h-72 animate-pulse rounded-[24px] bg-surface" /> : visibleRows.length === 0 ? <EmptyState title="Eşleşen bot yok" description="Backend henüz bot üretmemiş olabilir veya seçilen filtrelere uyan kanıt bulunmuyor." /> : <section className="overflow-hidden rounded-[24px] border border-outline/10 bg-surface"><div className="overflow-x-auto"><table className="w-full min-w-[1760px] text-left text-xs"><thead className="bg-surface-high uppercase text-outline"><tr>{['Bot', 'Pozisyon ve işlem özeti', 'Score', 'Toplam PnL', 'Açık PnL', 'ROI', 'PF', 'Max DD', 'Win rate', 'Strategy', 'Status', 'Equity', ''].map((label) => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{pagedRows.map((row, index) => {
       const snapshot = positionSnapshot(row);
@@ -132,14 +132,26 @@ function paperPositionNetPnl(position: NonNullable<AutonomousBot['paperPosition'
 }
 
 function compareRows(left: ArenaRow, right: ArenaRow, key: SortKey) {
-  const values: Record<SortKey, [number | null, number | null]> = { score: [left.score?.score ?? null, right.score?.score ?? null], pnl: [left.pnl, right.pnl], profitFactor: [left.profitFactor, right.profitFactor], drawdown: [left.drawdown, right.drawdown], trades: [left.trades, right.trades] };
+  const leftPosition = positionSnapshot(left);
+  const rightPosition = positionSnapshot(right);
+  // An open exchange position is always more operationally relevant than an
+  // idle bot. Keep active bots at the top for every secondary sort option.
+  if (leftPosition.active !== rightPosition.active) return leftPosition.active ? -1 : 1;
+  const values: Record<SortKey, [number | null, number | null]> = {
+    openPnl: [leftPosition.active ? leftPosition.openPnl : null, rightPosition.active ? rightPosition.openPnl : null],
+    score: [left.score?.score ?? null, right.score?.score ?? null],
+    pnl: [left.pnl, right.pnl],
+    profitFactor: [left.profitFactor, right.profitFactor],
+    drawdown: [left.drawdown, right.drawdown],
+    trades: [left.trades, right.trades],
+  };
   const [a, b] = values[key]; if (a === null && b === null) return left.bot.name.localeCompare(right.bot.name); if (a === null) return 1; if (b === null) return -1;
   return key === 'drawdown' ? a - b : b - a;
 }
 function statusTone(status: string): 'neutral' | 'safe' | 'warning' | 'danger' { return status === 'CHAMPION' ? 'safe' : status === 'LIVE_ELIGIBLE' ? 'danger' : ['REJECTED', 'ARCHIVED'].includes(status) ? 'danger' : ['CHALLENGER', 'CANDIDATE'].includes(status) ? 'warning' : 'neutral'; }
 function number(value: number | null | undefined) { return value === null || value === undefined ? '—' : value.toLocaleString('tr-TR', { maximumFractionDigits: 2 }); }
 function Cell({ value, strong = false, compact = false, tone = null }: { value: string; strong?: boolean; compact?: boolean; tone?: number | null }) { return <td className={`p-3 ${strong ? 'font-black text-primary' : tone === null ? 'text-on-surface-variant' : tone >= 0 ? 'font-bold text-secondary' : 'font-bold text-error'} ${compact ? 'max-w-32 truncate' : ''}`} title={compact ? value : undefined}>{value}</td>; }
-function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: readonly string[] }) { return <label className="text-xs font-bold text-on-surface-variant">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/40 p-2.5 text-xs text-white">{options.map((option) => <option key={option}>{option}</option>)}</select></label>; }
+function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: readonly string[] }) { return <label className="text-xs font-bold text-on-surface-variant">{label}<select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/40 p-2.5 text-xs text-white">{options.map((option) => <option key={option} value={option}>{option === 'openPnl' ? 'Açık PnL' : option}</option>)}</select></label>; }
 function NumberFilter({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <label className="text-xs font-bold text-on-surface-variant">{label}<input type="number" value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-xl border border-outline/15 bg-background/40 p-2.5 text-xs text-white" placeholder="Tümü" /></label>; }
 type PositionSnapshot = { symbol: string; entryPrice: number | null; side: 'LONG' | 'SHORT' | null; leverage: number | null; openPnl: number | null; active: boolean; idleReason?: string | null };
 function positionSnapshot(row: ArenaRow): PositionSnapshot {
