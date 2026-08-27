@@ -42,6 +42,7 @@
     "sync:ai-universe": "tsx scripts/sync-autonomous-universe.ts",
     "acceptance:core-universe": "tsx scripts/verify-core-trading-universe.ts",
     "control:ai-testnet-fleet": "tsx scripts/control-autonomous-testnet-fleet.ts",
+    "cutover:ai-testnet-fleet": "tsx scripts/cutover-autonomous-testnet-fleet.ts",
     "deploy:ai-testnet-fleet": "tsx scripts/deploy-autonomous-testnet-fleet.ts",
     "prune:paper-bots": "tsx scripts/prune-paper-bots.ts",
     "news:bootstrap": "tsx scripts/bootstrap-news.ts",
