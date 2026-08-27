@@ -78,14 +78,37 @@ async function main() {
 
   for (const plan of plans) {
     const paperBotIds = plan.archivedPaperBots.map((bot) => bot.id);
-    await prisma.$transaction(async (tx) => {
-      if (paperBotIds.length > 0) {
-        await tx.botMutation.deleteMany({ where: { OR: [{ parentBotId: { in: paperBotIds } }, { childBotId: { in: paperBotIds } }] } });
-        await tx.botCrossover.deleteMany({ where: { OR: [{ parentABotId: { in: paperBotIds } }, { parentBBotId: { in: paperBotIds } }, { childBotId: { in: paperBotIds } }] } });
-        await tx.tradingBot.deleteMany({ where: { id: { in: paperBotIds }, userId: plan.userId, type: 'AUTONOMOUS', mode: 'PAPER' } });
+    if (paperBotIds.length > 0) {
+      // Large decision histories make a single cascading bot delete take longer
+      // than Prisma's interactive transaction timeout. Delete indexed child rows
+      // explicitly, one archived bot at a time. Every step is idempotent, so an
+      // interrupted cleanup can safely be resumed with the same command.
+      await prisma.botMutation.deleteMany({ where: { OR: [{ parentBotId: { in: paperBotIds } }, { childBotId: { in: paperBotIds } }] } });
+      await prisma.botCrossover.deleteMany({ where: { OR: [{ parentABotId: { in: paperBotIds } }, { parentBBotId: { in: paperBotIds } }, { childBotId: { in: paperBotIds } }] } });
+
+      for (const [index, bot] of plan.archivedPaperBots.entries()) {
+        const botWhere = { tradingBotId: bot.id };
+        await prisma.tradingBotSignal.deleteMany({ where: botWhere });
+        await prisma.tradingBotPaperFill.deleteMany({ where: botWhere });
+        await prisma.shadowTrade.deleteMany({ where: botWhere });
+        await prisma.tradingBotDecision.deleteMany({ where: botWhere });
+        await prisma.paperTrade.deleteMany({ where: botWhere });
+        await prisma.botMetric.deleteMany({ where: botWhere });
+        await prisma.teacherEvaluation.deleteMany({ where: botWhere });
+        await prisma.championCandidate.deleteMany({ where: botWhere });
+        await prisma.testnetExecutionFill.deleteMany({ where: botWhere });
+        await prisma.tradingBotPaperPosition.deleteMany({ where: botWhere });
+        const deleted = await prisma.tradingBot.deleteMany({
+          where: { id: bot.id, userId: plan.userId, type: 'AUTONOMOUS', mode: 'PAPER', lifecycleStatus: 'ARCHIVED' },
+        });
+        if (deleted.count !== 1) {
+          throw new Error(`GUVENLIK: ${bot.name} arsivlenmis PAPER botu silinemedi; temizlik durduruldu ve yeniden calistirilabilir.`);
+        }
+        console.log(`[${index + 1}/${plan.archivedPaperBots.length}] ${bot.name} ve PAPER gecmisi silindi.`);
       }
-      if (plan.preservedMode === 'TESTNET') await tx.paperAccountingPeriod.deleteMany({ where: { userId: plan.userId } });
-      await tx.tradingAuditLog.create({ data: {
+    }
+    if (plan.preservedMode === 'TESTNET') await prisma.paperAccountingPeriod.deleteMany({ where: { userId: plan.userId } });
+    await prisma.tradingAuditLog.create({ data: {
         userId: plan.userId,
         action: 'AI_PAPER_BOTS_PRUNED',
         entityType: 'AUTONOMOUS_FLEET',
@@ -97,9 +120,9 @@ async function main() {
           preservedMode: plan.preservedMode,
           testnetEvidenceDeleted: false,
           productionLiveChanged: false,
+          resumableCleanup: true,
         },
       } });
-    }, { maxWait: 10_000, timeout: 120_000 });
   }
   console.log('Arsivlenmis PAPER bot temizligi tamamlandi; aktif 20 bot ve onlara bagli mevcut gecmis korundu.');
 }
