@@ -19,11 +19,11 @@ export const PAPER_TRAINING_MIN_NET_PROFIT_BPS = 300;
 // per minute keeps execution responsive while leaving ample request-weight
 // headroom for reconciliation and protective orders.
 export const PAPER_TRAINING_INTERVAL_SECONDS = 60;
-// TESTNET may evaluate slightly more often than PAPER while remaining far
-// above the old burst-prone five-second cadence. Twenty bots at this interval
-// produce about 27 decision cycles/minute; order writes remain independently
+// TESTNET may evaluate more often than PAPER while remaining far above the old
+// burst-prone five-second cadence. Twenty bots at this interval produce about
+// 50 decision cycles/minute; order writes remain independently
 // rate-limited and same-candle duplicate entries are still suppressed.
-export const TESTNET_DECISION_INTERVAL_SECONDS = 45;
+export const TESTNET_DECISION_INTERVAL_SECONDS = 24;
 export const PAPER_TRAINING_MIN_INITIAL_MARGIN_USDT = 20;
 export const PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT = 0.05;
 export const TESTNET_TREND_GRID_STEP_BPS = 25;

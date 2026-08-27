@@ -78,7 +78,7 @@ describe('autonomous Futures universe', () => {
       stopLossBps: 200, takeProfitBps: 250, estimatedRoundTripCostBps: TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS, minimumTakeProfitBps: 250, adaptiveStopMaxBps: 200, fixedTestnetProtectionTargets: true,
       testnetTransitionRegimeEnabled: true, testnetTransitionMinConfirmedTimeframes: TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES, testnetTransitionMinAtrBps: TESTNET_TRANSITION_MIN_ATR_BPS,
       analysisTimeframes: ['15m', '1h'], directionWindowsHours: [24, 48] });
-    expect(TESTNET_DECISION_INTERVAL_SECONDS).toBe(45);
+    expect(TESTNET_DECISION_INTERVAL_SECONDS).toBe(24);
   });
 
   it('does not rotate a bot while a scheduler cycle owns its lease', () => {

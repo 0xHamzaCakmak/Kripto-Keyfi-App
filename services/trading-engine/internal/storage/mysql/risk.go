@@ -48,13 +48,16 @@ WHERE p.userId = ? AND p.exchangeAccountId = ? LIMIT 1`
 	return profile, nil
 }
 
-func (s *AccountStore) LoadUsage(ctx context.Context, accountID string, now time.Time) (risk.Usage, error) {
+func (s *AccountStore) LoadUsage(ctx context.Context, accountID, source string, now time.Time) (risk.Usage, error) {
 	utc := now.UTC()
 	dayStart := time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC)
+	manualOnly := strings.EqualFold(strings.TrimSpace(source), "MANUAL")
 	var usage risk.Usage
 	err := s.database.QueryRowContext(ctx, `SELECT
 COALESCE(SUM(CASE WHEN createdAt >= ? THEN 1 ELSE 0 END), 0), COUNT(*)
-FROM trading_orders WHERE exchangeAccountId = ? AND createdAt >= ?`, utc.Add(-time.Minute), accountID, dayStart).Scan(&usage.OrdersLastMinute, &usage.OrdersToday)
+FROM trading_orders
+WHERE exchangeAccountId = ? AND createdAt >= ? AND status <> 'FAILED'
+  AND ((? = TRUE AND source = 'MANUAL') OR (? = FALSE AND source <> 'MANUAL'))`, utc.Add(-time.Minute), accountID, dayStart, manualOnly, manualOnly).Scan(&usage.OrdersLastMinute, &usage.OrdersToday)
 	if err != nil {
 		return risk.Usage{}, fmt.Errorf("load trading order usage: %w", err)
 	}

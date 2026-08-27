@@ -36,7 +36,7 @@ type Decision struct {
 
 type Store interface {
 	LoadProfile(context.Context, string, string) (Profile, error)
-	LoadUsage(context.Context, string, time.Time) (Usage, error)
+	LoadUsage(context.Context, string, string, time.Time) (Usage, error)
 	RecordDecision(context.Context, account.Resolved, OrderInput, Decision, time.Time) error
 }
 
@@ -105,11 +105,16 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 		return e.block(ctx, resolved, order, "RISK_INVALID_MARGIN", "Başlangıç teminatı hesaplanamadı.", nil, errors.New("invalid leverage"))
 	}
 	metrics := map[string]any{"orderNotional": notional, "initialMargin": initialMargin, "leverage": order.Leverage}
-	if greater(notional, profile.MaxOrderNotional) {
+	manualOrder := strings.EqualFold(strings.TrimSpace(order.Source), "MANUAL")
+	metrics["manualOrder"] = manualOrder
+	if !manualOrder && greater(notional, profile.MaxOrderNotional) {
 		return e.reject(ctx, resolved, order, "RISK_MAX_ORDER_NOTIONAL_EXCEEDED", "Emir büyüklüğü işlem başı risk limitini aşıyor.", metrics)
 	}
-	if greater(initialMargin, profile.MaxInitialMargin) {
+	if !manualOrder && greater(initialMargin, profile.MaxInitialMargin) {
 		return e.reject(ctx, resolved, order, "RISK_MAX_INITIAL_MARGIN_EXCEEDED", "Emir teminatı işlem başı risk limitini aşıyor.", metrics)
+	}
+	if manualOrder {
+		metrics["manualPerOrderLimitsBypassed"] = true
 	}
 
 	positions, err := market.GetPositions(ctx)
@@ -179,7 +184,7 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 		return e.reject(ctx, resolved, order, "RISK_MIN_BALANCE_RESERVE", "Emir minimum bakiye rezervini ihlal eder.", metrics)
 	}
 
-	usage, err := e.store.LoadUsage(ctx, order.ExchangeAccountID, e.now())
+	usage, err := e.store.LoadUsage(ctx, order.ExchangeAccountID, order.Source, e.now())
 	if err != nil {
 		return e.block(ctx, resolved, order, "RISK_USAGE_UNAVAILABLE", "Emir sıklığı doğrulanamadı.", metrics, err)
 	}

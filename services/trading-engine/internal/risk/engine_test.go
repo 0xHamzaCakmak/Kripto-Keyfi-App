@@ -22,7 +22,7 @@ type fakeStore struct {
 func (s *fakeStore) LoadProfile(context.Context, string, string) (Profile, error) {
 	return s.profile, s.loadErr
 }
-func (s *fakeStore) LoadUsage(context.Context, string, time.Time) (Usage, error) {
+func (s *fakeStore) LoadUsage(context.Context, string, string, time.Time) (Usage, error) {
 	return s.usage, s.loadErr
 }
 func (s *fakeStore) RecordDecision(_ context.Context, _ account.Resolved, _ OrderInput, decision Decision, _ time.Time) error {
@@ -143,6 +143,29 @@ func TestEngineEnforcesBalanceReserveAndOrderRate(t *testing.T) {
 	decision, err = New(store).Evaluate(t.Context(), testAccount(), testOrder(), market)
 	if err != nil || decision.Code != "RISK_ORDER_RATE_EXCEEDED" {
 		t.Fatalf("rate was not enforced: %#v err=%v", decision, err)
+	}
+}
+
+func TestManualOrderBypassesBotPerOrderSizingLimits(t *testing.T) {
+	profile := safeProfile()
+	market := safeMarket()
+	market.balances[0].AvailableBalance = "1000"
+	order := testOrder()
+	order.Quantity = "0.004"
+
+	decision, err := New(&fakeStore{profile: profile}).Evaluate(t.Context(), testAccount(), order, market)
+	if err != nil || decision.Code != "RISK_APPROVED" {
+		t.Fatalf("manual order was limited by bot sizing ceilings: %#v err=%v", decision, err)
+	}
+	if decision.Metrics["manualPerOrderLimitsBypassed"] != true {
+		t.Fatalf("manual limit bypass was not recorded: %#v", decision.Metrics)
+	}
+
+	automated := order
+	automated.Source = "SYSTEM"
+	decision, err = New(&fakeStore{profile: profile}).Evaluate(t.Context(), testAccount(), automated, market)
+	if err != nil || decision.Code != "RISK_MAX_ORDER_NOTIONAL_EXCEEDED" {
+		t.Fatalf("automated order escaped bot sizing ceiling: %#v err=%v", decision, err)
 	}
 }
 

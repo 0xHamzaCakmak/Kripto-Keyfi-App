@@ -1,0 +1,4 @@
+./arena.go
+./paper_executor.go
+./registry.go
+./arena_test.go

@@ -102,7 +102,7 @@ export async function submitOrder(userId: string, input: SubmitOrderInput, ipAdd
           userId, exchangeAccountId: preview.exchangeAccountId, previewId: preview.id, idempotencyKey: input.idempotencyKey,
           clientOrderId, symbol: preview.symbol, side: preview.side, type: preview.type, quantity: preview.quantity,
           price: preview.price, stopPrice: preview.stopPrice, leverage: preview.leverage, marginMode: preview.marginMode,
-          reduceOnly: preview.reduceOnly,
+          reduceOnly: preview.reduceOnly, source: 'MANUAL',
           executionEngine: preview.exchangeAccount.executionEngine,
         },
       });
