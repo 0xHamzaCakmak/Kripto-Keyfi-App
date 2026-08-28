@@ -104,6 +104,10 @@ install_dependencies() {
   else
     NODE_ENV=development npm --prefix "$BACKEND_DIR" install --include=dev
   fi
+  # npm ci removes generated Prisma artifacts. Environment validation can run
+  # database-backed TESTNET checks (for example Hedge Mode) in the next stage,
+  # so the client must exist before load_environment is called.
+  npm --prefix "$BACKEND_DIR" run prisma:generate
   if [ -f "$FRONTEND_DIR/package-lock.json" ]; then
     NODE_ENV=development npm --prefix "$FRONTEND_DIR" ci --include=dev
   else
@@ -209,7 +213,6 @@ NODE
 
 validate_and_build() {
   step "4/13 Test, typecheck ve production build calisiyor"
-  (cd "$BACKEND_DIR" && npx prisma generate)
   npm --prefix "$BACKEND_DIR" run typecheck
   if [ "$RUN_BACKEND_TESTS" = "true" ]; then
     NODE_ENV=test npm --prefix "$BACKEND_DIR" test
