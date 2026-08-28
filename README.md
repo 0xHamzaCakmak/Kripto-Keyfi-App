@@ -154,6 +154,8 @@ Deploy akışı genel olarak şu işlemleri yapar:
 
 Production `.env`, DNS, SSL ve Nginx yapılandırmaları repoya eklenmez.
 
+VPS üzerinde deploy öncesi, deploy ve deploy sonrası kullanılacak sabit komut sırası için [standart TESTNET deploy akışına](docs/DEPLOY_STANDARD_TR.md) bakın.
+
 ## Temel health endpoint'leri
 
 ```text
