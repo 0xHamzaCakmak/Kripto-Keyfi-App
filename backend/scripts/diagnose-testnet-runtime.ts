@@ -6,11 +6,13 @@ function jsonObject(value: unknown): Record<string, unknown> | null {
 }
 
 async function main() {
-  const since = new Date(Date.now() - 5 * 60_000);
+  const now = new Date();
+  const since = new Date(now.getTime() - 5 * 60_000);
+  const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const account = await prisma.exchangeAccount.findFirstOrThrow({
     where: { environment: 'TESTNET', isActive: true },
   });
-  const [decisions, signals, entries, fills, runtimeBots, snapshot] = await Promise.all([
+  const [decisions, signals, entries, fills, runtimeBots, snapshot, riskProfile, riskControl, ordersLastMinute, ordersToday, recentRiskEvents] = await Promise.all([
     prisma.tradingBotDecision.findMany({
       where: { exchangeAccountId: account.id, mode: 'DEMO', occurredAt: { gte: since } },
       select: { tradingBotId: true, kind: true, symbol: true, summary: true, metrics: true, occurredAt: true },
@@ -32,6 +34,16 @@ async function main() {
       select: { id: true, name: true, symbol: true, state: true, desiredState: true, configuration: true, lastDecisionAt: true, lastErrorCode: true },
     }),
     getTradingEngineSnapshot(account),
+    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId: account.id }, select: {
+      enabled: true, accountKillSwitch: true, maxOrderNotional: true, maxInitialMargin: true,
+      maxAccountOpenNotional: true, maxSymbolOpenNotional: true, maxOpenPositions: true,
+      maxSymbolPositions: true, minAvailableBalance: true, maxOrdersPerMinute: true, maxDailyOrders: true,
+    } }),
+    prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
+    prisma.tradingOrder.count({ where: { exchangeAccountId: account.id, source: { not: 'MANUAL' }, status: { not: 'FAILED' }, createdAt: { gte: new Date(now.getTime() - 60_000) } } }),
+    prisma.tradingOrder.count({ where: { exchangeAccountId: account.id, source: { not: 'MANUAL' }, status: { not: 'FAILED' }, createdAt: { gte: dayStart } } }),
+    prisma.tradingRiskEvent.findMany({ where: { exchangeAccountId: account.id, occurredAt: { gte: dayStart } }, orderBy: { occurredAt: 'desc' }, take: 20,
+      select: { decision: true, code: true, message: true, metrics: true, occurredAt: true } }),
   ]);
   const kinds = decisions.reduce<Record<string, number>>((counts, decision) => {
     counts[decision.kind] = (counts[decision.kind] ?? 0) + 1;
@@ -55,6 +67,12 @@ async function main() {
   const executionOutcomes = signals.reduce<Record<string, number>>((counts, signal) => {
     const safety = jsonObject(signal.safetyChecks);
     const key = String(safety?.executionStatus ?? (safety?.autonomousRiskApproved === true ? 'APPROVED_NOT_EXECUTED' : 'NOT_APPROVED'));
+    counts[key] = (counts[key] ?? 0) + 1;
+    return counts;
+  }, {});
+  const executionReasonCodes = signals.reduce<Record<string, number>>((counts, signal) => {
+    const safety = jsonObject(signal.safetyChecks);
+    const key = String(safety?.executionReasonCode ?? safety?.detail ?? 'NO_REASON_CODE');
     counts[key] = (counts[key] ?? 0) + 1;
     return counts;
   }, {});
@@ -101,8 +119,35 @@ async function main() {
     desiredRunningBots: runtimeBots.filter((bot) => bot.desiredState === 'RUNNING').length,
     entryPausedBots,
     automaticEntriesPaused: runtimeBots.length > 0 && entryPausedBots === runtimeBots.length,
+    executionGates: {
+      riskProfileEnabled: riskProfile?.enabled ?? false,
+      accountKillSwitch: riskProfile?.accountKillSwitch ?? null,
+      globalKillSwitch: riskControl?.globalKillSwitch ?? null,
+    },
+    riskLimits: riskProfile ? {
+      maxOrderNotional: riskProfile.maxOrderNotional.toString(),
+      maxInitialMargin: riskProfile.maxInitialMargin.toString(),
+      maxAccountOpenNotional: riskProfile.maxAccountOpenNotional.toString(),
+      maxSymbolOpenNotional: riskProfile.maxSymbolOpenNotional.toString(),
+      maxOpenPositions: riskProfile.maxOpenPositions,
+      maxSymbolPositions: riskProfile.maxSymbolPositions,
+      minAvailableBalance: riskProfile.minAvailableBalance.toString(),
+      maxOrdersPerMinute: riskProfile.maxOrdersPerMinute,
+      maxDailyOrders: riskProfile.maxDailyOrders,
+    } : null,
+    orderRateUsage: {
+      ordersLastMinute,
+      ordersTodayUtc: ordersToday,
+      minuteLimit: riskProfile?.maxOrdersPerMinute ?? null,
+      dailyLimit: riskProfile?.maxDailyOrders ?? null,
+      minuteBlocked: Boolean(riskProfile && riskProfile.maxOrdersPerMinute > 0 && ordersLastMinute >= riskProfile.maxOrdersPerMinute),
+      dailyBlocked: Boolean(riskProfile && riskProfile.maxDailyOrders > 0 && ordersToday >= riskProfile.maxDailyOrders),
+      zeroMeansUnlimited: true,
+    },
     riskOutcomes,
     executionOutcomes,
+    executionReasonCodes,
+    recentRiskEvents,
     submittedEntries: entries.length,
     filledEntries: fills.length,
     entryBots: new Set(fills.map((fill) => fill.tradingBotId)).size,

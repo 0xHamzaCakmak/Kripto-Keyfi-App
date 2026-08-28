@@ -342,6 +342,10 @@ func TestExecutionFailureProducesExplicitOutcome(t *testing.T) {
 	if status != "RETRYING" || code != "EXCHANGE_UNAVAILABLE" {
 		t.Fatalf("unexpected retry outcome: %s %s", status, code)
 	}
+	status, code, _ = executionFailure(exchange.NewError(domain.ErrorRejected, "RISK_ORDER_RATE_EXCEEDED", "", false, false))
+	if status != "RETRYING" || code != "RISK_ORDER_RATE_EXCEEDED" {
+		t.Fatalf("unexpected application rate-limit outcome: %s %s", status, code)
+	}
 	status, _, _ = executionFailure(errors.New("invalid autonomous side"))
 	if status != "REJECTED" {
 		t.Fatalf("unexpected permanent failure outcome: %s", status)

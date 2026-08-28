@@ -357,7 +357,7 @@ export async function configureBotCapital(userId: string, id: string, input: Bot
         sharedTestnetQuota: bot.mode === 'DEMO', note: input.note ?? null, productionLive: false, riskEngineBypassed: false },
       ...(ipAddress ? { ipAddress } : {}),
     } });
-    return autonomousDTO('AUTONOMOUS_BOT_CAPITAL', { bot: updated, allocationUsdt: target, maximumAllocationUsdt: 10_000, sharedTestnetQuota: bot.mode === 'DEMO' });
+    return autonomousDTO('AUTONOMOUS_BOT_CAPITAL', { bot: updated, allocationUsdt: target, maximumAllocationUsdt: null, sharedTestnetQuota: bot.mode === 'DEMO' });
   });
 }
 

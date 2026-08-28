@@ -37,7 +37,7 @@ export type ManualMentorPosition = OpenPosition & {
 export type TradingExecutionProfile = {
   minLeverage: number; maxLeverage: number; botAllocationUsdt: string; minInitialMarginUsdt: string;
   maxOrderNotional: string; maxInitialMargin: string; maxAccountOpenNotional: string;
-  stopLossBps: number; takeProfitBps: number; maxOrdersPerMinute: number; entryPaused: boolean;
+  stopLossBps: number; takeProfitBps: number; maxOrdersPerMinute: number; maxDailyOrders: number; entryPaused: boolean;
 };
 export type TradingExecutionProfileUpdate = Partial<TradingExecutionProfile>;
 
@@ -53,6 +53,7 @@ function normalizeTradingExecutionProfile(profile: TradingExecutionProfile): Tra
     stopLossBps: profile.stopLossBps,
     takeProfitBps: profile.takeProfitBps,
     maxOrdersPerMinute: profile.maxOrdersPerMinute,
+    maxDailyOrders: profile.maxDailyOrders,
     entryPaused: profile.entryPaused === true,
   };
 }
@@ -157,6 +158,7 @@ export async function updateTradingExecutionProfile(exchangeAccountId: string, i
     ...(input.stopLossBps !== undefined ? { stopLossBps: input.stopLossBps } : {}),
     ...(input.takeProfitBps !== undefined ? { takeProfitBps: input.takeProfitBps } : {}),
     ...(input.maxOrdersPerMinute !== undefined ? { maxOrdersPerMinute: input.maxOrdersPerMinute } : {}),
+    ...(input.maxDailyOrders !== undefined ? { maxDailyOrders: input.maxDailyOrders } : {}),
     ...(input.entryPaused !== undefined ? { entryPaused: input.entryPaused } : {}),
   };
   const profile = (await api.patch<{ data: TradingExecutionProfile }>(

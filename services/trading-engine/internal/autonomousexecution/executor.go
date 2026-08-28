@@ -447,6 +447,8 @@ func executionFailure(cause error) (status, code, detail string) {
 		code = normalized.Normalized.Code
 		if code == "INSUFFICIENT_BALANCE" || code == "RISK_MIN_BALANCE_RESERVE" {
 			status = "INSUFFICIENT_BALANCE"
+		} else if code == "RISK_ORDER_RATE_EXCEEDED" || code == "EXCHANGE_RATE_LIMITED" {
+			status = "RETRYING"
 		} else if normalized.Normalized.Retryable {
 			status = "RETRYING"
 		}

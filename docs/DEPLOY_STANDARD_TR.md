@@ -83,3 +83,20 @@ pm2 logs kriptokeyfi-trading-engine --lines 100 --nostream
 ```
 
 Deploy Stage 6'dan sonra durduysa `.deploy-maintenance-bots.json` dosyasını silme. Engine ve reconciliation doğrulanmadan botları topluca devam ettirme; bu dosya yalnız deployun durdurduğu botların güvenli biçimde geri alınması için kullanılır.
+--------------------------------------------------------
+deploy için
+cd ~/Projects/kriptokeyfi
+git status --short
+
+npm --prefix backend run prisma:generate
+npm --prefix backend run configure:testnet-hedge-mode
+
+chmod +x deploy.sh
+./deploy.sh
+-------------------------------------------------------
+deploy sonrası
+pm2 status
+curl -fsS http://127.0.0.1:8081/health/ready
+npm --prefix backend run status:ai-fleet
+npm --prefix backend run status:testnet-runtime
+npm --prefix backend run configure:testnet-hedge-mode

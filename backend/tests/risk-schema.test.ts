@@ -27,9 +27,9 @@ describe('trading risk request validation', () => {
     expect(updateRiskProfileBodySchema.safeParse({ botAllocationUsdt: '500', minInitialMarginUsdt: '100', minLeverage: 8, maxLeverage: 15 }).success).toBe(true);
     expect(updateRiskProfileBodySchema.safeParse({ minLeverage: 16, maxLeverage: 12 }).success).toBe(false);
     expect(updateRiskProfileBodySchema.safeParse({ stopLossBps: 49 }).success).toBe(false);
-    expect(updateRiskProfileBodySchema.safeParse({ stopLossBps: 1_000, takeProfitBps: 100, entryPaused: true }).success).toBe(true);
+    expect(updateRiskProfileBodySchema.safeParse({ stopLossBps: 1_000, takeProfitBps: 10, entryPaused: true }).success).toBe(true);
+    expect(updateRiskProfileBodySchema.safeParse({ takeProfitBps: 9 }).success).toBe(false);
     expect(updateRiskProfileBodySchema.safeParse({ stopLossBps: 1_001 }).success).toBe(false);
-    expect(updateRiskProfileBodySchema.safeParse({ takeProfitBps: 99 }).success).toBe(false);
     expect(updateRiskProfileBodySchema.safeParse({ stopLossBps: 200, takeProfitBps: 250 }).success).toBe(true);
   });
 

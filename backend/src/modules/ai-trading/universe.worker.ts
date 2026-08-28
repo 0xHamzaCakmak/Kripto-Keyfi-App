@@ -29,7 +29,7 @@ export const PAPER_TRAINING_MAX_RISK_PER_TRADE_PCT = 0.05;
 export const TESTNET_TREND_GRID_STEP_BPS = 25;
 export const TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES = 2;
 export const TESTNET_TRANSITION_MIN_ATR_BPS = 20;
-export const TESTNET_MIN_TAKE_PROFIT_BPS = 100;
+export const TESTNET_MIN_TAKE_PROFIT_BPS = 10;
 export const TESTNET_MAX_ADAPTIVE_STOP_BPS = 1_000;
 export const TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS = 20;
 export const TESTNET_DEFAULT_MIN_INITIAL_MARGIN_USDT = 20;
@@ -90,7 +90,7 @@ export function testnetExecutionConfiguration(value: Prisma.JsonValue, leverage:
   const configuredStop = Number(extra.stopLossBps ?? source.stopLossBps);
   const configuredTarget = Number(extra.takeProfitBps ?? source.takeProfitBps);
   const stopLossBps = Number.isFinite(configuredStop) && configuredStop >= 50 && configuredStop <= TESTNET_MAX_ADAPTIVE_STOP_BPS ? configuredStop : TESTNET_MAX_ADAPTIVE_STOP_BPS;
-  const takeProfitBps = Number.isFinite(configuredTarget) && configuredTarget >= 50 && configuredTarget <= 5_000 ? configuredTarget : TESTNET_MIN_TAKE_PROFIT_BPS;
+  const takeProfitBps = Number.isFinite(configuredTarget) && configuredTarget >= TESTNET_MIN_TAKE_PROFIT_BPS && configuredTarget <= 5_000 ? configuredTarget : TESTNET_MIN_TAKE_PROFIT_BPS;
   return {
     ...source, ...extra,
     paperTrainingMode: false,
@@ -128,7 +128,7 @@ export function testnetExecutionConfiguration(value: Prisma.JsonValue, leverage:
 export function botAllocationUsdt(value: Prisma.JsonValue, fallback = 100) {
   if (!value || Array.isArray(value) || typeof value !== 'object') return fallback;
   const candidate = Number((value as Prisma.JsonObject).allocationUsdt);
-  return Number.isFinite(candidate) && candidate >= 10 && candidate <= 10_000 ? candidate : fallback;
+  return Number.isFinite(candidate) && candidate >= 10 ? candidate : fallback;
 }
 
 export function automaticCapitalScaleTarget(allocation: number, startingBalance: number, totalTrades: number, currentEquity: number) {

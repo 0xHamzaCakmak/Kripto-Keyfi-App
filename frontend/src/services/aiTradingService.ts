@@ -253,7 +253,7 @@ export type TradeMemory = {
 };
 export type TradeMemoryQuery = { source?: 'ALL' | 'PAPER' | 'TESTNET'; botId?: string; strategyVersionId?: string; symbol?: string; regime?: MarketRegime; side?: 'BUY' | 'SELL'; outcome?: 'ALL' | 'BEST' | 'FAILURE'; limit?: number };
 export type TradeMemoryStats = { tradeCount: number; wins: number; losses: number; netPnl: string; fees: string; funding: string; slippage: string };
-export type BotCapitalResult = { bot: AutonomousBot; allocationUsdt: number; maximumAllocationUsdt: number; sharedTestnetQuota: boolean };
+export type BotCapitalResult = { bot: AutonomousBot; allocationUsdt: number; maximumAllocationUsdt: number | null; sharedTestnetQuota: boolean };
 export type TestnetFleetActivationResult = { botCount: number; bots: Array<{ botId: string; name: string; symbol: string; mode: 'DEMO'; desiredState: 'RUNNING' }>; environment: 'TESTNET'; productionLive: false };
 export type PaperFleetActivationResult = { botCount: number; mode: 'PAPER'; submittedToExchange: false; productionLive: false };
 export type TradingRiskProfile = {

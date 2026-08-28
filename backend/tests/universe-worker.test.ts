@@ -58,6 +58,7 @@ describe('autonomous Futures universe', () => {
   it('preserves manual capital and scales only profitable bots with enough evidence', () => {
     expect(botAllocationUsdt({ allocationUsdt: 175 })).toBe(175);
     expect(botAllocationUsdt({ allocationUsdt: 500 })).toBe(500);
+    expect(botAllocationUsdt({ allocationUsdt: 100_000 })).toBe(100_000);
     expect(automaticCapitalScaleTarget(100, 100, 200, 101)).toBe(200);
     expect(automaticCapitalScaleTarget(100, 100, 199, 150)).toBe(100);
     expect(automaticCapitalScaleTarget(100, 100, 500, 99)).toBe(100);
@@ -85,6 +86,7 @@ describe('autonomous Futures universe', () => {
       testnetTransitionRegimeEnabled: true, testnetTransitionMinConfirmedTimeframes: TESTNET_TRANSITION_MIN_CONFIRMED_TIMEFRAMES, testnetTransitionMinAtrBps: TESTNET_TRANSITION_MIN_ATR_BPS,
       analysisTimeframes: ['15m', '1h'], directionWindowsHours: [24, 48] });
     expect(TESTNET_DECISION_INTERVAL_SECONDS).toBe(24);
+    expect(testnetExecutionConfiguration({}, 20, { takeProfitBps: 10 })).toMatchObject({ takeProfitBps: 10, minimumTakeProfitBps: 10 });
   });
 
   it('does not rotate a bot while a scheduler cycle owns its lease', () => {
