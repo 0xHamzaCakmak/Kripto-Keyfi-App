@@ -1,34 +1,35 @@
 import { z } from 'zod';
 
 const positiveDecimal = z.string().trim().regex(/^(?!0+(?:\.0+)?$)\d{1,18}(?:\.\d{1,18})?$/);
+const nonNegativeDecimal = z.string().trim().regex(/^\d{1,18}(?:\.\d{1,18})?$/);
 const symbol = z.string().trim().toUpperCase().regex(/^[A-Z0-9]{2,40}$/);
 const ratio = z.string().trim().regex(/^(?:0(?:\.\d{1,6})?|1(?:\.0{1,6})?)$/);
 
 export const updateRiskProfileBodySchema = z.object({
   enabled: z.boolean().optional(),
-  maxOrderNotional: positiveDecimal.optional(),
-  maxInitialMargin: positiveDecimal.optional(),
-  maxAccountOpenNotional: positiveDecimal.optional(),
-  maxOpenPositions: z.number().int().min(1).max(100).optional(),
-  paperMaxOpenPositions: z.number().int().min(1).max(100).optional(),
+  maxOrderNotional: nonNegativeDecimal.optional(),
+  maxInitialMargin: nonNegativeDecimal.optional(),
+  maxAccountOpenNotional: nonNegativeDecimal.optional(),
+  maxOpenPositions: z.number().int().min(0).optional(),
+  paperMaxOpenPositions: z.number().int().min(0).optional(),
   testnetBotAllocationUsdt: positiveDecimal.optional(),
   testnetMinInitialMarginUsdt: positiveDecimal.optional(),
   botAllocationUsdt: positiveDecimal.optional(),
   minInitialMarginUsdt: positiveDecimal.optional(),
-  maxSymbolPositions: z.number().int().min(1).max(20).optional(),
+  maxSymbolPositions: z.number().int().min(0).optional(),
   minLeverage: z.number().int().min(5).max(20).optional(),
   maxLeverage: z.number().int().min(5).max(20).optional(),
   stopLossBps: z.number().int().min(50).max(1_000).optional(),
   takeProfitBps: z.number().int().min(100).max(5_000).optional(),
   entryPaused: z.boolean().optional(),
-  minAvailableBalance: positiveDecimal.optional(),
-  maxOrdersPerMinute: z.number().int().min(1).max(1000).optional(),
-  maxDailyOrders: z.number().int().min(1).max(100_000).optional(),
+  minAvailableBalance: nonNegativeDecimal.optional(),
+  maxOrdersPerMinute: z.number().int().min(0).optional(),
+  maxDailyOrders: z.number().int().min(0).optional(),
   maxRiskPerTradePct: ratio.optional(),
   maxDailyLossPct: ratio.optional(),
   maxWeeklyLossPct: ratio.optional(),
   maxDrawdownPct: ratio.optional(),
-  maxSymbolOpenNotional: positiveDecimal.optional(),
+  maxSymbolOpenNotional: nonNegativeDecimal.optional(),
   minRiskRewardRatio: positiveDecimal.optional(),
   stopLossRequired: z.literal(true).optional(),
   marginModePolicy: z.enum(['ISOLATED_ONLY', 'ALLOW_CROSS']).optional(),
@@ -41,7 +42,7 @@ export const updateRiskProfileBodySchema = z.object({
   for (const blocked of value.blockedSymbols ?? []) {
     if (allowed.has(blocked)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['blockedSymbols'], message: `${blocked} hem izinli hem engelli olamaz.` });
   }
-  if (value.maxOpenPositions !== undefined && value.maxSymbolPositions !== undefined && value.maxSymbolPositions > value.maxOpenPositions) {
+  if (value.maxOpenPositions !== undefined && value.maxOpenPositions > 0 && value.maxSymbolPositions !== undefined && value.maxSymbolPositions > 0 && value.maxSymbolPositions > value.maxOpenPositions) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['maxSymbolPositions'], message: 'Parite pozisyon limiti hesap limitini aşamaz.' });
   }
   if (value.minLeverage !== undefined && value.maxLeverage !== undefined && value.minLeverage > value.maxLeverage) {

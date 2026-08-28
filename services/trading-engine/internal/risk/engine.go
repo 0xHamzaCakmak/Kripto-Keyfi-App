@@ -107,10 +107,10 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 	metrics := map[string]any{"orderNotional": notional, "initialMargin": initialMargin, "leverage": order.Leverage}
 	manualOrder := strings.EqualFold(strings.TrimSpace(order.Source), "MANUAL")
 	metrics["manualOrder"] = manualOrder
-	if !manualOrder && greater(notional, profile.MaxOrderNotional) {
+	if !manualOrder && limitEnabled(profile.MaxOrderNotional) && greater(notional, profile.MaxOrderNotional) {
 		return e.reject(ctx, resolved, order, "RISK_MAX_ORDER_NOTIONAL_EXCEEDED", "Emir büyüklüğü işlem başı risk limitini aşıyor.", metrics)
 	}
-	if !manualOrder && greater(initialMargin, profile.MaxInitialMargin) {
+	if !manualOrder && limitEnabled(profile.MaxInitialMargin) && greater(initialMargin, profile.MaxInitialMargin) {
 		return e.reject(ctx, resolved, order, "RISK_MAX_INITIAL_MARGIN_EXCEEDED", "Emir teminatı işlem başı risk limitini aşıyor.", metrics)
 	}
 	if manualOrder {
@@ -137,7 +137,7 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 	metrics["openPositionCount"] = len(positions)
 	metrics["symbolPositionCount"] = symbolPositions
 	metrics["projectedOpenNotional"] = projectedNotional
-	if len(positions) >= profile.MaxOpenPositions && symbolPositions == 0 {
+	if profile.MaxOpenPositions > 0 && len(positions) >= profile.MaxOpenPositions && symbolPositions == 0 {
 		return e.reject(ctx, resolved, order, "RISK_MAX_OPEN_POSITIONS_REACHED", "Maksimum açık pozisyon sayısına ulaşıldı.", metrics)
 	}
 	projectedSymbolPositions := symbolPositions
@@ -145,10 +145,10 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 		projectedSymbolPositions = 1
 	}
 	metrics["projectedSymbolPositionCount"] = projectedSymbolPositions
-	if projectedSymbolPositions > profile.MaxSymbolPositions {
+	if profile.MaxSymbolPositions > 0 && projectedSymbolPositions > profile.MaxSymbolPositions {
 		return e.reject(ctx, resolved, order, "RISK_MAX_SYMBOL_POSITIONS_REACHED", "Parite başına açık pozisyon limitine ulaşıldı.", metrics)
 	}
-	if greater(projectedNotional, profile.MaxAccountOpenNotional) {
+	if limitEnabled(profile.MaxAccountOpenNotional) && greater(projectedNotional, profile.MaxAccountOpenNotional) {
 		return e.reject(ctx, resolved, order, "RISK_MAX_ACCOUNT_NOTIONAL_EXCEEDED", "Hesap toplam açık pozisyon limiti aşılır.", metrics)
 	}
 
@@ -190,10 +190,10 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 	}
 	metrics["ordersLastMinute"] = usage.OrdersLastMinute
 	metrics["ordersToday"] = usage.OrdersToday
-	if usage.OrdersLastMinute > profile.MaxOrdersPerMinute {
+	if profile.MaxOrdersPerMinute > 0 && usage.OrdersLastMinute > profile.MaxOrdersPerMinute {
 		return e.reject(ctx, resolved, order, "RISK_ORDER_RATE_EXCEEDED", "Dakikalık emir sıklığı limiti aşıldı.", metrics)
 	}
-	if usage.OrdersToday > profile.MaxDailyOrders {
+	if profile.MaxDailyOrders > 0 && usage.OrdersToday > profile.MaxDailyOrders {
 		return e.reject(ctx, resolved, order, "RISK_DAILY_ORDER_LIMIT_EXCEEDED", "Günlük emir sayısı limiti aşıldı.", metrics)
 	}
 
@@ -209,6 +209,11 @@ func maxInt(left, right int) int {
 		return left
 	}
 	return right
+}
+
+func limitEnabled(value domain.Decimal) bool {
+	parsed, ok := new(big.Rat).SetString(string(value))
+	return ok && parsed.Sign() > 0
 }
 
 func (e *Engine) reject(ctx context.Context, resolved account.Resolved, order OrderInput, code, message string, metrics map[string]any) (Decision, error) {

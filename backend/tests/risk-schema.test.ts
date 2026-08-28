@@ -15,8 +15,9 @@ describe('trading risk request validation', () => {
     if (result.success) expect(result.data.allowedSymbols).toEqual(['BTCUSDT']);
   });
 
-  it('rejects zero values and conflicting symbol policies', () => {
-    expect(updateRiskProfileBodySchema.safeParse({ maxOrderNotional: '0' }).success).toBe(false);
+  it('accepts zero as an unlimited monetary ceiling and rejects conflicting policies', () => {
+    expect(updateRiskProfileBodySchema.safeParse({ maxOrderNotional: '0', maxInitialMargin: '0', maxAccountOpenNotional: '0', maxSymbolOpenNotional: '0', minAvailableBalance: '0' }).success).toBe(true);
+    expect(updateRiskProfileBodySchema.safeParse({ maxOpenPositions: 0, paperMaxOpenPositions: 0, maxSymbolPositions: 0, maxOrdersPerMinute: 0, maxDailyOrders: 0 }).success).toBe(true);
     expect(updateRiskProfileBodySchema.safeParse({ allowedSymbols: ['BTCUSDT'], blockedSymbols: ['BTCUSDT'] }).success).toBe(false);
     expect(updateRiskProfileBodySchema.safeParse({ maxOpenPositions: 2, maxSymbolPositions: 3 }).success).toBe(false);
     expect(updateRiskProfileBodySchema.safeParse({ maxRiskPerTradePct: '1.01' }).success).toBe(false);

@@ -6,5 +6,6 @@ describe('effective autonomous position limits', () => {
     expect(effectiveAutonomousPositionLimits(5, 100)).toEqual({ paper: 100, futuresTestnet: 5, live: 5 });
     expect(effectiveAutonomousPositionLimits(40, 80)).toEqual({ paper: 80, futuresTestnet: 20, live: 15 });
     expect(effectiveAutonomousPositionLimits(10, 25)).toEqual({ paper: 25, futuresTestnet: 10, live: 10 });
+    expect(effectiveAutonomousPositionLimits(0, 0)).toEqual({ paper: 0, futuresTestnet: 0, live: 0 });
   });
 });

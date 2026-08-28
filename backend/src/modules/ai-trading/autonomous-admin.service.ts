@@ -313,6 +313,10 @@ export function configuredCapital(value: Prisma.JsonValue, fallback: number) {
   return Number.isFinite(candidate) && candidate > 0 ? candidate : fallback;
 }
 
+function raisedLimit(current: number, required: number) {
+  return current === 0 ? '0' : Math.max(current, required).toFixed(2);
+}
+
 export async function configureBotCapital(userId: string, id: string, input: BotCapitalInput, ipAddress?: string) {
   const bot = await prisma.tradingBot.findFirst({
     where: { id, userId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'DEMO'] }, lifecycleStatus: { notIn: ['LIVE_ELIGIBLE', 'LIVE', 'ARCHIVED'] } },
@@ -322,7 +326,7 @@ export async function configureBotCapital(userId: string, id: string, input: Bot
   const previousAllocation = configuredCapital(bot.configuration, bot.startingPaperBalance.toNumber());
   const target = Number((input.action === 'ADD' ? previousAllocation + input.amountUsdt : input.amountUsdt).toFixed(2));
   if (target < previousAllocation) throw new ApiError(409, 'Bot capital cannot be reduced while autonomous execution is enabled.', 'AUTONOMOUS_CAPITAL_REDUCTION_FORBIDDEN');
-  if (target < 10 || target > 10_000) throw new ApiError(409, 'Bot capital must remain between 10 and 10,000 USDT.', 'AUTONOMOUS_CAPITAL_LIMIT');
+  if (target < 10) throw new ApiError(409, 'Bot capital must be at least 10 USDT.', 'AUTONOMOUS_CAPITAL_LIMIT');
   const source = bot.configuration && !Array.isArray(bot.configuration) && typeof bot.configuration === 'object' ? bot.configuration as Prisma.JsonObject : {};
   const nextStartingBalance = input.action === 'ADD'
     ? Number((bot.startingPaperBalance.toNumber() + input.amountUsdt).toFixed(2))
@@ -341,8 +345,8 @@ export async function configureBotCapital(userId: string, id: string, input: Bot
     const demoAllocation = demoBots.reduce((sum, item) => sum + (item.id === bot.id ? target : configuredCapital(item.configuration, item.startingPaperBalance.toNumber())), 0);
     const profile = await tx.tradingRiskProfile.findUnique({ where: { exchangeAccountId: bot.exchangeAccountId }, select: { id: true, maxAccountOpenNotional: true, maxSymbolOpenNotional: true } });
     if (profile) await tx.tradingRiskProfile.update({ where: { id: profile.id }, data: {
-      maxAccountOpenNotional: Math.max(profile.maxAccountOpenNotional.toNumber(), demoAllocation).toFixed(2),
-      maxSymbolOpenNotional: Math.max(profile.maxSymbolOpenNotional.toNumber(), target).toFixed(2),
+      maxAccountOpenNotional: raisedLimit(profile.maxAccountOpenNotional.toNumber(), demoAllocation),
+      maxSymbolOpenNotional: raisedLimit(profile.maxSymbolOpenNotional.toNumber(), target),
     } });
     const updated = await tx.tradingBot.findUniqueOrThrow({ where: { id: bot.id }, select: safeBotSelect });
     await tx.tradingAuditLog.create({ data: {
@@ -399,7 +403,7 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
   const exchangeAccountId = accountIds[0]!;
   const [account, profile, control, configuredSymbols, exchangeSymbols] = await Promise.all([
     prisma.exchangeAccount.findFirst({ where: { id: exchangeAccountId, userId }, select: { provider: true, environment: true, executionEngine: true, connectionStatus: true, isActive: true } }),
-    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId }, select: { id: true, enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true, minLeverage: true, maxLeverage: true, maxOrderNotional: true, maxInitialMargin: true, maxAccountOpenNotional: true, maxSymbolOpenNotional: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true, testnetStopLossBps: true, testnetTakeProfitBps: true } }),
+    prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId }, select: { id: true, enabled: true, accountKillSwitch: true, marginModePolicy: true, stopLossRequired: true, minLeverage: true, maxLeverage: true, maxOpenPositions: true, maxOrderNotional: true, maxInitialMargin: true, maxAccountOpenNotional: true, maxSymbolOpenNotional: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true, testnetStopLossBps: true, testnetTakeProfitBps: true } }),
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true } }),
     getEnabledTradingSymbols(userId),
     getBinanceFuturesPublicSymbols(),
@@ -435,15 +439,16 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
   const leveragedAllocations = bots.map((_, index) => allocations[index]! * fleetLeverage(index, bots.length));
   const fleetNotionalCapacity = leveragedAllocations.reduce((sum, value) => sum + value, 0);
   const maximumBotNotional = Math.max(...leveragedAllocations);
+  const activatedMaxOpenPositions = profile.maxOpenPositions === 0 ? 0 : env.AI_TRADING_FIXED_FLEET_SIZE;
   const result = await prisma.$transaction(async (tx) => {
     await tx.tradingRiskProfile.update({ where: { id: profile.id }, data: {
       // This account is verified above as Binance TESTNET. PAPER uses its
       // separate paperMaxOpenPositions field; no mainnet profile is changed.
-      maxOpenPositions: env.AI_TRADING_FIXED_FLEET_SIZE,
-      maxOrderNotional: Math.max(profile.maxOrderNotional.toNumber(), maximumBotNotional).toFixed(2),
-      maxInitialMargin: Math.max(profile.maxInitialMargin.toNumber(), maximumBotAllocation).toFixed(2),
-      maxAccountOpenNotional: Math.max(profile.maxAccountOpenNotional.toNumber(), fleetNotionalCapacity).toFixed(2),
-      maxSymbolOpenNotional: Math.max(profile.maxSymbolOpenNotional.toNumber(), maximumBotNotional).toFixed(2),
+      maxOpenPositions: activatedMaxOpenPositions,
+      maxOrderNotional: raisedLimit(profile.maxOrderNotional.toNumber(), maximumBotNotional),
+      maxInitialMargin: raisedLimit(profile.maxInitialMargin.toNumber(), maximumBotAllocation),
+      maxAccountOpenNotional: raisedLimit(profile.maxAccountOpenNotional.toNumber(), fleetNotionalCapacity),
+      maxSymbolOpenNotional: raisedLimit(profile.maxSymbolOpenNotional.toNumber(), maximumBotNotional),
       allowedSymbols: sharedUniverse,
     } });
     for (let index = 0; index < bots.length; index += 1) {
@@ -471,7 +476,7 @@ export async function activateAutonomousTestnetFleet(userId: string, input: Test
     }
     await tx.tradingAuditLog.create({ data: {
       userId, exchangeAccountId, action: 'AI_TESTNET_FLEET_ACTIVATED', entityType: 'AUTONOMOUS_FLEET', entityId: exchangeAccountId,
-      metadata: { note: input.note, confirmation: input.confirmation, botCount: bots.length, symbols: bots.map((bot) => assignments.get(bot.id) ?? bot.symbol), sharedUniverse, hedgeModeEnabled: env.AI_TRADING_HEDGE_MODE_ENABLED, fleetAllocationUsdt: fleetAllocation, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toString(), fleetNotionalCapacity, maxOpenPositions: env.AI_TRADING_FIXED_FLEET_SIZE, environment: 'TESTNET', executionEngine: 'GO', productionLive: false, liveChanged: false, riskEngineBypassed: false },
+      metadata: { note: input.note, confirmation: input.confirmation, botCount: bots.length, symbols: bots.map((bot) => assignments.get(bot.id) ?? bot.symbol), sharedUniverse, hedgeModeEnabled: env.AI_TRADING_HEDGE_MODE_ENABLED, fleetAllocationUsdt: fleetAllocation, minimumInitialMarginUsdt: profile.testnetMinInitialMarginUsdt.toString(), fleetNotionalCapacity, maxOpenPositions: activatedMaxOpenPositions, environment: 'TESTNET', executionEngine: 'GO', productionLive: false, liveChanged: false, riskEngineBypassed: false },
       ...(ipAddress ? { ipAddress } : {}),
     } });
     return bots.map((bot) => ({ botId: bot.id, name: bot.name, symbol: assignments.get(bot.id) ?? bot.symbol, mode: 'DEMO' as const, desiredState: 'RUNNING' as const }));

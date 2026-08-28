@@ -121,6 +121,22 @@ func TestPaperTrainingFleetAllowsNinetyNineAndStopsAtOneHundred(t *testing.T) {
 	}
 }
 
+func TestZeroExposureCeilingsAreUnlimited(t *testing.T) {
+	policy := safePolicy()
+	policy.MaxPositionSize = "0"
+	policy.MaxTotalExposure = "0"
+	policy.MaxSymbolExposure = "0"
+	policy.MaxConcurrentPositions = 0
+	snapshot := safeSnapshot()
+	snapshot.ProjectedPositionSize = "1000000"
+	snapshot.ProjectedTotalExposure = "1000000"
+	snapshot.ProjectedSymbolExposure = "1000000"
+	snapshot.OpenPositions = 1000000
+	if decision := Evaluate(policy, safeIntent(), snapshot); !decision.Approved {
+		t.Fatalf("zero monetary ceilings rejected exposure: %#v", decision)
+	}
+}
+
 func TestFailsClosedAndStillAllowsCalculatedRiskReducingExit(t *testing.T) {
 	policy := safePolicy()
 	policy.Enabled = false

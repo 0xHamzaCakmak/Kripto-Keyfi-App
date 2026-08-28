@@ -273,7 +273,7 @@ func autonomousPolicyForMode(policy autonomousrisk.Policy, mode string, paperCon
 		// PAPER has an independent persisted profile. The shared account limit
 		// remains the Futures Testnet/LIVE limit and is never widened here.
 		policy.MaxConcurrentPositions = paperConfigured
-		if policy.MaxConcurrentPositions < 1 {
+		if policy.MaxConcurrentPositions < 0 {
 			policy.MaxConcurrentPositions = 1
 		}
 		if policy.MaxConcurrentPositions > paperTrainingMaxConcurrentPositions {

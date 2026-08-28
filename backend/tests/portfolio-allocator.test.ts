@@ -43,6 +43,16 @@ describe('portfolio allocator', () => {
     expect(decision.botAllocations.find((item) => item.botId === 'btc-a')!.allocationAmount).toBeLessThanOrEqual(150);
   });
 
+  it('treats zero monetary ceilings as unlimited', () => {
+    const decision = allocatePortfolio([
+      bot({ botId: 'bot-a' }),
+      bot({ botId: 'bot-b', botName: 'Bot B', symbol: 'ETHUSDT' }),
+    ], { ...risk, maxAccountOpenNotional: 0, maxSymbolOpenNotional: 0, maxOrderNotional: 0 }, config, now);
+    // Zero disables only the persisted monetary ceilings; the allocator's
+    // explicit 30% per-bot diversification setting still applies.
+    expect(decision.allocatedCapital).toBe(600);
+  });
+
   it('fails closed for unsafe modes, missing evidence, drawdown, and emergency switches', () => {
     const decision = allocatePortfolio([
       bot({ botId: 'demo', mode: 'DEMO' }),

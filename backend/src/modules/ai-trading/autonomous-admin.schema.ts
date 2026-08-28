@@ -19,7 +19,7 @@ export const nonCriticalBotSettingsSchema = z.object({
 }).strict();
 export const botCapitalSchema = z.object({
   action: z.enum(['SET', 'ADD']),
-  amountUsdt: z.number().finite().min(1).max(10_000),
+  amountUsdt: z.number().finite().min(1),
   note: z.string().trim().min(3).max(500).optional(),
 }).strict();
 export const testnetActivationSchema = z.object({

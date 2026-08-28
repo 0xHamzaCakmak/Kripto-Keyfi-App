@@ -51,12 +51,12 @@ export function allocatePortfolio(
   const currentSymbolExposure = new Map<string, number>();
   for (const bot of evidence) currentSymbolExposure.set(bot.symbol, (currentSymbolExposure.get(bot.symbol) ?? 0) + Math.max(0, bot.currentExposure));
   const requestedDeployable = config.capital * (1 - config.cashReservePct);
-  const totalRiskCapacity = Math.max(0, risk.maxAccountOpenNotional - currentTotalExposure);
+  const totalRiskCapacity = risk.maxAccountOpenNotional === 0 ? requestedDeployable : Math.max(0, risk.maxAccountOpenNotional - currentTotalExposure);
   const target = Math.min(requestedDeployable, totalRiskCapacity);
   const remainingBotCapacity = new Map(eligible.map((bot) => [bot.botId,
-    Math.max(0, Math.min(config.capital * config.maxBotAllocationPct, risk.maxOrderNotional) - bot.currentExposure)]));
+    Math.max(0, Math.min(config.capital * config.maxBotAllocationPct, unlimitedAs(risk.maxOrderNotional, config.capital)) - bot.currentExposure)]));
   const remainingSymbolCapacity = new Map(eligible.map((bot) => [bot.symbol,
-    Math.max(0, Math.min(config.capital * config.maxSymbolAllocationPct, risk.maxSymbolOpenNotional) - (currentSymbolExposure.get(bot.symbol) ?? 0))]));
+    Math.max(0, Math.min(config.capital * config.maxSymbolAllocationPct, unlimitedAs(risk.maxSymbolOpenNotional, config.capital)) - (currentSymbolExposure.get(bot.symbol) ?? 0))]));
   const amounts = waterfill(eligible, target, remainingBotCapacity, remainingSymbolCapacity);
   const botAllocations = eligible.map((bot) => {
     const amount = roundMoney(amounts.get(bot.botId) ?? 0);
@@ -201,9 +201,11 @@ function allocationScore(bot: PortfolioBotEvidence, risk: PortfolioRiskLimits) {
   const drawdown = 1 - clamp(bot.recentDrawdown / Math.max(risk.maxDrawdownPct, 0.000001));
   const volatility = 1 - clamp(bot.volatility ?? 1);
   const correlation = 1 - clamp(((bot.correlation ?? 1) + 1) / 2);
-  const exposure = 1 - clamp(bot.currentExposure / Math.max(risk.maxOrderNotional, 0.000001));
+  const exposure = risk.maxOrderNotional === 0 ? 1 : 1 - clamp(bot.currentExposure / Math.max(risk.maxOrderNotional, 0.000001));
   return score * 0.35 + regime * 0.25 + drawdown * 0.15 + volatility * 0.1 + correlation * 0.1 + exposure * 0.05;
 }
+
+function unlimitedAs(limit: number, fallback: number) { return limit === 0 ? fallback : limit; }
 
 function waterfill(
   bots: Array<PortfolioBotEvidence & { allocationScore: number }>, target: number,

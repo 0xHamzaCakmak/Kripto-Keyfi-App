@@ -35,8 +35,8 @@ export async function getRiskProfile(userId: string, exchangeAccountId: string) 
 }
 
 export function effectiveAutonomousPositionLimits(configured: number, paperConfigured = 100) {
-  const paper = Math.max(1, Math.min(paperConfigured, 100));
-  return { paper, futuresTestnet: Math.max(1, Math.min(configured, 20)), live: Math.max(1, Math.min(configured, 15)) };
+  const paper = paperConfigured === 0 ? 0 : Math.max(1, Math.min(paperConfigured, 100));
+  return { paper, futuresTestnet: configured === 0 ? 0 : Math.max(1, Math.min(configured, 20)), live: configured === 0 ? 0 : Math.max(1, Math.min(configured, 15)) };
 }
 
 export async function updateRiskProfile(userId: string, exchangeAccountId: string, input: UpdateRiskProfileInput, ipAddress?: string) {
@@ -45,14 +45,14 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
   if (!current) throw new ApiError(503, 'Risk profili hazır değil.', 'RISK_PROFILE_UNAVAILABLE');
   const maxOpenPositions = input.maxOpenPositions ?? current.maxOpenPositions;
   const maxSymbolPositions = input.maxSymbolPositions ?? current.maxSymbolPositions;
-  if (maxSymbolPositions > maxOpenPositions) throw new ApiError(400, 'Parite pozisyon limiti hesap limitini aşamaz.', 'INVALID_RISK_LIMITS');
+  if (maxOpenPositions > 0 && maxSymbolPositions > 0 && maxSymbolPositions > maxOpenPositions) throw new ApiError(400, 'Parite pozisyon limiti hesap limitini aşamaz.', 'INVALID_RISK_LIMITS');
   const botAllocationInput = input.botAllocationUsdt ?? input.testnetBotAllocationUsdt;
   const minimumMarginInput = input.minInitialMarginUsdt ?? input.testnetMinInitialMarginUsdt;
   const botAllocation = Number(botAllocationInput ?? current.testnetBotAllocationUsdt);
   const minimumInitialMargin = Number(minimumMarginInput ?? current.testnetMinInitialMarginUsdt);
   const minimumLeverage = input.minLeverage ?? current.minLeverage;
   const maximumLeverage = input.maxLeverage ?? current.maxLeverage;
-  if (botAllocation > 10_000 || minimumInitialMargin > 1_000 || minimumInitialMargin > botAllocation) {
+  if (!Number.isFinite(botAllocation) || !Number.isFinite(minimumInitialMargin) || botAllocation <= 0 || minimumInitialMargin <= 0 || minimumInitialMargin > botAllocation) {
     throw new ApiError(400, 'Bot kotası/teminat profili geçersiz.', 'INVALID_BOT_SIZING');
   }
   if (minimumLeverage > maximumLeverage) {

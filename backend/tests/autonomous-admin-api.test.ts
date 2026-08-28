@@ -54,9 +54,9 @@ describe('Autonomous Trading Admin API', () => {
     expect(closePaperPositionSchema.safeParse({ stopBot: true, live: true }).success).toBe(false);
   });
 
-  it('bounds audited PAPER/TESTNET capital changes without exposing live execution', () => {
+  it('allows scalable audited PAPER/TESTNET capital without exposing live execution', () => {
     expect(botCapitalSchema.parse({ action: 'SET', amountUsdt: 10_000 })).toEqual({ action: 'SET', amountUsdt: 10_000 });
-    expect(botCapitalSchema.safeParse({ action: 'ADD', amountUsdt: 10_001 }).success).toBe(false);
+    expect(botCapitalSchema.safeParse({ action: 'ADD', amountUsdt: 100_000 }).success).toBe(true);
     expect(botCapitalSchema.safeParse({ action: 'REMOVE', amountUsdt: 10 }).success).toBe(false);
     expect(configuredCapital({ allocationUsdt: 175 }, 100)).toBe(175);
     expect(configuredCapital({}, 100)).toBe(100);

@@ -169,6 +169,26 @@ func TestManualOrderBypassesBotPerOrderSizingLimits(t *testing.T) {
 	}
 }
 
+func TestZeroMonetaryCeilingsAreUnlimited(t *testing.T) {
+	profile := safeProfile()
+	profile.MaxOrderNotional = "0"
+	profile.MaxInitialMargin = "0"
+	profile.MaxAccountOpenNotional = "0"
+	profile.MaxOpenPositions = 0
+	profile.MaxSymbolPositions = 0
+	profile.MaxOrdersPerMinute = 0
+	profile.MaxDailyOrders = 0
+	market := safeMarket()
+	market.balances[0].AvailableBalance = "100000"
+	order := testOrder()
+	order.Source = "SYSTEM"
+	order.Quantity = "1"
+	decision, err := New(&fakeStore{profile: profile, usage: Usage{OrdersLastMinute: 1_000_000, OrdersToday: 1_000_000}}).Evaluate(t.Context(), testAccount(), order, market)
+	if err != nil || decision.Code != "RISK_APPROVED" {
+		t.Fatalf("unlimited monetary ceilings rejected a funded order: %#v err=%v", decision, err)
+	}
+}
+
 func TestEngineCountsUSDCOnlyWhenBinanceMarksItAsMarginAvailable(t *testing.T) {
 	store := &fakeStore{profile: safeProfile()}
 	market := safeMarket()

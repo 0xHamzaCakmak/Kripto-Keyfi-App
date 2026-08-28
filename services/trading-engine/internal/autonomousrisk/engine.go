@@ -97,16 +97,16 @@ func Evaluate(policy Policy, intent Intent, snapshot Snapshot) Decision {
 	}
 	metrics := map[string]any{"equity": text(equity), "projectedPositionSize": text(position), "projectedTotalExposure": text(total), "projectedSymbolExposure": text(symbol),
 		"openPositions": snapshot.OpenPositions, "maxConcurrentPositions": policy.MaxConcurrentPositions, "executionMode": intent.ExecutionMode}
-	if position.Cmp(maxPosition) > 0 {
+	if maxPosition.Sign() > 0 && position.Cmp(maxPosition) > 0 {
 		return reject("RISK_MAX_POSITION_SIZE", "Autonomous position size exceeds policy.", metrics)
 	}
-	if total.Cmp(maxTotal) > 0 {
+	if maxTotal.Sign() > 0 && total.Cmp(maxTotal) > 0 {
 		return reject("RISK_MAX_TOTAL_EXPOSURE", "Total autonomous exposure exceeds policy.", metrics)
 	}
-	if symbol.Cmp(maxSymbol) > 0 {
+	if maxSymbol.Sign() > 0 && symbol.Cmp(maxSymbol) > 0 {
 		return reject("RISK_MAX_SYMBOL_EXPOSURE", "Symbol autonomous exposure exceeds policy.", metrics)
 	}
-	if intent.OpensNewPosition && snapshot.OpenPositions >= policy.MaxConcurrentPositions {
+	if intent.OpensNewPosition && policy.MaxConcurrentPositions > 0 && snapshot.OpenPositions >= policy.MaxConcurrentPositions {
 		return reject("RISK_MAX_CONCURRENT_POSITIONS", "Maximum autonomous concurrent positions reached.", metrics)
 	}
 	if exceedsRatio(snapshot.DailyLoss, snapshot.Equity, policy.MaxDailyLossPct) {
@@ -168,7 +168,7 @@ func Evaluate(policy Policy, intent Intent, snapshot Snapshot) Decision {
 	}
 	checkInput := intent.EntryEvidence
 	checkInput.RiskRewardSatisfied = true
-	checkInput.PositionLimitSatisfied = !intent.OpensNewPosition || snapshot.OpenPositions < policy.MaxConcurrentPositions
+	checkInput.PositionLimitSatisfied = !intent.OpensNewPosition || policy.MaxConcurrentPositions == 0 || snapshot.OpenPositions < policy.MaxConcurrentPositions
 	checklist := entrycheck.Validate(checkInput)
 	if intent.ExecutionMode == "PAPER" {
 		checklist = entrycheck.ValidatePaperTraining(checkInput)
@@ -198,14 +198,18 @@ func validPolicy(policy Policy) bool {
 			return false
 		}
 	}
-	positiveDecimals := []string{policy.MaxTotalExposure, policy.MaxSymbolExposure, policy.MaxPositionSize, policy.MinRiskReward}
-	for _, value := range positiveDecimals {
+	nonNegativeDecimals := []string{policy.MaxTotalExposure, policy.MaxSymbolExposure, policy.MaxPositionSize}
+	for _, value := range nonNegativeDecimals {
 		parsed, ok := decimal(value)
-		if !ok || parsed.Sign() <= 0 {
+		if !ok || parsed.Sign() < 0 {
 			return false
 		}
 	}
-	return policy.MaxLeverage > 0 && policy.MaxConcurrentPositions > 0 && policy.CooldownSeconds >= 0 && policy.MaxConsecutiveLosses > 0 && policy.StopLossRequired
+	minimumReward, ok := decimal(policy.MinRiskReward)
+	if !ok || minimumReward.Sign() <= 0 {
+		return false
+	}
+	return policy.MaxLeverage > 0 && policy.MaxConcurrentPositions >= 0 && policy.CooldownSeconds >= 0 && policy.MaxConsecutiveLosses > 0 && policy.StopLossRequired
 }
 func greater(left, right string) bool {
 	l, lok := decimal(left)
