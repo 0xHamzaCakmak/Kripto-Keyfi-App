@@ -56,6 +56,8 @@ type CycleResult struct {
 	DecisionID            int64
 	RiskApproved          bool
 	PaperExecutionChanged bool
+	ExecutionStatus       string
+	ExecutionReasonCode   string
 }
 
 type TestnetExecutor interface {
@@ -64,6 +66,10 @@ type TestnetExecutor interface {
 
 type TestnetExecutionFailureRecorder interface {
 	RecordFailure(context.Context, int64, error) error
+}
+
+type TestnetPositionMaintainer interface {
+	MaintainPosition(context.Context, Instance, int64, time.Time) error
 }
 
 type Runner interface {
@@ -208,10 +214,26 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 		s.transition(ctx, instance, StateError, "Karar/işlem kaydı tamamlanamadı; güvenli yeniden deneme bekleniyor.", now)
 		return
 	}
+	if decision.HypotheticalOrder != nil && !cycle.RiskApproved {
+		s.logger.Warn("autonomous signal rejected before execution", "bot_id", instance.ID, "decision_id", cycle.DecisionID, "status", cycle.ExecutionStatus, "reason_code", cycle.ExecutionReasonCode)
+	}
 	if (instance.Mode == "PAPER" || instance.Mode == "DEMO") && s.performanceRefreshDue(instance.ID, now, cycle.PaperExecutionChanged) {
 		if refresher, ok := s.store.(PerformanceRefresher); ok {
 			if err := refresher.RefreshBotPerformance(ctx, instance.ID); err != nil {
 				s.logger.Warn("bot performance refresh failed", "bot_id", instance.ID, "mode", instance.Mode, "error", err)
+			}
+		}
+	}
+	if instance.Mode == "DEMO" {
+		if maintainer, ok := s.testnetExecutor.(TestnetPositionMaintainer); ok {
+			if err := maintainer.MaintainPosition(ctx, *instance, cycle.DecisionID, now); err != nil {
+				s.logger.Error("autonomous testnet position maintenance failed", "bot_id", instance.ID, "decision_id", cycle.DecisionID, "error", err)
+				if recorder, ok := s.testnetExecutor.(TestnetExecutionFailureRecorder); ok {
+					if recordErr := recorder.RecordFailure(ctx, cycle.DecisionID, err); recordErr != nil {
+						s.logger.Error("autonomous testnet maintenance failure persistence failed", "bot_id", instance.ID, "decision_id", cycle.DecisionID, "error", recordErr)
+					}
+				}
+				return
 			}
 		}
 	}

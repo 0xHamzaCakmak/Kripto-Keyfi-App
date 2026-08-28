@@ -180,7 +180,7 @@ func TestAutonomousMarketEntryCarriesCompletePlaybookEvidence(t *testing.T) {
 	}
 }
 
-func TestTestnetReentryGuardWaitsForFreshFifteenMinuteCandle(t *testing.T) {
+func TestTestnetReentryDoesNotWaitForFreshFifteenMinuteCandle(t *testing.T) {
 	instance := autonomousMomentumInstance("DEMO")
 	instance.Configuration["signalThresholdBps"] = float64(5)
 	snapshot := trendingSnapshot(1)
@@ -188,8 +188,8 @@ func TestTestnetReentryGuardWaitsForFreshFifteenMinuteCandle(t *testing.T) {
 	snapshot.Candles["15m"][last].OpenTimeMS = 1_777_000_000_000
 	instance.Configuration["testnetReentryAfterCandleOpenMs"] = float64(1_777_000_000_000)
 	decision, err := EvaluateStrategyWithMarket(instance, "209.5", "209", snapshot)
-	if err != nil || decision.Kind != "HOLD" || decision.HypotheticalOrder != nil || decision.Metrics["testnetReentryGuardActive"] != true {
-		t.Fatalf("same-candle TESTNET reentry was not guarded: %#v err=%v", decision, err)
+	if err != nil || decision.Kind != "BUY" || decision.HypotheticalOrder == nil {
+		t.Fatalf("valid same-candle TESTNET reentry was suppressed: %#v err=%v", decision, err)
 	}
 
 	snapshot.Candles["15m"][last].OpenTimeMS += 15 * 60 * 1000

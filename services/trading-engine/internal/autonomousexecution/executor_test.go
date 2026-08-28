@@ -2,12 +2,15 @@ package autonomousexecution
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	tradingv1 "github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/api/v1"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/bot"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange"
 	mysqlstore "github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/storage/mysql"
 )
 
@@ -22,8 +25,10 @@ func (s *fakeStore) CreateAutonomousOrder(_ context.Context, _ bot.Instance, ord
 	s.orders = append(s.orders, order)
 	return nil
 }
-func (s *fakeStore) MarkAutonomousExecution(context.Context, int64, bool, string) error  { return nil }
-func (s *fakeStore) MarkAutonomousExecutionFailure(context.Context, int64, string) error { return nil }
+func (s *fakeStore) MarkAutonomousExecution(context.Context, int64, bool, string) error { return nil }
+func (s *fakeStore) MarkAutonomousExecutionFailure(context.Context, int64, string, string, string) error {
+	return nil
+}
 
 func (s *fakeStore) MarkAutonomousReentryGuard(_ context.Context, _ bot.Instance, candle int64, reason string, _ time.Time) error {
 	s.reentryGuards++
@@ -56,6 +61,11 @@ func (e *fakeExecution) MarketRule(context.Context, domain.ExchangeAccountRef, s
 func (e *fakeExecution) Positions(context.Context, domain.ExchangeAccountRef) ([]domain.Position, error) {
 	if len(e.commands) > 0 && e.positionsAfterPlace != nil {
 		return e.positionsAfterPlace, nil
+	}
+	for _, command := range e.commands {
+		if !command.ReduceOnly && command.Type == domain.OrderMarket {
+			return []domain.Position{{Symbol: command.Symbol, Side: positionSideForOrder(command.Side, false), Quantity: command.Quantity, EntryPrice: "2500", MarkPrice: "2500", Leverage: domain.Decimal("5")}}, nil
+		}
 	}
 	return e.positions, nil
 }
@@ -99,7 +109,7 @@ func TestAlignStopPriceUsesProtectiveDirection(t *testing.T) {
 	}
 }
 
-func TestExecutorGuardsFreshEntryAfterExchangePositionDisappears(t *testing.T) {
+func TestExecutorImmediatelyReentersAfterExchangePositionDisappears(t *testing.T) {
 	store, exchange := &fakeStore{}, &fakeExecution{}
 	executor := &Executor{store: store, execution: exchange}
 	executor.setPositionOpen("account-1:BTCUSDT")
@@ -111,11 +121,11 @@ func TestExecutorGuardsFreshEntryAfterExchangePositionDisappears(t *testing.T) {
 	if err := executor.Execute(t.Context(), instance, decision, 44, time.Now().UTC()); err != nil {
 		t.Fatal(err)
 	}
-	if store.reentryGuards != 1 || store.guardCandle != 1_777_000_000_000 || store.guardReason != "EXCHANGE_POSITION_CLOSED" {
-		t.Fatalf("expected persisted external-close guard, got %#v", store)
+	if store.reentryGuards != 0 {
+		t.Fatalf("external close must not create a candle-long guard, got %#v", store)
 	}
-	if len(exchange.commands) != 0 {
-		t.Fatalf("external close must not be immediately reopened: %#v", exchange.commands)
+	if len(exchange.commands) != 3 || exchange.commands[0].Type != domain.OrderMarket {
+		t.Fatalf("valid signal was not immediately sent after external close: %#v", exchange.commands)
 	}
 }
 
@@ -304,6 +314,37 @@ func TestExecutorClosesExistingPositionWhenTakeProfitWasAlreadyReached(t *testin
 	}
 	if len(exchange.cancels) != 1 || len(store.orders) != 1 {
 		t.Fatalf("expected persisted close and stale protection cleanup: orders=%d cancels=%d", len(store.orders), len(exchange.cancels))
+	}
+}
+
+func TestMaintainerClosesReachedTakeProfitOnHoldDecision(t *testing.T) {
+	store := &fakeStore{}
+	instance := bot.Instance{ID: "bot-1", UserID: "user-1", ExchangeAccountID: "account-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "ETHUSDT", Configuration: map[string]any{"stopLossBps": float64(50), "takeProfitBps": float64(100)}}
+	prefix := botClientPrefix(instance.ID)
+	exchangeClient := &fakeExecution{
+		positions: []domain.Position{{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.01", EntryPrice: "2500", MarkPrice: "2525", Leverage: "5"}},
+		orders:    []domain.Order{{ExchangeOrderID: "take", ClientOrderID: prefix + "t", Symbol: "ETHUSDT", Type: domain.OrderTakeProfitMarket, Quantity: "0.01"}},
+	}
+	if err := (&Executor{store: store, execution: exchangeClient}).MaintainPosition(t.Context(), instance, 46, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if len(exchangeClient.commands) != 1 || exchangeClient.commands[0].Type != domain.OrderMarket || !exchangeClient.commands[0].ReduceOnly {
+		t.Fatalf("HOLD-cycle maintenance did not close reached TP: %#v", exchangeClient.commands)
+	}
+}
+
+func TestExecutionFailureProducesExplicitOutcome(t *testing.T) {
+	status, code, _ := executionFailure(exchange.NewError(domain.ErrorRejected, "INSUFFICIENT_BALANCE", "-2019", false, false))
+	if status != "INSUFFICIENT_BALANCE" || code != "INSUFFICIENT_BALANCE" {
+		t.Fatalf("unexpected balance outcome: %s %s", status, code)
+	}
+	status, code, _ = executionFailure(fmt.Errorf("position sync: %w", exchange.NewError(domain.ErrorUnavailable, "EXCHANGE_UNAVAILABLE", "", true, false)))
+	if status != "RETRYING" || code != "EXCHANGE_UNAVAILABLE" {
+		t.Fatalf("unexpected retry outcome: %s %s", status, code)
+	}
+	status, _, _ = executionFailure(errors.New("invalid autonomous side"))
+	if status != "REJECTED" {
+		t.Fatalf("unexpected permanent failure outcome: %s", status)
 	}
 }
 

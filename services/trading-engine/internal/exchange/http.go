@@ -122,6 +122,9 @@ func classifyHTTPError(status int, exchangeCode string) error {
 	if exchangeCode == "-2013" {
 		return NewError(domain.ErrorUnavailable, "EXCHANGE_ORDER_NOT_VISIBLE", exchangeCode, true, true)
 	}
+	if exchangeCode == "-2019" || exchangeCode == "110007" {
+		return NewError(domain.ErrorRejected, "INSUFFICIENT_BALANCE", exchangeCode, false, false)
+	}
 	return NewError(domain.ErrorRejected, "EXCHANGE_REJECTED", exchangeCode, false, false)
 }
 

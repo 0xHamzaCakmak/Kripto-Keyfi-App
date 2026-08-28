@@ -14,6 +14,7 @@ import (
 	tradingv1 "github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/api/v1"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/bot"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/domain"
+	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/exchange"
 	"github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/execution"
 	mysqlstore "github.com/kriptokeyfi/kripto-keyfi/services/trading-engine/internal/storage/mysql"
 )
@@ -21,7 +22,7 @@ import (
 type Store interface {
 	CreateAutonomousOrder(context.Context, bot.Instance, mysqlstore.AutonomousOrderInput, time.Time) error
 	MarkAutonomousExecution(context.Context, int64, bool, string) error
-	MarkAutonomousExecutionFailure(context.Context, int64, string) error
+	MarkAutonomousExecutionFailure(context.Context, int64, string, string, string) error
 	MarkAutonomousReentryGuard(context.Context, bot.Instance, int64, string, time.Time) error
 }
 
@@ -51,11 +52,57 @@ func New(store Store, service *execution.Service) *Executor {
 // a rejected TESTNET submission only existed in process logs and the UI looked
 // like the decision silently stopped before execution.
 func (e *Executor) RecordFailure(ctx context.Context, decisionID int64, cause error) error {
-	detail := "unknown TESTNET execution failure"
-	if cause != nil {
-		detail = cause.Error()
+	status, code, detail := executionFailure(cause)
+	return e.store.MarkAutonomousExecutionFailure(ctx, decisionID, status, code, detail)
+}
+
+// MaintainPosition runs even for HOLD/rejected entry decisions, so an open
+// position never loses deterministic TP/SL handling when no new entry exists.
+func (e *Executor) MaintainPosition(ctx context.Context, instance bot.Instance, decisionID int64, now time.Time) error {
+	if instance.Type != "AUTONOMOUS" || instance.Mode != "DEMO" || e.execution == nil {
+		return errors.New("autonomous TESTNET executor is disabled")
 	}
-	return e.store.MarkAutonomousExecutionFailure(ctx, decisionID, detail)
+	if instance.Configuration["entryPaused"] == true {
+		return nil
+	}
+	reference := domain.ExchangeAccountRef{ID: instance.ExchangeAccountID, UserID: instance.UserID, Provider: domain.ProviderBinance, Environment: domain.EnvironmentTestnet, AccountType: domain.AccountTypeUSDTM}
+	positions, err := e.execution.Positions(ctx, reference)
+	if err != nil {
+		return fmt.Errorf("POSITION_SYNC_FAILED: read TESTNET positions: %w", err)
+	}
+	orders, err := e.execution.OpenOrders(ctx, reference)
+	if err != nil {
+		return fmt.Errorf("ORDER_SYNC_FAILED: read TESTNET open orders: %w", err)
+	}
+	prefix := botClientPrefix(instance.ID)
+	hedgeMode := instance.Configuration["hedgeModeEnabled"] == true
+	for index := range positions {
+		position := positions[index]
+		if position.Symbol != instance.Symbol || decimalSign(string(position.Quantity)) == 0 {
+			continue
+		}
+		if hedgeMode && !hasBotProtectionForSide(orders, instance.Symbol, prefix, position.Side) {
+			continue
+		}
+		key := instance.ExchangeAccountID + ":" + instance.Symbol
+		if hedgeMode {
+			key += ":" + string(position.Side)
+		}
+		lock := e.lockFor(key)
+		lock.Lock()
+		handled, maintainErr := e.closeReachedProtection(ctx, instance, decisionID, position, orders, reference, now)
+		if maintainErr == nil && !handled && !positionProtectionComplete(position, orders, prefix, instance.Configuration) {
+			maintainErr = e.ensurePositionProtection(ctx, instance, decisionID, position, orders, reference, now)
+		}
+		if handled {
+			e.setPositionClosed(key)
+		}
+		lock.Unlock()
+		if maintainErr != nil {
+			return maintainErr
+		}
+	}
+	return nil
 }
 
 func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision bot.Decision, decisionID int64, now time.Time) error {
@@ -123,15 +170,10 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 			break
 		}
 	}
-	if e.observePosition(executionKey, current != nil) {
-		candleOpenMS := metricInt64(decision.Metrics, "marketDataOpenTimeMs")
-		if candleOpenMS > 0 {
-			if err := e.store.MarkAutonomousReentryGuard(ctx, instance, candleOpenMS, "EXCHANGE_POSITION_CLOSED", now); err != nil {
-				return fmt.Errorf("persist TESTNET external-close reentry guard: %w", err)
-			}
-		}
-		return e.store.MarkAutonomousExecution(ctx, decisionID, false, "exchange position closed outside this execution cycle; waiting for a fresh 15m market signal")
-	}
+	// Refresh state without suppressing a valid signal for the rest of the 15m
+	// candle. The mutex, idempotency key and short scheduler interval remain the
+	// duplicate/exchange-race protection.
+	e.observePosition(executionKey, current != nil)
 	if current != nil {
 		if instance.Configuration["hedgeModeEnabled"] == true && !hasBotProtection(openOrders, instance.Symbol, botClientPrefix(instance.ID)) {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "the existing hedge leg is owned by another bot or manual trade; same-side merge rejected")
@@ -278,6 +320,9 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		_ = e.store.MarkAutonomousExecution(ctx, decisionID, true, "entry and stop submitted; take-profit submission failed")
 		return fmt.Errorf("take-profit submission failed; reduce-only stop remains active: %w", err)
 	}
+	if err := e.verifyOpenedPosition(ctx, reference, instance.Symbol, desiredPositionSide, hedgeMode); err != nil {
+		return err
+	}
 	if err := e.store.MarkAutonomousExecution(ctx, decisionID, true, "entry plus reduce-only stop and take-profit submitted to Binance TESTNET"); err != nil {
 		return err
 	}
@@ -357,6 +402,63 @@ func (e *Executor) setPositionOpen(key string) {
 		e.positionWasOpen = make(map[string]bool)
 	}
 	e.positionWasOpen[key] = true
+}
+
+func (e *Executor) setPositionClosed(key string) {
+	e.positionMu.Lock()
+	defer e.positionMu.Unlock()
+	if e.positionWasOpen == nil {
+		e.positionWasOpen = make(map[string]bool)
+	}
+	e.positionWasOpen[key] = false
+}
+
+func (e *Executor) verifyOpenedPosition(ctx context.Context, reference domain.ExchangeAccountRef, symbol string, side domain.PositionSide, hedgeMode bool) error {
+	for attempt := 0; attempt < 3; attempt++ {
+		positions, err := e.execution.Positions(ctx, reference)
+		if err == nil {
+			for _, position := range positions {
+				if position.Symbol == symbol && decimalSign(string(position.Quantity)) != 0 && (!hedgeMode || position.Side == side || position.Side == "") {
+					return nil
+				}
+			}
+		}
+		if attempt < 2 {
+			timer := time.NewTimer(time.Duration(attempt+1) * 100 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return exchange.NewError(domain.ErrorUnavailable, "ENTRY_POSITION_NOT_CONFIRMED", "", true, true)
+}
+
+func executionFailure(cause error) (status, code, detail string) {
+	status, code, detail = "REJECTED", "EXECUTION_REJECTED", "unknown TESTNET execution failure"
+	if cause == nil {
+		return
+	}
+	detail = cause.Error()
+	var normalized *exchange.Error
+	if errors.As(cause, &normalized) {
+		code = normalized.Normalized.Code
+		if code == "INSUFFICIENT_BALANCE" || code == "RISK_MIN_BALANCE_RESERVE" {
+			status = "INSUFFICIENT_BALANCE"
+		} else if normalized.Normalized.Retryable {
+			status = "RETRYING"
+		}
+		return
+	}
+	upper := strings.ToUpper(detail)
+	if strings.Contains(upper, "BALANCE") || strings.Contains(upper, "MARGIN") || strings.Contains(upper, "ALLOCATION") {
+		status, code = "INSUFFICIENT_BALANCE", "INSUFFICIENT_BALANCE"
+	} else if strings.Contains(upper, "UNAVAILABLE") || strings.Contains(upper, "TIMEOUT") || strings.Contains(upper, "SYNC_FAILED") {
+		status, code = "RETRYING", "TEMPORARY_EXECUTION_ERROR"
+	}
+	return
 }
 
 func metricInt64(metrics map[string]any, key string) int64 {
@@ -950,6 +1052,16 @@ func botClientPrefix(botID string) string {
 func hasBotProtection(orders []domain.Order, symbol, prefix string) bool {
 	for _, order := range orders {
 		if order.Symbol == symbol && strings.HasPrefix(order.ClientOrderID, prefix) &&
+			(order.ReduceOnly || order.Type == domain.OrderStopMarket || order.Type == domain.OrderTakeProfitMarket) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasBotProtectionForSide(orders []domain.Order, symbol, prefix string, side domain.PositionSide) bool {
+	for _, order := range orders {
+		if order.Symbol == symbol && order.PositionSide == side && strings.HasPrefix(order.ClientOrderID, prefix) &&
 			(order.ReduceOnly || order.Type == domain.OrderStopMarket || order.Type == domain.OrderTakeProfitMarket) {
 			return true
 		}

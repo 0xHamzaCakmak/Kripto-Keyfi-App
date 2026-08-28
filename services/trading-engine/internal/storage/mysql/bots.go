@@ -234,9 +234,20 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, UTC_TIMESTAMP(3))`,
 		riskApproved = result.Approved
 		autonomousRiskDecision = &result
 	}
+	executionStatus, executionReasonCode := "HOLD", "HOLD_DECISION"
+	if decision.HypotheticalOrder != nil {
+		executionStatus, executionReasonCode = "PENDING_EXECUTION", "RISK_APPROVED"
+		if !riskApproved {
+			executionStatus = "REJECTED"
+			if autonomousRiskDecision != nil {
+				executionReasonCode = autonomousRiskDecision.Code
+			}
+		}
+	}
 	safetyChecks, err := json.Marshal(map[string]any{
 		"mode": instance.Mode, "riskGatePassed": true, "autonomousRiskApproved": riskApproved,
 		"autonomousRiskDecision": autonomousRiskDecision, "submittedToExchange": false, "orderExecutionAllowed": false,
+		"executionStatus": executionStatus, "executionReasonCode": executionReasonCode,
 	})
 	if err != nil {
 		return bot.CycleResult{}, fmt.Errorf("marshal bot signal safety checks: %w", err)
@@ -331,7 +342,7 @@ FROM trading_bots b JOIN exchange_accounts a ON a.id = b.exchangeAccountId WHERE
 	if err := tx.Commit(); err != nil {
 		return bot.CycleResult{}, fmt.Errorf("commit bot cycle: %w", err)
 	}
-	return bot.CycleResult{DecisionID: decisionID, RiskApproved: riskApproved, PaperExecutionChanged: paperExecution != nil}, nil
+	return bot.CycleResult{DecisionID: decisionID, RiskApproved: riskApproved, PaperExecutionChanged: paperExecution != nil, ExecutionStatus: executionStatus, ExecutionReasonCode: executionReasonCode}, nil
 }
 
 func persistShadowCycle(ctx context.Context, tx *sql.Tx, instance bot.Instance, decision bot.Decision, decisionID int64, now time.Time) (map[string]any, error) {

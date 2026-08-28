@@ -92,16 +92,6 @@ func EvaluateStrategyWithMarket(instance Instance, markPrice, referencePrice str
 	latestCandle := snapshot.Candles["15m"][len(snapshot.Candles["15m"])-1]
 	order["signalKey"] = fmt.Sprintf("%s:%d:%s", instance.Symbol, latestCandle.OpenTimeMS, side)
 	result.Metrics["marketDataOpenTimeMs"] = latestCandle.OpenTimeMS
-	if instance.Mode == "DEMO" {
-		if guardedAfter, configured := numberConfig(instance.Configuration, "testnetReentryAfterCandleOpenMs"); configured && latestCandle.OpenTimeMS <= int64(guardedAfter) {
-			result.Kind = "HOLD"
-			result.Summary = "Manuel/borsa kapanışı sonrası aynı 15 dakikalık mumda yeniden giriş engellendi; yeni mum ve piyasa teyidi bekleniyor."
-			result.Metrics["testnetReentryGuardActive"] = true
-			result.Metrics["testnetReentryAfterCandleOpenMs"] = int64(guardedAfter)
-			result.HypotheticalOrder = nil
-			return result, nil
-		}
-	}
 	family := strings.ToUpper(strings.TrimSpace(instance.StrategyFamily))
 	selected, _ := result.Metrics["selectedSubStrategy"].(string)
 	isMeanReversion := family == "RSI_MEAN_REVERSION" || family == "BOLLINGER_MEAN_REVERSION" || (family == "MULTI_AGENT" && selected == "RANGE_MEAN_REVERSION")
