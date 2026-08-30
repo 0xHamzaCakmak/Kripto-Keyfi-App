@@ -47,6 +47,26 @@ export const closePaperPositionSchema = z.object({
   note: z.string().trim().min(3).max(500).optional(),
 }).strict();
 
+export const manualBotCampaignQuerySchema = z.object({
+  exchangeAccountId: z.string().cuid(),
+}).strict();
+export const manualBotCampaignParamsSchema = z.object({ id: z.string().uuid() }).strict();
+
+export const manualBotCampaignPreviewSchema = z.object({
+  exchangeAccountId: z.string().cuid(),
+  botIds: z.array(z.string().cuid()).min(1).max(100),
+  side: z.enum(['BUY', 'SELL']),
+  initialMarginUsdt: z.number().finite().min(1).max(1_000_000),
+  leverage: z.number().int().min(5).max(20),
+  stopLossPercent: z.number().finite().min(0.1).max(10),
+  takeProfitPercent: z.number().finite().min(0.1).max(20),
+  existingPositionRule: z.literal('SKIP').default('SKIP'),
+}).strict();
+
+export const manualBotCampaignCreateSchema = manualBotCampaignPreviewSchema.extend({
+  confirmation: z.literal('BOTLARA TOPLU EMIR VER'),
+}).strict();
+
 export type TriggerPaperGenerationInput = z.infer<typeof triggerPaperGenerationSchema>;
 export type PromotionReviewInput = z.infer<typeof promotionReviewSchema>;
 export type NonCriticalBotSettingsInput = z.infer<typeof nonCriticalBotSettingsSchema>;
@@ -56,3 +76,5 @@ export type TestnetFleetActivationInput = z.infer<typeof testnetFleetActivationS
 export type PaperFleetActivationInput = z.infer<typeof paperFleetActivationSchema>;
 export type ResetPaperAccountingInput = z.infer<typeof resetPaperAccountingSchema>;
 export type ClosePaperPositionInput = z.infer<typeof closePaperPositionSchema>;
+export type ManualBotCampaignPreviewInput = z.infer<typeof manualBotCampaignPreviewSchema>;
+export type ManualBotCampaignCreateInput = z.infer<typeof manualBotCampaignCreateSchema>;

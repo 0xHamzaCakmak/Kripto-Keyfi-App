@@ -31,7 +31,7 @@ func evaluateAutonomousPaperRisk(ctx context.Context, tx *sql.Tx, instance bot.I
 		StopLoss: textValue(order["stopLoss"]), TakeProfit: textValue(order["takeProfit"]), Quantity: textValue(order["quantity"]), Leverage: intValue(order["leverage"]),
 		EntryEvidence: entrycheck.Input{Regime: textValue(order["marketRegime"]), HigherTimeframeAligned: boolValue(order["higherTimeframeAligned"]),
 			ConfirmedTimeframes: intValue(order["confirmedTimeframes"]), DerivativesAligned: boolValue(order["derivativesAligned"]), ContinuousTraining: boolValue(order["continuousTrainingEntry"]), TestnetTraining: boolValue(order["testnetContinuousEntry"]), TransitionRegimeAccepted: boolValue(order["transitionRegimeAccepted"])},
-		ExecutionMode: instance.Mode, ObservationApproved: boolValue(instance.Configuration["observationApproved"])}
+		ExecutionMode: instance.Mode, ObservationApproved: boolValue(instance.Configuration["observationApproved"]), ManualDirection: boolValue(order["manualDirection"])}
 	// DEMO is the persisted marker for explicitly activated TESTNET execution.
 	// The immutable autonomous policy is evaluated with PAPER semantics first;
 	// the central exchange-aware risk engine evaluates the resulting order again.
@@ -67,6 +67,12 @@ WHERE b.id = ? AND b.userId = ? FOR UPDATE`, instance.ID, instance.UserID).Scan(
 		return autonomousrisk.Decision{}, fmt.Errorf("load autonomous risk profile: %w", err)
 	}
 	policy = autonomousPolicyForMode(policy, instance.Mode, paperMaxOpenPositions)
+	if intent.ManualDirection {
+		// The authenticated campaign itself is the one-shot entry trigger. A
+		// strategy signal cooldown must not discard it; exposure, loss, balance,
+		// leverage, stop and exchange limits remain mandatory below.
+		policy.CooldownSeconds = 0
+	}
 	if instance.Mode == "SHADOW" {
 		shadowErr := tx.QueryRowContext(ctx, `SELECT CAST(netQuantity AS CHAR), CAST(cumulativePnl AS CHAR),
 CAST(unrealizedPnl AS CHAR), CAST(totalFees AS CHAR), CAST(markPrice AS CHAR), occurredAt
@@ -83,7 +89,11 @@ FROM shadow_trades WHERE tradingBotId = ? ORDER BY id DESC LIMIT 1`, instance.ID
 	// A bot's configured PAPER/TESTNET allocation is cash margin. Its position
 	// boundary is allocation x leverage; TESTNET also remains capped by the
 	// persisted admin risk profile and the exchange-aware central Risk Engine.
-	if allocation, ok := numericBotConfiguration(instance.Configuration["allocationUsdt"]); ok && allocation > 0 {
+	allocationValue := instance.Configuration["allocationUsdt"]
+	if intent.ManualDirection {
+		allocationValue = order["manualInitialMarginUsdt"]
+	}
+	if allocation, ok := numericBotConfiguration(allocationValue); ok && allocation > 0 {
 		configuredLimit := allocation
 		if instance.Mode == "PAPER" || (instance.Mode == "DEMO" && instance.Configuration["testnetMarginAllocationMode"] == true) {
 			configuredLimit *= float64(maxIntValue(intent.Leverage, 1))

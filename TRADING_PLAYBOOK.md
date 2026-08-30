@@ -1,6 +1,6 @@
 # Trading Playbook — KriptoKeyfi Bot Ordusu
 
-**Versiyon:** v1.0
+**Versiyon:** v1.1
 **Amaç:** Bu dosya, otonom trading botlarının (Candidate → Challenger → Champion → Live Eligible) karar motoruna beslenecek kural setidir. Bot bir LLM tabanlı karar veriyorsa bu dosya system prompt / context olarak verilir. Rule-engine tabanlıysa buradaki eşikler doğrudan koda çevrilir.
 
 **Güncelleme kuralı:** Bu dosya statik değildir. Researcher modülü Trade Memory'yi periyodik taradıkça yeni bulgular buraya eklenir ve versiyon numarası artırılır (v1.0 → v1.1 ...). Her versiyon, önceki versiyonla A/B test edilir; kazanan versiyon ana playbook olur.
@@ -74,6 +74,15 @@ Bot, pozisyon açmadan önce mevcut rejimi sınıflandırmalı:
 4. **A/B test:** Yeni versiyon sadece yeni Candidate botlara verilir; eski versiyon mevcut Champion'larda kalır. N işlem sonra iki grup karşılaştırılır.
 5. **Terfi/rotasyon:** Kazanan versiyon ana playbook olur, kaybeden versiyon arşivlenir (geri dönüş için saklanır, silinmez).
 
+## 9. Yönetici Kontrollü Toplu TESTNET İşlemi
+
+- Yönetici, seçili DEMO botları için tek seferlik LONG/SHORT yön talimatı verebilir. Bu talimat piyasa yönü kanıtının yerini alır; kaldıraç, risk/ödül, pozisyon limiti, bakiye, margin, sembol ve borsa kontrollerini kaldırmaz.
+- Her kampanya yalnız `MARKET + ISOLATED` giriş kullanır ve her bot için reduce-only stop-loss ile take-profit oluşturur.
+- Açık pozisyonu, bekleyen talimatı veya durdurulmuş execution durumu bulunan bot varsayılan olarak atlanır. Mevcut pozisyon otomatik büyütülmez veya ters çevrilmez.
+- Manuel bot pozisyonu açıkken stratejinin yeni otomatik girişleri bekletilir; TP/SL bakımı devam eder. Pozisyon kapandığında manuel kontrol temizlenir ve bot normal karar akışına döner.
+- Kampanyanın her bot sonucu `QUEUED`, `PENDING_EXECUTION`, `EXECUTED`, `REJECTED`, `RETRYING`, `INSUFFICIENT_BALANCE` veya açıklayıcı bir güvenli atlama koduyla kalıcı olarak kaydedilir.
+- Bu özellik yalnız Binance TESTNET/DEMO içindir; Production LIVE yetkisi vermez.
+
 ---
 
 ## Değişiklik Geçmişi
@@ -81,3 +90,4 @@ Bot, pozisyon açmadan önce mevcut rejimi sınıflandırmalı:
 | Versiyon | Tarih | Değişiklik |
 |---|---|---|
 | v1.0 | — | İlk sürüm |
+| v1.1 | 29.08.2026 | Yönetici kontrollü toplu TESTNET bot kampanyası ve manuel pozisyon kontrol yaşam döngüsü eklendi. |

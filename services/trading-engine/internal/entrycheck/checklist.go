@@ -48,6 +48,20 @@ type Result struct {
 	Failed []string
 }
 
+// ValidateManualDirection preserves immutable risk/reward and position limits
+// while treating the authenticated administrator as the directional evidence.
+// It is only selected by the DEMO risk adapter for an auditable campaign item.
+func ValidateManualDirection(input Input) Result {
+	failed := make([]string, 0, 2)
+	if !input.RiskRewardSatisfied {
+		failed = append(failed, "MINIMUM_RISK_REWARD")
+	}
+	if !input.PositionLimitSatisfied {
+		failed = append(failed, "POSITION_LIMIT")
+	}
+	return Result{Passed: len(failed) == 0, Failed: failed}
+}
+
 func Validate(input Input) Result {
 	failed := make([]string, 0, 6)
 	regime := strings.ToUpper(strings.TrimSpace(input.Regime))

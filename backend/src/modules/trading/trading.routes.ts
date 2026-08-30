@@ -47,8 +47,8 @@ import { evaluateLiveEligible } from '../ai-trading/live-eligibility.controller.
 import { runLiveEligibilityBodySchema } from '../ai-trading/live-eligibility.schema.js';
 import { autonomousAudit, systemHealth } from '../ai-trading/autonomous-observability.controller.js';
 import { autonomousAuditQuerySchema } from '../ai-trading/autonomous-observability.schema.js';
-import { activateTestnet, activateTestnetFleet, archive, arenaStatus, autonomousOverview, capital, generations, liveEligibilityStatus, pausePaperBot, promotion, resetTestnetAccounting, resumePaperBot, settings, testnetAccountSummary, testnetBotOperation, testnetOperations } from '../ai-trading/autonomous-admin.controller.js';
-import { autonomousBotParamsSchema, autonomousGenerationQuerySchema, botCapitalSchema, nonCriticalBotSettingsSchema, promotionReviewSchema, resetTestnetAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema } from '../ai-trading/autonomous-admin.schema.js';
+import { activateTestnet, activateTestnetFleet, archive, arenaStatus, autonomousOverview, capital, generations, liveEligibilityStatus, manualBotCampaign, manualBotCampaignCandidates, manualBotCampaignPreview, pausePaperBot, promotion, queueManualBotCampaign, resetTestnetAccounting, resumePaperBot, settings, testnetAccountSummary, testnetBotOperation, testnetOperations } from '../ai-trading/autonomous-admin.controller.js';
+import { autonomousBotParamsSchema, autonomousGenerationQuerySchema, botCapitalSchema, manualBotCampaignCreateSchema, manualBotCampaignParamsSchema, manualBotCampaignPreviewSchema, manualBotCampaignQuerySchema, nonCriticalBotSettingsSchema, promotionReviewSchema, resetTestnetAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema } from '../ai-trading/autonomous-admin.schema.js';
 import { addUniverseAsset, changeTradingUniverseAsset, searchUniverse, tradingUniverse } from '../ai-trading/trading-universe.controller.js';
 import { addTradingUniverseAssetSchema, searchTradingUniverseSchema, tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../ai-trading/trading-universe.schema.js';
 import { coinPerformance } from '../ai-trading/coin-performance.controller.js';
@@ -73,6 +73,10 @@ tradingRouter.get('/autonomous/generations', validateRequest({ query: autonomous
 tradingRouter.get('/autonomous/live-eligibility', asyncHandler(liveEligibilityStatus));
 tradingRouter.get('/autonomous/testnet-operations', asyncHandler(testnetOperations));
 tradingRouter.get('/autonomous/testnet-account-summary', asyncHandler(testnetAccountSummary));
+tradingRouter.get('/autonomous/manual-bot-campaigns/candidates', validateRequest({ query: manualBotCampaignQuerySchema }), asyncHandler(manualBotCampaignCandidates));
+tradingRouter.post('/autonomous/manual-bot-campaigns/preview', validateRequest({ body: manualBotCampaignPreviewSchema }), asyncHandler(manualBotCampaignPreview));
+tradingRouter.post('/autonomous/manual-bot-campaigns', validateRequest({ body: manualBotCampaignCreateSchema }), asyncHandler(queueManualBotCampaign));
+tradingRouter.get('/autonomous/manual-bot-campaigns/:id', validateRequest({ params: manualBotCampaignParamsSchema }), asyncHandler(manualBotCampaign));
 tradingRouter.post('/autonomous/testnet-accounting/reset', validateRequest({ body: resetTestnetAccountingSchema }), asyncHandler(resetTestnetAccounting));
 tradingRouter.get('/autonomous/testnet-operations/:id', validateRequest({ params: autonomousBotParamsSchema }), asyncHandler(testnetBotOperation));
 tradingRouter.post('/autonomous/bots/:id/activate-testnet', validateRequest({ params: autonomousBotParamsSchema, body: testnetActivationSchema }), asyncHandler(activateTestnet));

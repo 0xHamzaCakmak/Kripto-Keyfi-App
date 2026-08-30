@@ -36,6 +36,9 @@ func (s *fakeStore) MarkAutonomousReentryGuard(_ context.Context, _ bot.Instance
 	s.guardReason = reason
 	return nil
 }
+func (s *fakeStore) ClearManualPositionControl(context.Context, bot.Instance, domain.PositionSide, time.Time) error {
+	return nil
+}
 
 type fakeExecution struct {
 	positions           []domain.Position
@@ -179,8 +182,8 @@ func TestExecutorPyramidsSameDirectionWithinAllocationAndResizesProtection(t *te
 			{Symbol: "ETHUSDT", Side: domain.PositionLong, Quantity: "0.024", EntryPrice: "2500", MarkPrice: "2500", Leverage: "7"},
 		},
 		orders: []domain.Order{
-			{ExchangeOrderID: "old-stop", ClientOrderID: prefix + "olds", Symbol: "ETHUSDT", Type: domain.OrderStopMarket, Quantity: "0.02"},
-			{ExchangeOrderID: "old-take", ClientOrderID: prefix + "oldt", Symbol: "ETHUSDT", Type: domain.OrderTakeProfitMarket, Quantity: "0.02"},
+			{ExchangeOrderID: "old-stop", ClientOrderID: prefix + "olds", Symbol: "ETHUSDT", PositionSide: domain.PositionLong, Type: domain.OrderStopMarket, Quantity: "0.02"},
+			{ExchangeOrderID: "old-take", ClientOrderID: prefix + "oldt", Symbol: "ETHUSDT", PositionSide: domain.PositionLong, Type: domain.OrderTakeProfitMarket, Quantity: "0.02"},
 		},
 	}
 	decision := bot.Decision{HypotheticalOrder: map[string]any{"side": "BUY", "quantity": "0.01", "stopLoss": "2400", "takeProfit": "2700", "leverage": 19}}
@@ -203,6 +206,30 @@ func TestExecutorPyramidsSameDirectionWithinAllocationAndResizesProtection(t *te
 	}
 	if len(exchange.cancels) != 2 || len(store.orders) != 3 {
 		t.Fatalf("full-position protection was not resized: cancels=%d stored=%d", len(exchange.cancels), len(store.orders))
+	}
+}
+
+func TestExecutorOpeningOppositeHedgeLegPreservesExistingProtection(t *testing.T) {
+	store := &fakeStore{}
+	instance := bot.Instance{ID: "bot-1", UserID: "user-1", ExchangeAccountID: "account-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "ETHUSDT"}
+	instance.Configuration = map[string]any{"hedgeModeEnabled": true}
+	prefix := botClientPrefix(instance.ID)
+	exchange := &fakeExecution{
+		positions: []domain.Position{{Symbol: "ETHUSDT", Side: domain.PositionShort, Quantity: "0.02", EntryPrice: "2500", MarkPrice: "2520", Leverage: "5"}},
+		orders: []domain.Order{
+			{ExchangeOrderID: "short-stop", ClientOrderID: prefix + "shorts", Symbol: "ETHUSDT", PositionSide: domain.PositionShort, Type: domain.OrderStopMarket, Quantity: "0.02", ReduceOnly: true},
+			{ExchangeOrderID: "short-take", ClientOrderID: prefix + "shortt", Symbol: "ETHUSDT", PositionSide: domain.PositionShort, Type: domain.OrderTakeProfitMarket, Quantity: "0.02", ReduceOnly: true},
+		},
+	}
+	decision := bot.Decision{HypotheticalOrder: map[string]any{"side": "BUY", "quantity": "0.01", "stopLoss": "2400", "takeProfit": "2700", "leverage": 5}}
+	if err := (&Executor{store: store, execution: exchange}).Execute(t.Context(), instance, decision, 461, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if len(exchange.cancels) != 0 {
+		t.Fatalf("opening LONG hedge leg canceled SHORT protection: %#v", exchange.cancels)
+	}
+	if len(exchange.commands) != 3 || exchange.commands[0].PositionSide != domain.PositionLong || exchange.commands[1].PositionSide != domain.PositionLong || exchange.commands[2].PositionSide != domain.PositionLong {
+		t.Fatalf("opposite hedge leg was not opened and protected independently: %#v", exchange.commands)
 	}
 }
 

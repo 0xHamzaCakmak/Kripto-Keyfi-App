@@ -163,3 +163,22 @@ func TestAutonomousRunnerSeparatesPaperTrainingFromTestnetDerivativesGate(t *tes
 		t.Fatalf("TESTNET derivatives gate was relaxed: %#v err=%v", decision, err)
 	}
 }
+
+func TestManualBotInstructionProducesOneShotProtectedDecision(t *testing.T) {
+	instance := Instance{ID: "bot-1", Type: "AUTONOMOUS", Mode: "DEMO", Symbol: "ETHUSDT", Configuration: map[string]any{
+		"manualBotEntry": map[string]any{
+			"id": "item-1", "campaignId": "campaign-1", "side": "SELL", "initialMarginUsdt": float64(100),
+			"leverage": float64(10), "stopLossBps": float64(50), "takeProfitBps": float64(100),
+		},
+	}}
+	decision, ok := manualBotEntryDecision(instance, "100", "99")
+	if !ok || decision.Kind != "SELL" || decision.HypotheticalOrder == nil {
+		t.Fatalf("manual instruction did not produce a decision: %#v", decision)
+	}
+	if decision.HypotheticalOrder["quantity"] != "10.000000000000000000" || decision.HypotheticalOrder["stopLoss"] != "100.500000000000000000" || decision.HypotheticalOrder["takeProfit"] != "99.000000000000000000" {
+		t.Fatalf("manual sizing/protection is incorrect: %#v", decision.HypotheticalOrder)
+	}
+	if decision.Metrics["manualCampaignItemId"] != "item-1" || decision.HypotheticalOrder["manualDirection"] != true {
+		t.Fatalf("manual audit metadata is missing: %#v", decision)
+	}
+}

@@ -9,9 +9,11 @@ import type {
   autonomousGenerationQuerySchema, botCapitalSchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema,
   closePaperPositionSchema, paperFleetActivationSchema, promotionReviewSchema, resetPaperAccountingSchema, resetTestnetAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema, triggerPaperGenerationSchema,
 } from './autonomous-admin.schema.js';
+import type { ManualBotCampaignCreateInput, ManualBotCampaignPreviewInput } from './autonomous-admin.schema.js';
 import { autonomousDTO } from './autonomous-admin.service.js';
 import { createFactoryBot } from './bot-factory.service.js';
 import { getTestnetAccountSummary, getTestnetBotOperation, listTestnetBotOperations, resetTestnetAccountingCheckpoint } from './testnet-operations.service.js';
+import { createManualBotCampaign, getManualBotCampaign, listManualBotCampaignCandidates, previewManualBotCampaign } from './manual-bot-campaign.service.js';
 
 export async function autonomousOverview(req: Request, res: Response) { return success(res, await getAutonomousOverview(req.user!.id)); }
 export async function arenaStatus(req: Request, res: Response) { return success(res, await getArenaStatus(req.user!.id)); }
@@ -62,4 +64,16 @@ export async function testnetAccountSummary(req: Request, res: Response) { retur
 export async function resetTestnetAccounting(req: Request, res: Response) {
   const body = req.body as z.infer<typeof resetTestnetAccountingSchema>;
   return success(res, await resetTestnetAccountingCheckpoint(req.user!.id, body.note, req.ip), 201);
+}
+export async function manualBotCampaignCandidates(req: Request, res: Response) {
+  return success(res, await listManualBotCampaignCandidates(req.user!.id, req.query.exchangeAccountId as string));
+}
+export async function manualBotCampaignPreview(req: Request, res: Response) {
+  return success(res, await previewManualBotCampaign(req.user!.id, req.body as ManualBotCampaignPreviewInput));
+}
+export async function queueManualBotCampaign(req: Request, res: Response) {
+  return success(res, await createManualBotCampaign(req.user!.id, req.body as ManualBotCampaignCreateInput, req.ip), 202);
+}
+export async function manualBotCampaign(req: Request, res: Response) {
+  return success(res, await getManualBotCampaign(req.user!.id, req.params.id as string));
 }

@@ -23,7 +23,7 @@ type Intent struct {
 	RiskReducing, OpensNewPosition                                     bool
 	EntryEvidence                                                      entrycheck.Input
 	ExecutionMode                                                      string
-	ObservationApproved                                                bool
+	ObservationApproved, ManualDirection                               bool
 }
 
 type Snapshot struct {
@@ -170,7 +170,9 @@ func Evaluate(policy Policy, intent Intent, snapshot Snapshot) Decision {
 	checkInput.RiskRewardSatisfied = true
 	checkInput.PositionLimitSatisfied = !intent.OpensNewPosition || policy.MaxConcurrentPositions == 0 || snapshot.OpenPositions < policy.MaxConcurrentPositions
 	checklist := entrycheck.Validate(checkInput)
-	if intent.ExecutionMode == "PAPER" {
+	if intent.ManualDirection && intent.ExecutionMode == "DEMO" {
+		checklist = entrycheck.ValidateManualDirection(checkInput)
+	} else if intent.ExecutionMode == "PAPER" {
 		checklist = entrycheck.ValidatePaperTraining(checkInput)
 	} else if intent.ExecutionMode == "DEMO" && checkInput.TestnetTraining {
 		checklist = entrycheck.ValidateTestnetTraining(checkInput)

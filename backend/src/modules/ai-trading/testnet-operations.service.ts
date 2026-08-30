@@ -147,7 +147,7 @@ async function loadOperations(userId: string) {
     const protection = snapshot.orders.filter((item) => item.symbol === bot.symbol && item.clientOrderId.startsWith(prefix));
     const fills = persisted.filter((item) => item.tradingBotId === bot.id).slice(0, 200).map(persistedFillView);
     const realizedPnl = fills.reduce((sum, item) => sum + Number(item.realizedPnl), 0);
-    const commission = fills.filter((item) => item.commissionAsset === 'USDT').reduce((sum, item) => sum + Number(item.commission), 0);
+    const commission = fills.filter((item) => isUsdStablecoin(item.commissionAsset)).reduce((sum, item) => sum + Number(item.commission), 0);
     const closing = fills.filter((item) => item.reduceOnly && Number(item.realizedPnl) !== 0);
     const botDecisions = recentDecisions.filter((decision) => decision.tradingBotId === bot.id);
     const latestDecision = botDecisions[0] ?? null;
@@ -321,7 +321,11 @@ function numericConfig(value: unknown, key: string) {
   return Number.isFinite(number) ? number : null;
 }
 function trigger(orders: ExchangeOrder[], type: string) { return orders.find((item) => item.type === type)?.stopPrice ?? null; }
-function netPnl(trade: ExchangeTrade) { return Number(trade.realizedPnl) - (trade.commissionAsset === 'USDT' ? Number(trade.commission) : 0); }
+function isUsdStablecoin(asset: string) { return asset === 'USDT' || asset === 'USDC'; }
+export function stablecoinNetPnl(realizedPnl: string | number, commission: string | number, commissionAsset: string) {
+  return Number(realizedPnl) - (isUsdStablecoin(commissionAsset) ? Number(commission) : 0);
+}
+function netPnl(trade: ExchangeTrade) { return stablecoinNetPnl(trade.realizedPnl, trade.commission, trade.commissionAsset); }
 function positionView(position: ExchangePosition) {
   const notional = Math.abs(Number(position.quantity) * Number(position.markPrice));
   const margin = notional / Math.max(Number(position.leverage), 1);
@@ -334,7 +338,9 @@ function persistedFillView(fill: Awaited<ReturnType<typeof prisma.testnetExecuti
     tradeId: fill.tradeId, exchangeOrderId: fill.exchangeOrderId, botId: fill.tradingBotId, symbol: fill.symbol,
     side: fill.side, positionSide: fill.positionSide, price: fill.price.toString(), quantity: fill.quantity.toString(), quoteQuantity: fill.quoteQuantity.toString(),
     realizedPnl: fill.realizedPnl.toString(), commission: fill.commission.toString(), commissionAsset: fill.commissionAsset,
-    netRealizedPnl: Number(fill.netRealizedPnl), maker: fill.maker, occurredAt: fill.occurredAt.toISOString(),
+    // Recalculate at read time so fills stored before USDC fee support are also
+    // displayed correctly without requiring a destructive ledger migration.
+    netRealizedPnl: stablecoinNetPnl(fill.realizedPnl.toString(), fill.commission.toString(), fill.commissionAsset), maker: fill.maker, occurredAt: fill.occurredAt.toISOString(),
     orderType: fill.orderType, reduceOnly: fill.reduceOnly, clientOrderId: fill.clientOrderId, strategyVersionId: fill.strategyVersionId,
   };
 }

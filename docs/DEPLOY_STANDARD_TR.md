@@ -100,3 +100,31 @@ curl -fsS http://127.0.0.1:8081/health/ready
 npm --prefix backend run status:ai-fleet
 npm --prefix backend run status:testnet-runtime
 npm --prefix backend run configure:testnet-hedge-mode
+
+------------------------------------------------------------------------------
+
+100.000 USDT hesap için aynı %80 kullanım / %20 rezerv modeli:
+Bot başına teminat kotası:            4.000
+Asgari işlem teminatı:                  500
+Emir başına azami başlangıç teminatı: 4.000
+Emir başına azami notional:          80.000
+Hesap açık notional limiti:       1.600.000
+Parite açık notional limiti:         160.000
+Korunacak minimum bakiye:             20.000
+Azami açık pozisyon:                      20
+Parite başına pozisyon:                    2
+Dakikalık/Günlük emir limiti:              0
+---------------------------------------------------------------------------------
+10.000 USDT testnet bakiye için örnek:
+Bot başına teminat kotası:             400
+Asgari işlem teminatı:                 100
+Emir başına azami başlangıç teminatı:  400
+Emir başına azami notional:          8.000
+Hesap açık notional limiti:        160.000
+Parite açık notional limiti:        16.000
+Korunacak minimum bakiye:            2.000
+Azami kaldıraç:                         20
+Azami açık pozisyon:                    20
+Parite başına pozisyon:                  2
+Dakikalık emir limiti:                    0
+Günlük emir limiti:                       0

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -140,6 +142,13 @@ func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision,
 	if err != nil {
 		return Decision{}, err
 	}
+	if manual, ok := manualBotEntryDecision(instance, string(markPrice), referencePrice); ok {
+		return manual, nil
+	}
+	if _, controlled := instance.Configuration["manualPositionControl"].(map[string]any); controlled {
+		return Decision{Kind: "HOLD", Summary: "Manuel bot pozisyonu kapanana kadar otomatik yeni girişler bekletiliyor.", MarkPrice: string(markPrice), ReferencePrice: referencePrice,
+			Metrics: map[string]any{"manualPositionControl": true}}, nil
+	}
 	if instance.Type == "AUTONOMOUS" {
 		snapshot := MarketSnapshot{Candles: make(map[string][]domain.MarketCandle)}
 		for _, request := range []struct {
@@ -173,6 +182,45 @@ func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision,
 		return EvaluateStrategyWithMarket(instance, string(markPrice), referencePrice, snapshot)
 	}
 	return EvaluateStrategy(instance, string(markPrice), referencePrice)
+}
+
+func manualBotEntryDecision(instance Instance, markPrice, referencePrice string) (Decision, bool) {
+	instruction, ok := instance.Configuration["manualBotEntry"].(map[string]any)
+	if !ok || instance.Type != "AUTONOMOUS" || instance.Mode != "DEMO" {
+		return Decision{}, false
+	}
+	id, idOK := instruction["id"].(string)
+	campaignID, campaignOK := instruction["campaignId"].(string)
+	side, sideOK := instruction["side"].(string)
+	margin, marginOK := numberConfig(instruction, "initialMarginUsdt")
+	leverageValue, leverageOK := numberConfig(instruction, "leverage")
+	stopBps, stopOK := numberConfig(instruction, "stopLossBps")
+	takeBps, takeOK := numberConfig(instruction, "takeProfitBps")
+	mark, markOK := decimalRat(markPrice)
+	leverage := int(leverageValue)
+	if !idOK || !campaignOK || !sideOK || !marginOK || !leverageOK || !stopOK || !takeOK || !markOK ||
+		id == "" || campaignID == "" || (side != "BUY" && side != "SELL") || margin <= 0 || leverage < 5 || leverage > 20 || stopBps <= 0 || takeBps <= 0 || mark.Sign() <= 0 {
+		return Decision{Kind: "HOLD", Summary: "Manuel bot talimatı geçersiz; güvenli biçimde emir üretilmedi.", MarkPrice: markPrice, ReferencePrice: referencePrice,
+			Metrics: map[string]any{"manualBotInstruction": true, "manualCampaignItemId": id, "manualCampaignId": campaignID, "manualInstructionInvalid": true}}, true
+	}
+	marginRat, _ := new(big.Rat).SetString(strconv.FormatFloat(margin, 'f', 8, 64))
+	notional := new(big.Rat).Mul(marginRat, big.NewRat(int64(leverage), 1))
+	quantity := new(big.Rat).Quo(notional, mark).FloatString(18)
+	stop, take, protectionErr := protectionPrices(markPrice, side, stopBps, takeBps)
+	if protectionErr != nil {
+		return Decision{Kind: "HOLD", Summary: "Manuel bot koruma fiyatları hesaplanamadı.", MarkPrice: markPrice, ReferencePrice: referencePrice,
+			Metrics: map[string]any{"manualBotInstruction": true, "manualCampaignItemId": id, "manualCampaignId": campaignID, "manualInstructionInvalid": true}}, true
+	}
+	return Decision{
+		Kind: side, Summary: "Admin tarafından verilen tek seferlik manuel bot yön talimatı.", MarkPrice: markPrice, ReferencePrice: referencePrice,
+		Metrics: map[string]any{"manualBotInstruction": true, "manualCampaignItemId": id, "manualCampaignId": campaignID, "manualDirection": true},
+		HypotheticalOrder: map[string]any{
+			"symbol": instance.Symbol, "side": side, "quantity": quantity, "leverage": leverage, "price": markPrice,
+			"stopLoss": stop, "takeProfit": take, "stopLossBps": stopBps, "takeProfitBps": takeBps,
+			"marginMode": "ISOLATED", "manualDirection": true, "manualInitialMarginUsdt": margin,
+			"manualCampaignItemId": id, "manualCampaignId": campaignID, "submittedToExchange": false,
+		},
+	}, true
 }
 
 func (r *StrategyRunner) getRecentCandles(ctx context.Context, factory PriceReaderFactory, account MarketAccount, mode, symbol, interval string, limit int) ([]domain.MarketCandle, error) {

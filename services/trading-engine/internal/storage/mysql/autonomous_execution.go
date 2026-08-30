@@ -37,7 +37,23 @@ func (s *AccountStore) MarkAutonomousExecution(ctx context.Context, decisionID i
 		return err
 	}
 	for attempt := 1; attempt <= mysqlTransactionAttempts; attempt++ {
-		_, err = s.database.ExecContext(ctx, `UPDATE trading_bot_signals SET safetyChecks = ? WHERE decisionId = ? AND source = 'RULE_ENGINE'`, safety, decisionID)
+		tx, beginErr := s.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+		if beginErr != nil {
+			return beginErr
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE trading_bot_signals SET safetyChecks = ? WHERE decisionId = ? AND source = 'RULE_ENGINE'`, safety, decisionID)
+		if err == nil {
+			campaignStatus := status
+			if !submitted {
+				campaignStatus = "REJECTED"
+			}
+			err = updateManualCampaignExecution(ctx, tx, decisionID, campaignStatus, status, detail, submitted, true)
+		}
+		if err == nil {
+			err = tx.Commit()
+		} else {
+			_ = tx.Rollback()
+		}
 		if err == nil || !isRetryableMySQLTransactionError(err) || attempt == mysqlTransactionAttempts {
 			return err
 		}
@@ -53,11 +69,23 @@ func (s *AccountStore) MarkAutonomousExecution(ctx context.Context, decisionID i
 // exchange but a later protective-order step failed.
 func (s *AccountStore) MarkAutonomousExecutionFailure(ctx context.Context, decisionID int64, status, code, detail string) error {
 	for attempt := 1; attempt <= mysqlTransactionAttempts; attempt++ {
-		_, err := s.database.ExecContext(ctx, `UPDATE trading_bot_signals
+		tx, beginErr := s.database.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+		if beginErr != nil {
+			return beginErr
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE trading_bot_signals
 SET safetyChecks = JSON_SET(COALESCE(safetyChecks, JSON_OBJECT()),
   '$.mode', 'DEMO', '$.orderExecutionAllowed', true, '$.environment', 'TESTNET',
   '$.productionLive', false, '$.executionStatus', ?, '$.executionReasonCode', ?, '$.executionError', ?)
 WHERE decisionId = ? AND source = 'RULE_ENGINE'`, status, code, detail, decisionID)
+		if err == nil {
+			err = updateManualCampaignExecution(ctx, tx, decisionID, status, code, detail, false, status != "RETRYING")
+		}
+		if err == nil {
+			err = tx.Commit()
+		} else {
+			_ = tx.Rollback()
+		}
 		if err == nil || !isRetryableMySQLTransactionError(err) || attempt == mysqlTransactionAttempts {
 			return err
 		}
@@ -66,6 +94,58 @@ WHERE decisionId = ? AND source = 'RULE_ENGINE'`, status, code, detail, decision
 		}
 	}
 	return nil
+}
+
+func updateManualCampaignExecution(ctx context.Context, tx *sql.Tx, decisionID int64, status, code, detail string, submitted, clearInstruction bool) error {
+	result, err := tx.ExecContext(ctx, `UPDATE manual_bot_campaign_items i
+JOIN trading_bot_decisions d ON d.id = ? AND JSON_UNQUOTE(JSON_EXTRACT(d.metrics, '$.manualCampaignItemId')) = i.id
+SET i.status = IF(i.status = 'EXECUTED', i.status, ?), i.reasonCode = ?, i.detail = ?, i.attemptedAt = UTC_TIMESTAMP(3),
+    i.executedAt = IF(?, UTC_TIMESTAMP(3), i.executedAt), i.decisionId = d.id, i.updatedAt = UTC_TIMESTAMP(3)`,
+		decisionID, status, code, detail, submitted)
+	if err != nil {
+		return err
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return nil
+	}
+	if clearInstruction {
+		if submitted {
+			_, err = tx.ExecContext(ctx, `UPDATE trading_bots b
+JOIN trading_bot_decisions d ON d.id = ? AND d.tradingBotId = b.id
+SET b.configuration = JSON_SET(JSON_REMOVE(b.configuration, '$.manualBotEntry'), '$.manualPositionControl',
+  JSON_SET(JSON_EXTRACT(b.configuration, '$.manualBotEntry'), '$.positionSide',
+    IF(JSON_UNQUOTE(JSON_EXTRACT(b.configuration, '$.manualBotEntry.side')) = 'BUY', 'LONG', 'SHORT'))),
+  b.version = b.version + 1
+WHERE JSON_UNQUOTE(JSON_EXTRACT(b.configuration, '$.manualBotEntry.id')) = JSON_UNQUOTE(JSON_EXTRACT(d.metrics, '$.manualCampaignItemId'))`, decisionID)
+		} else {
+			_, err = tx.ExecContext(ctx, `UPDATE trading_bots b
+JOIN trading_bot_decisions d ON d.id = ? AND d.tradingBotId = b.id
+SET b.configuration = JSON_REMOVE(b.configuration, '$.manualBotEntry'), b.version = b.version + 1
+WHERE JSON_UNQUOTE(JSON_EXTRACT(b.configuration, '$.manualBotEntry.id')) = JSON_UNQUOTE(JSON_EXTRACT(d.metrics, '$.manualCampaignItemId'))`, decisionID)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE manual_bot_campaigns c
+JOIN manual_bot_campaign_items current ON current.campaignId = c.id
+JOIN trading_bot_decisions d ON d.id = ? AND JSON_UNQUOTE(JSON_EXTRACT(d.metrics, '$.manualCampaignItemId')) = current.id
+SET c.status = CASE
+  WHEN EXISTS (SELECT 1 FROM manual_bot_campaign_items pending WHERE pending.campaignId = c.id AND pending.status IN ('QUEUED','PENDING_EXECUTION','RETRYING')) THEN 'RUNNING'
+  WHEN EXISTS (SELECT 1 FROM manual_bot_campaign_items done WHERE done.campaignId = c.id AND done.status = 'EXECUTED') THEN 'COMPLETED'
+  ELSE 'REJECTED' END,
+  c.updatedAt = UTC_TIMESTAMP(3)`, decisionID)
+	return err
+}
+
+func (s *AccountStore) ClearManualPositionControl(ctx context.Context, instance bot.Instance, side domain.PositionSide, now time.Time) error {
+	_, err := s.database.ExecContext(ctx, `UPDATE trading_bots
+SET configuration = JSON_REMOVE(configuration, '$.manualPositionControl'), version = version + 1, updatedAt = ?
+WHERE id = ? AND userId = ?
+  AND JSON_UNQUOTE(JSON_EXTRACT(configuration, '$.manualPositionControl.positionSide')) = ?`,
+		now.UTC(), instance.ID, instance.UserID, side)
+	return err
 }
 
 func (s *AccountStore) MarkAutonomousReentryGuard(ctx context.Context, instance bot.Instance, candleOpenMS int64, reason string, now time.Time) error {

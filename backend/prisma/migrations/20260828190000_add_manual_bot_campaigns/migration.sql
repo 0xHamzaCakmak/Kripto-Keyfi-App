@@ -1,0 +1,40 @@
+CREATE TABLE `manual_bot_campaigns` (
+  `id` VARCHAR(191) NOT NULL,
+  `userId` VARCHAR(191) NOT NULL,
+  `exchangeAccountId` VARCHAR(191) NOT NULL,
+  `side` VARCHAR(5) NOT NULL,
+  `initialMarginUsdt` DECIMAL(36,18) NOT NULL,
+  `leverage` INTEGER NOT NULL,
+  `stopLossBps` DECIMAL(12,4) NOT NULL,
+  `takeProfitBps` DECIMAL(12,4) NOT NULL,
+  `existingPositionRule` VARCHAR(20) NOT NULL DEFAULT 'SKIP',
+  `status` VARCHAR(30) NOT NULL DEFAULT 'QUEUED',
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `manual_bot_campaigns_userId_createdAt_idx` (`userId`, `createdAt`),
+  INDEX `manual_bot_campaigns_exchangeAccountId_status_idx` (`exchangeAccountId`, `status`),
+  CONSTRAINT `manual_bot_campaigns_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `manual_bot_campaigns_exchangeAccountId_fkey` FOREIGN KEY (`exchangeAccountId`) REFERENCES `exchange_accounts`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE `manual_bot_campaign_items` (
+  `id` VARCHAR(191) NOT NULL,
+  `campaignId` VARCHAR(191) NOT NULL,
+  `tradingBotId` VARCHAR(191) NOT NULL,
+  `symbol` VARCHAR(40) NOT NULL,
+  `status` VARCHAR(30) NOT NULL DEFAULT 'QUEUED',
+  `reasonCode` VARCHAR(80) NULL,
+  `detail` VARCHAR(500) NULL,
+  `decisionId` BIGINT UNSIGNED NULL,
+  `attemptedAt` DATETIME(3) NULL,
+  `executedAt` DATETIME(3) NULL,
+  `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updatedAt` DATETIME(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE INDEX `manual_bot_campaign_items_campaignId_tradingBotId_key` (`campaignId`, `tradingBotId`),
+  INDEX `manual_bot_campaign_items_tradingBotId_createdAt_idx` (`tradingBotId`, `createdAt`),
+  INDEX `manual_bot_campaign_items_campaignId_status_idx` (`campaignId`, `status`),
+  CONSTRAINT `manual_bot_campaign_items_campaignId_fkey` FOREIGN KEY (`campaignId`) REFERENCES `manual_bot_campaigns`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `manual_bot_campaign_items_tradingBotId_fkey` FOREIGN KEY (`tradingBotId`) REFERENCES `trading_bots`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

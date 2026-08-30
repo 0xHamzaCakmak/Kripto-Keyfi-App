@@ -40,6 +40,26 @@ export type TradingExecutionProfile = {
   stopLossBps: number; takeProfitBps: number; maxOrdersPerMinute: number; maxDailyOrders: number; entryPaused: boolean;
 };
 export type TradingExecutionProfileUpdate = Partial<TradingExecutionProfile>;
+export type ManualBotCandidate = {
+  id: string; name: string; symbol: string; state: string; desiredState: string; ready: boolean;
+  blocker: 'EXISTING_POSITION' | 'INSTRUCTION_PENDING' | 'ENTRY_PAUSED' | 'BOT_NOT_RUNNING' | null;
+  position: { side: 'LONG' | 'SHORT'; quantity: string; unrealizedPnl: string } | null;
+};
+export type ManualBotCampaignInput = {
+  exchangeAccountId: string; botIds: string[]; side: 'BUY' | 'SELL'; initialMarginUsdt: number; leverage: number;
+  stopLossPercent: number; takeProfitPercent: number; existingPositionRule: 'SKIP';
+};
+export type ManualBotCampaignPreview = {
+  account: { id: string; name: string }; side: 'BUY' | 'SELL'; leverage: number; stopLossPercent: number; takeProfitPercent: number;
+  perBotInitialMargin: string; perBotNotional: string; selectedBots: number; queuedBots: number; skippedBots: number;
+  totalInitialMargin: string; totalNotional: string; availableBalance: string; protectedBalance: string; availableAfterReserve: string; affordable: boolean;
+  items: Array<{ botId: string; name: string; symbol: string; status: string }>;
+};
+export type ManualBotCampaign = {
+  id: string; exchangeAccountId: string; side: 'BUY' | 'SELL'; initialMarginUsdt: string; leverage: number;
+  stopLossPercent: number; takeProfitPercent: number; status: string; createdAt: string; updatedAt: string;
+  items: Array<{ id: string; botId: string; name: string; symbol: string; status: string; reasonCode: string | null; detail: string | null; decisionId: string | null; attemptedAt: string | null; executedAt: string | null }>;
+};
 
 function normalizeTradingExecutionProfile(profile: TradingExecutionProfile): TradingExecutionProfile {
   return {
@@ -142,6 +162,22 @@ export async function publishManualMentorSignal(exchangeAccountId: string, posit
 export async function getTradingExecutionProfile(exchangeAccountId: string) {
   const profile = (await api.get<{ data: TradingExecutionProfile }>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`)).data.data;
   return normalizeTradingExecutionProfile(profile);
+}
+export async function getManualBotCampaignCandidates(exchangeAccountId: string) {
+  return (await api.get<{ data: { account: { id: string; name: string }; availableBalance: string; bots: ManualBotCandidate[] } }>(
+    '/admin/trading/autonomous/manual-bot-campaigns/candidates', { params: { exchangeAccountId } },
+  )).data.data;
+}
+export async function previewManualBotCampaign(input: ManualBotCampaignInput) {
+  return (await api.post<{ data: ManualBotCampaignPreview }>('/admin/trading/autonomous/manual-bot-campaigns/preview', input)).data.data;
+}
+export async function createManualBotCampaign(input: ManualBotCampaignInput) {
+  return (await api.post<{ data: ManualBotCampaign }>('/admin/trading/autonomous/manual-bot-campaigns', {
+    ...input, confirmation: 'BOTLARA TOPLU EMIR VER',
+  })).data.data;
+}
+export async function getManualBotCampaign(id: string) {
+  return (await api.get<{ data: ManualBotCampaign }>(`/admin/trading/autonomous/manual-bot-campaigns/${encodeURIComponent(id)}`)).data.data;
 }
 export async function updateTradingExecutionProfile(exchangeAccountId: string, input: TradingExecutionProfileUpdate) {
   // The GET response also contains server-managed fields (IDs, kill-switch

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  botCapitalSchema, closePaperPositionSchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema, paperFleetActivationSchema, promotionReviewSchema, resetPaperAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema, triggerPaperGenerationSchema,
+  botCapitalSchema, closePaperPositionSchema, createAutonomousPaperBotSchema, manualBotCampaignCreateSchema, manualBotCampaignPreviewSchema, nonCriticalBotSettingsSchema, paperFleetActivationSchema, promotionReviewSchema, resetPaperAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema, triggerPaperGenerationSchema,
 } from '../src/modules/ai-trading/autonomous-admin.schema.js';
 import { autonomousDTO, configuredCapital } from '../src/modules/ai-trading/autonomous-admin.service.js';
 
@@ -52,6 +52,18 @@ describe('Autonomous Trading Admin API', () => {
     expect(closePaperPositionSchema.parse({})).toEqual({ stopBot: false });
     expect(closePaperPositionSchema.safeParse({ stopBot: true, note: 'Admin safe close.' }).success).toBe(true);
     expect(closePaperPositionSchema.safeParse({ stopBot: true, live: true }).success).toBe(false);
+  });
+
+  it('requires bounded sizing and explicit confirmation for a manual bot campaign', () => {
+    const input = {
+      exchangeAccountId: 'cm12345678901234567890123', botIds: ['cm22345678901234567890123'], side: 'BUY',
+      initialMarginUsdt: 100, leverage: 10, stopLossPercent: 0.5, takeProfitPercent: 1, existingPositionRule: 'SKIP',
+    };
+    expect(manualBotCampaignPreviewSchema.safeParse(input).success).toBe(true);
+    expect(manualBotCampaignCreateSchema.safeParse({ ...input, confirmation: 'BOTLARA TOPLU EMIR VER' }).success).toBe(true);
+    expect(manualBotCampaignCreateSchema.safeParse({ ...input, confirmation: 'LIVE AC' }).success).toBe(false);
+    expect(manualBotCampaignPreviewSchema.safeParse({ ...input, leverage: 21 }).success).toBe(false);
+    expect(manualBotCampaignPreviewSchema.safeParse({ ...input, stopLossPercent: 0 }).success).toBe(false);
   });
 
   it('allows scalable audited PAPER/TESTNET capital without exposing live execution', () => {

@@ -2,6 +2,15 @@ package entrycheck
 
 import "testing"
 
+func TestManualDirectionKeepsRiskAndPositionLimitsMandatory(t *testing.T) {
+	if result := ValidateManualDirection(Input{RiskRewardSatisfied: true, PositionLimitSatisfied: true}); !result.Passed {
+		t.Fatalf("valid manual direction was rejected: %#v", result)
+	}
+	if result := ValidateManualDirection(Input{RiskRewardSatisfied: true}); result.Passed || len(result.Failed) != 1 || result.Failed[0] != "POSITION_LIMIT" {
+		t.Fatalf("manual direction bypassed position limit: %#v", result)
+	}
+}
+
 func TestValidateRequiresEveryPlaybookEntryCriterion(t *testing.T) {
 	valid := Input{Regime: "TREND", HigherTimeframeAligned: true, ConfirmedTimeframes: 2,
 		RiskRewardSatisfied: true, PositionLimitSatisfied: true, DerivativesAligned: true}

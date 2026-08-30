@@ -12,7 +12,7 @@ async function main() {
   const account = await prisma.exchangeAccount.findFirstOrThrow({
     where: { environment: 'TESTNET', isActive: true },
   });
-  const [decisions, signals, entries, fills, runtimeBots, snapshot, riskProfile, riskControl, ordersLastMinute, ordersToday, recentRiskEvents] = await Promise.all([
+  const [decisions, signals, entries, fills, recentFills, recentOrders, runtimeBots, snapshot, riskProfile, riskControl, ordersLastMinute, ordersToday, recentRiskEvents] = await Promise.all([
     prisma.tradingBotDecision.findMany({
       where: { exchangeAccountId: account.id, mode: 'DEMO', occurredAt: { gte: since } },
       select: { tradingBotId: true, kind: true, symbol: true, summary: true, metrics: true, occurredAt: true },
@@ -28,6 +28,26 @@ async function main() {
     prisma.testnetExecutionFill.findMany({
       where: { exchangeAccountId: account.id, reduceOnly: false, occurredAt: { gte: since } },
       select: { tradingBotId: true, symbol: true },
+    }),
+    prisma.testnetExecutionFill.findMany({
+      where: { exchangeAccountId: account.id },
+      orderBy: { occurredAt: 'desc' },
+      take: 30,
+      select: {
+        symbol: true, side: true, positionSide: true, orderType: true, reduceOnly: true,
+        price: true, quantity: true, realizedPnl: true, commission: true, netRealizedPnl: true,
+        clientOrderId: true, occurredAt: true,
+      },
+    }),
+    prisma.tradingOrder.findMany({
+      where: { exchangeAccountId: account.id, source: 'SYSTEM' },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      select: {
+        id: true, clientOrderId: true, symbol: true, side: true, positionSide: true,
+        type: true, reduceOnly: true, status: true, stopPrice: true,
+        failureCode: true, failureMessage: true, createdAt: true,
+      },
     }),
     prisma.tradingBot.findMany({
       where: { exchangeAccountId: account.id, mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' }, timeframe: '15m' },
@@ -148,6 +168,34 @@ async function main() {
     executionOutcomes,
     executionReasonCodes,
     recentRiskEvents,
+    recentFills: recentFills.map((fill) => ({
+      occurredAt: fill.occurredAt,
+      symbol: fill.symbol,
+      side: fill.side,
+      positionSide: fill.positionSide,
+      orderType: fill.orderType,
+      executionRole: fill.reduceOnly ? 'CLOSE_OR_REDUCE' : 'ENTRY_OR_ADD',
+      price: fill.price.toString(),
+      quantity: fill.quantity.toString(),
+      realizedPnl: fill.realizedPnl.toString(),
+      commission: fill.commission.toString(),
+      netRealizedPnl: fill.netRealizedPnl.toString(),
+      clientOrderId: fill.clientOrderId,
+    })),
+    recentOrders: recentOrders.map((order) => ({
+      createdAt: order.createdAt,
+      localOrderId: order.id,
+      clientOrderId: order.clientOrderId,
+      symbol: order.symbol,
+      side: order.side,
+      positionSide: order.positionSide,
+      orderType: order.type,
+      executionRole: order.reduceOnly ? 'CLOSE_OR_REDUCE' : 'ENTRY_OR_ADD',
+      status: order.status,
+      stopPrice: order.stopPrice?.toString() ?? null,
+      failureCode: order.failureCode,
+      failureMessage: order.failureMessage,
+    })),
     submittedEntries: entries.length,
     filledEntries: fills.length,
     entryBots: new Set(fills.map((fill) => fill.tradingBotId)).size,

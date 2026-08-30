@@ -195,7 +195,7 @@ func (s *Scheduler) runOnce(ctx context.Context) {
 		decision.Metrics = make(map[string]any)
 	}
 	decision.Metrics["strategyExecutionLatencyMs"] = float64(time.Since(strategyStartedAt).Microseconds()) / 1000
-	if s.observer != nil {
+	if s.observer != nil && decision.Metrics["manualBotInstruction"] != true {
 		observation, observeErr := s.observer.Observe(ctx, *instance, decision)
 		if observeErr != nil {
 			s.logger.Warn("AI mentor cycle failed; new entries fail closed", "bot_id", instance.ID, "error", observeErr)

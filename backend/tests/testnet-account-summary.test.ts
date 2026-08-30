@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fixedTestnetPerformance, TESTNET_STARTING_BALANCE_USD } from '../src/modules/ai-trading/testnet-operations.service.js';
+import { fixedTestnetPerformance, stablecoinNetPnl, TESTNET_STARTING_BALANCE_USD } from '../src/modules/ai-trading/testnet-operations.service.js';
 
 describe('TESTNET account summary', () => {
   it('measures profit from the fixed 10,000 USD stablecoin baseline', () => {
@@ -11,5 +11,11 @@ describe('TESTNET account summary', () => {
       netPnl: 50,
       pnlPercent: 0.005,
     });
+  });
+
+  it('deducts both USDT and USDC commissions from fill net PnL', () => {
+    expect(stablecoinNetPnl('-7.6693', '0.74901683', 'USDC')).toBeCloseTo(-8.41831683, 8);
+    expect(stablecoinNetPnl('5', '0.2', 'USDT')).toBeCloseTo(4.8, 8);
+    expect(stablecoinNetPnl('5', '0.2', 'BNB')).toBe(5);
   });
 });

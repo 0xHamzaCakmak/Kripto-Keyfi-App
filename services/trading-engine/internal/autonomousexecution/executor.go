@@ -24,6 +24,7 @@ type Store interface {
 	MarkAutonomousExecution(context.Context, int64, bool, string) error
 	MarkAutonomousExecutionFailure(context.Context, int64, string, string, string) error
 	MarkAutonomousReentryGuard(context.Context, bot.Instance, int64, string, time.Time) error
+	ClearManualPositionControl(context.Context, bot.Instance, domain.PositionSide, time.Time) error
 }
 
 type ExecutionService interface {
@@ -76,10 +77,15 @@ func (e *Executor) MaintainPosition(ctx context.Context, instance bot.Instance, 
 	}
 	prefix := botClientPrefix(instance.ID)
 	hedgeMode := instance.Configuration["hedgeModeEnabled"] == true
+	controlledSide, manuallyControlled := manualControlledSide(instance.Configuration)
+	controlledPositionFound := false
 	for index := range positions {
 		position := positions[index]
 		if position.Symbol != instance.Symbol || decimalSign(string(position.Quantity)) == 0 {
 			continue
+		}
+		if manuallyControlled && position.Side == controlledSide {
+			controlledPositionFound = true
 		}
 		if hedgeMode && !hasBotProtectionForSide(orders, instance.Symbol, prefix, position.Side) {
 			continue
@@ -100,6 +106,11 @@ func (e *Executor) MaintainPosition(ctx context.Context, instance bot.Instance, 
 		lock.Unlock()
 		if maintainErr != nil {
 			return maintainErr
+		}
+	}
+	if manuallyControlled && !controlledPositionFound {
+		if err := e.store.ClearManualPositionControl(ctx, instance, controlledSide, now); err != nil {
+			return fmt.Errorf("clear completed manual position control: %w", err)
 		}
 	}
 	return nil
@@ -128,6 +139,7 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	if side != domain.SideBuy && side != domain.SideSell {
 		return errors.New("invalid autonomous side")
 	}
+	manualDirection := order["manualDirection"] == true
 	if costBps, ok := numericConfiguration(instance.Configuration["estimatedRoundTripCostBps"]); ok {
 		adjusted, adjustErr := addCostBufferToTake(takeText, side, costBps)
 		if adjustErr != nil {
@@ -145,7 +157,11 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	executionLock.Lock()
 	defer executionLock.Unlock()
 	reference := domain.ExchangeAccountRef{ID: instance.ExchangeAccountID, UserID: instance.UserID, Provider: domain.ProviderBinance, Environment: domain.EnvironmentTestnet, AccountType: domain.AccountTypeUSDTM}
-	allocation, allocationOK := numericConfiguration(instance.Configuration["allocationUsdt"])
+	allocationSource := instance.Configuration["allocationUsdt"]
+	if manualDirection {
+		allocationSource = order["manualInitialMarginUsdt"]
+	}
+	allocation, allocationOK := numericConfiguration(allocationSource)
 	var sizingRule domain.SymbolRule
 	var sizingMark domain.Decimal
 	if allocationOK && allocation > 0 {
@@ -158,6 +174,13 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	positions, err := e.execution.Positions(ctx, reference)
 	if err != nil {
 		return fmt.Errorf("read TESTNET position before execution: %w", err)
+	}
+	if manualDirection {
+		for _, position := range positions {
+			if position.Symbol == instance.Symbol && decimalSign(string(position.Quantity)) != 0 {
+				return e.store.MarkAutonomousExecution(ctx, decisionID, false, "manual bot campaign skipped because the symbol already has an open position")
+			}
+		}
 	}
 	openOrders, err := e.execution.OpenOrders(ctx, reference)
 	if err != nil {
@@ -175,7 +198,10 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	// duplicate/exchange-race protection.
 	e.observePosition(executionKey, current != nil)
 	if current != nil {
-		if instance.Configuration["hedgeModeEnabled"] == true && !hasBotProtection(openOrders, instance.Symbol, botClientPrefix(instance.ID)) {
+		if _, controlled := manualControlledSide(instance.Configuration); controlled && !manualDirection {
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "manual bot position is active; automatic additions are suspended until it closes")
+		}
+		if instance.Configuration["hedgeModeEnabled"] == true && !hasBotProtectionForSide(openOrders, instance.Symbol, botClientPrefix(instance.ID), current.Side) {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "the existing hedge leg is owned by another bot or manual trade; same-side merge rejected")
 		}
 		handled, protectionErr := e.closeReachedProtection(ctx, instance, decisionID, *current, openOrders, reference, now)
@@ -214,7 +240,7 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 			return errors.New("open TESTNET position leverage could not be verified")
 		}
 		positionAllocation := allocation
-		if instance.Configuration["testnetMarginAllocationMode"] == true {
+		if instance.Configuration["testnetMarginAllocationMode"] == true || manualDirection {
 			positionAllocation *= float64(positionLeverage)
 		}
 		remaining, remainingErr := remainingAllocation(positionAllocation, *current, sizingMark)
@@ -244,7 +270,7 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	}
 	if allocationOK && allocation > 0 {
 		positionAllocation := allocation
-		if instance.Configuration["testnetMarginAllocationMode"] == true {
+		if instance.Configuration["testnetMarginAllocationMode"] == true || manualDirection {
 			positionAllocation *= float64(leverage)
 		}
 		quantityText, err = alignApprovedQuantity(quantityText, positionAllocation, sizingRule, sizingMark)
@@ -256,7 +282,7 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 			return err
 		}
 	}
-	if err := e.cancelStaleProtectives(ctx, instance, decisionID, openOrders, reference, now); err != nil {
+	if err := e.cancelStaleProtectives(ctx, instance, decisionID, openOrders, desiredPositionSide, reference, now); err != nil {
 		return err
 	}
 	entryPreview, err := e.execution.Preview(ctx, tradingv1.PreviewOrderRequest{Account: reference, Symbol: instance.Symbol, Side: side, Type: domain.OrderMarket, Quantity: domain.Decimal(quantityText), Leverage: leverage, MarginMode: domain.MarginIsolated})
@@ -361,7 +387,7 @@ func (e *Executor) closeReachedProtection(ctx context.Context, instance bot.Inst
 	if placed.Status != domain.OrderFilled && placed.Status != domain.OrderPartiallyFilled {
 		return false, errors.New("reached TESTNET protection exit was not filled")
 	}
-	if err := e.cancelStaleProtectives(ctx, instance, decisionID, orders, reference, now.Add(time.Millisecond)); err != nil {
+	if err := e.cancelStaleProtectives(ctx, instance, decisionID, orders, position.Side, reference, now.Add(time.Millisecond)); err != nil {
 		return false, fmt.Errorf("position closed at %s but stale protection cleanup failed: %w", reason, err)
 	}
 	if err := e.store.MarkAutonomousExecution(ctx, decisionID, true, "existing TESTNET position closed because "+reason+" was already reached"); err != nil {
@@ -548,7 +574,7 @@ func (e *Executor) pyramidPosition(ctx context.Context, instance bot.Instance, d
 	if _, err := e.execution.Preview(ctx, tradingv1.PreviewOrderRequest{Account: reference, Symbol: instance.Symbol, Side: exitSide, Type: domain.OrderTakeProfitMarket, Quantity: updated.Quantity, StopPrice: domain.Decimal(takePrice), Leverage: leverage, MarginMode: domain.MarginIsolated, ReduceOnly: true}); err != nil {
 		return e.rollbackPyramidAddition(ctx, instance, decisionID, side, domain.Decimal(quantityText), leverage, reference, fmt.Errorf("pyramided TESTNET take preview rejected: %w", err))
 	}
-	if err := e.cancelStaleProtectives(ctx, instance, decisionID, oldOrders, reference, time.Now().UTC()); err != nil {
+	if err := e.cancelStaleProtectives(ctx, instance, decisionID, oldOrders, updated.Side, reference, time.Now().UTC()); err != nil {
 		return e.rollbackPyramidAddition(ctx, instance, decisionID, side, domain.Decimal(quantityText), leverage, reference, err)
 	}
 	protectNow := time.Now().UTC()
@@ -605,6 +631,9 @@ func (e *Executor) ensurePositionProtection(ctx context.Context, instance bot.In
 		if order.Type != domain.OrderStopMarket && order.Type != domain.OrderTakeProfitMarket {
 			continue
 		}
+		if !protectionBelongsToLeg(order, position.Side, instance.Configuration["hedgeModeEnabled"] == true) {
+			continue
+		}
 		relevant++
 		expectedTrigger := stop
 		if order.Type == domain.OrderTakeProfitMarket {
@@ -641,13 +670,13 @@ func (e *Executor) ensurePositionProtection(ctx context.Context, instance bot.In
 		if placed.Status != domain.OrderFilled && placed.Status != domain.OrderPartiallyFilled {
 			return errors.New("reached TESTNET protection exit was not filled")
 		}
-		if err := e.cancelStaleProtectives(ctx, instance, decisionID, orders, reference, now.Add(time.Millisecond)); err != nil {
+		if err := e.cancelStaleProtectives(ctx, instance, decisionID, orders, position.Side, reference, now.Add(time.Millisecond)); err != nil {
 			return fmt.Errorf("position closed at %s but stale protection cleanup failed: %w", reason, err)
 		}
 		return e.store.MarkAutonomousExecution(ctx, decisionID, true, "existing TESTNET position closed because "+reason+" was already reached")
 	}
 	if mismatched || relevant > 2 {
-		if err := e.cancelStaleProtectives(ctx, instance, decisionID, orders, reference, now); err != nil {
+		if err := e.cancelStaleProtectives(ctx, instance, decisionID, orders, position.Side, reference, now); err != nil {
 			return err
 		}
 		hasStop, hasTake = false, false
@@ -685,6 +714,9 @@ func positionProtectionComplete(position domain.Position, orders []domain.Order,
 	stop, take, relevant := 0, 0, 0
 	for _, order := range orders {
 		if order.Symbol != position.Symbol || !strings.HasPrefix(order.ClientOrderID, prefix) || (order.Type != domain.OrderStopMarket && order.Type != domain.OrderTakeProfitMarket) {
+			continue
+		}
+		if !protectionBelongsToLeg(order, position.Side, configuration["hedgeModeEnabled"] == true) {
 			continue
 		}
 		relevant++
@@ -755,11 +787,15 @@ func (e *Executor) placeProtection(ctx context.Context, instance bot.Instance, d
 	return err
 }
 
-func (e *Executor) cancelStaleProtectives(ctx context.Context, instance bot.Instance, decisionID int64, orders []domain.Order, reference domain.ExchangeAccountRef, now time.Time) error {
+func (e *Executor) cancelStaleProtectives(ctx context.Context, instance bot.Instance, decisionID int64, orders []domain.Order, positionSide domain.PositionSide, reference domain.ExchangeAccountRef, now time.Time) error {
 	prefix := botClientPrefix(instance.ID)
+	hedgeMode := instance.Configuration["hedgeModeEnabled"] == true
 	index := 0
 	for _, order := range orders {
 		if order.Symbol != instance.Symbol || !strings.HasPrefix(order.ClientOrderID, prefix) || (order.Type != domain.OrderStopMarket && order.Type != domain.OrderTakeProfitMarket) {
+			continue
+		}
+		if !protectionBelongsToLeg(order, positionSide, hedgeMode) {
 			continue
 		}
 		index++
@@ -776,8 +812,41 @@ func (e *Executor) cancelStaleProtectives(ctx context.Context, instance bot.Inst
 	return nil
 }
 
+func protectionBelongsToLeg(order domain.Order, positionSide domain.PositionSide, hedgeMode bool) bool {
+	return !hedgeMode || order.PositionSide == positionSide
+}
+
 func testnetProtectionPrices(configuration map[string]any, position domain.Position) (string, string, error) {
-	return testnetProtectionPricesWithPlan(configuration, nil, position)
+	return testnetProtectionPricesWithPlan(protectionConfiguration(configuration, position.Side), nil, position)
+}
+
+func manualControlledSide(configuration map[string]any) (domain.PositionSide, bool) {
+	control, ok := configuration["manualPositionControl"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	side, _ := control["positionSide"].(string)
+	parsed := domain.PositionSide(strings.ToUpper(strings.TrimSpace(side)))
+	return parsed, parsed == domain.PositionLong || parsed == domain.PositionShort
+}
+
+func protectionConfiguration(configuration map[string]any, side domain.PositionSide) map[string]any {
+	controlledSide, controlled := manualControlledSide(configuration)
+	control, ok := configuration["manualPositionControl"].(map[string]any)
+	if !controlled || !ok || controlledSide != side {
+		return configuration
+	}
+	stop, stopOK := numericConfiguration(control["stopLossBps"])
+	take, takeOK := numericConfiguration(control["takeProfitBps"])
+	if !stopOK || !takeOK || stop <= 0 || take <= 0 {
+		return configuration
+	}
+	effective := make(map[string]any, len(configuration)+2)
+	for key, value := range configuration {
+		effective[key] = value
+	}
+	effective["stopLossBps"], effective["takeProfitBps"] = stop, take
+	return effective
 }
 
 func testnetProtectionPricesWithPlan(configuration, plan map[string]any, position domain.Position) (string, string, error) {
@@ -1049,16 +1118,6 @@ func positionSideForOrder(side domain.OrderSide, reduceOnly bool) domain.Positio
 func botClientPrefix(botID string) string {
 	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(botID)))[:8]
 	return "ka" + hash
-}
-
-func hasBotProtection(orders []domain.Order, symbol, prefix string) bool {
-	for _, order := range orders {
-		if order.Symbol == symbol && strings.HasPrefix(order.ClientOrderID, prefix) &&
-			(order.ReduceOnly || order.Type == domain.OrderStopMarket || order.Type == domain.OrderTakeProfitMarket) {
-			return true
-		}
-	}
-	return false
 }
 
 func hasBotProtectionForSide(orders []domain.Order, symbol, prefix string, side domain.PositionSide) bool {

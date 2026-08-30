@@ -264,6 +264,17 @@ VALUES (?, ?, ?, ?, 'RULE_ENGINE', ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(3))`,
 	if err != nil {
 		return bot.CycleResult{}, fmt.Errorf("insert bot signal: %w", err)
 	}
+	if manualItemID, _ := decision.Metrics["manualCampaignItemId"].(string); manualItemID != "" {
+		manualStatus, manualCode, manualDetail, clearInstruction := "PENDING_EXECUTION", "RISK_APPROVED", "Manuel bot talimatı execution sırasına alındı.", false
+		if decision.Metrics["manualInstructionInvalid"] == true {
+			manualStatus, manualCode, manualDetail, clearInstruction = "REJECTED", "MANUAL_INSTRUCTION_INVALID", "Manuel bot talimatı eksik veya geçersiz.", true
+		} else if !riskApproved {
+			manualStatus, manualCode, manualDetail, clearInstruction = "REJECTED", executionReasonCode, "Manuel bot talimatı risk kontrolünde reddedildi.", true
+		}
+		if err := updateManualCampaignExecution(ctx, tx, decisionID, manualStatus, manualCode, manualDetail, false, clearInstruction); err != nil {
+			return bot.CycleResult{}, fmt.Errorf("update manual bot campaign item: %w", err)
+		}
+	}
 	if decision.AIObservation != nil {
 		ruleKindBeforeMentor := decision.Metrics["aiRuleDecisionKindBeforeMentor"]
 		ruleActionBeforeMentor := decision.Metrics["aiRuleActionBeforeMentor"]
