@@ -1,13 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  botCapitalSchema, closePaperPositionSchema, createAutonomousPaperBotSchema, manualBotCampaignCreateSchema, manualBotCampaignPreviewSchema, nonCriticalBotSettingsSchema, paperFleetActivationSchema, promotionReviewSchema, resetPaperAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema, triggerPaperGenerationSchema,
+  arenaStatusQuerySchema, botCapitalSchema, closePaperPositionSchema, createAutonomousPaperBotSchema, manualBotCampaignCreateSchema, manualBotCampaignPreviewSchema, nonCriticalBotSettingsSchema, paperFleetActivationSchema, promotionReviewSchema, resetPaperAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema, triggerPaperGenerationSchema,
 } from '../src/modules/ai-trading/autonomous-admin.schema.js';
 import { autonomousDTO, configuredCapital } from '../src/modules/ai-trading/autonomous-admin.service.js';
 
 describe('Autonomous Trading Admin API', () => {
   it('returns a stable versioned DTO with live disabled', () => {
     expect(autonomousDTO('TEST', { ok: true })).toEqual({ apiVersion: 'v1', kind: 'TEST', data: { ok: true }, liveTradingEnabled: false });
+  });
+
+  it('accepts an optional account filter for the AI Trade Pro feed', () => {
+    expect(arenaStatusQuerySchema.safeParse({}).success).toBe(true);
+    expect(arenaStatusQuerySchema.safeParse({ exchangeAccountId: 'cm12345678901234567890123' }).success).toBe(true);
+    expect(arenaStatusQuerySchema.safeParse({ exchangeAccountId: 'not-an-account' }).success).toBe(false);
   });
 
   it('requires an exact phrase for the Binance TESTNET canary', () => {

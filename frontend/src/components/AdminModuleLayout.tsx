@@ -82,6 +82,7 @@ export function AdminModuleLayout({ eyebrow, title, description, tabs }: AdminMo
 const tradingTabs: AdminModuleTab[] = [
   { label: 'Genel Bakış', to: '/admin/trading', icon: LayoutDashboard, end: true },
   { label: 'AI Trading', to: '/admin/trading/ai', icon: Sparkles },
+  { label: 'AI Trading Pro', to: '/admin/trading/ai-pro', icon: Sparkles },
   { label: 'Pozisyonlar', to: '/admin/trading/positions', icon: ChartNoAxesCombined },
   { label: 'Botlarım', to: '/admin/trading/bots', icon: ListChecks, end: true },
   { label: 'Bot Rehberi', to: '/admin/trading/guide', icon: BookOpen, end: true },

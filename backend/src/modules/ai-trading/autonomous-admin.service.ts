@@ -35,19 +35,53 @@ export async function getAutonomousOverview(userId: string) {
   });
 }
 
-export async function getArenaStatus(userId: string) {
+export async function getArenaStatus(userId: string, exchangeAccountId?: string) {
   const since = new Date(Date.now() - 5 * 60_000);
-  const [states, modes, decisions, latest] = await Promise.all([
-    prisma.tradingBot.groupBy({ by: ['state'], where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } }, _count: { _all: true } }),
-    prisma.tradingBot.groupBy({ by: ['mode'], where: { userId, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } }, _count: { _all: true } }),
-    prisma.tradingBotDecision.count({ where: { userId, type: 'AUTONOMOUS', occurredAt: { gte: since } } }),
-    prisma.tradingBotDecision.findFirst({ where: { userId, type: 'AUTONOMOUS' }, orderBy: { occurredAt: 'desc' }, select: { occurredAt: true } }),
+  const accountFilter = exchangeAccountId ? { exchangeAccountId } : {};
+  const [states, modes, decisions, latest, oldestRunning, botSymbols, recentDecisions] = await Promise.all([
+    prisma.tradingBot.groupBy({ by: ['state'], where: { userId, ...accountFilter, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } }, _count: { _all: true } }),
+    prisma.tradingBot.groupBy({ by: ['mode'], where: { userId, ...accountFilter, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } }, _count: { _all: true } }),
+    prisma.tradingBotDecision.count({ where: { userId, ...accountFilter, type: 'AUTONOMOUS', occurredAt: { gte: since } } }),
+    prisma.tradingBotDecision.findFirst({ where: { userId, ...accountFilter, type: 'AUTONOMOUS' }, orderBy: { occurredAt: 'desc' }, select: { occurredAt: true } }),
+    prisma.tradingBot.findFirst({
+      where: { userId, ...accountFilter, type: 'AUTONOMOUS', state: 'RUNNING', startedAt: { not: null } },
+      orderBy: { startedAt: 'asc' }, select: { startedAt: true },
+    }),
+    prisma.tradingBot.findMany({
+      where: { userId, ...accountFilter, type: 'AUTONOMOUS', mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { symbol: true },
+    }),
+    prisma.tradingBotDecision.findMany({
+      where: { userId, ...accountFilter, type: 'AUTONOMOUS', mode: 'DEMO', kind: { in: ['BUY', 'SELL', 'GRID_BUY', 'GRID_SELL', 'HOLD'] } },
+      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], take: 60,
+      select: {
+        id: true, tradingBotId: true, symbol: true, kind: true, summary: true, occurredAt: true,
+        tradingBot: { select: { name: true } },
+        signals: { orderBy: { id: 'desc' }, take: 3, select: { source: true, action: true, confidence: true, status: true } },
+      },
+    }),
   ]);
   return autonomousDTO('ARENA_STATUS', {
     states: Object.fromEntries(states.map((item) => [item.state, item._count._all])),
     modes: Object.fromEntries(modes.map((item) => [item.mode, item._count._all])),
+    botSymbols: [...new Set(botSymbols.map((bot) => bot.symbol).filter(Boolean))],
     decisionsLast5m: decisions, throughputPerMinute: decisions / 5,
-    latestDecisionAt: latest?.occurredAt ?? null, executionMode: 'SIMULATION_ONLY',
+    latestDecisionAt: latest?.occurredAt ?? null, oldestRunningAt: oldestRunning?.startedAt ?? null,
+    refreshedAt: new Date(), executionMode: 'SIMULATION_ONLY',
+    recentDecisions: recentDecisions.map((decision) => {
+      const action = decision.kind === 'BUY' || decision.kind === 'GRID_BUY' ? 'LONG' as const
+        : decision.kind === 'SELL' || decision.kind === 'GRID_SELL' ? 'SHORT' as const : 'HOLD' as const;
+      const signalAction = action === 'LONG' ? 'BUY' : action === 'SHORT' ? 'SELL' : 'HOLD';
+      const signal = decision.signals.find((item) => item.source === 'AI_MODEL' && item.action === signalAction)
+        ?? decision.signals.find((item) => item.source === 'RULE_ENGINE');
+      return {
+        id: decision.id.toString(), botId: decision.tradingBotId, botName: decision.tradingBot.name,
+        symbol: decision.symbol, action,
+        confidence: signal?.confidence.toNumber() ?? (action === 'HOLD' ? 0.5 : 1),
+        confidenceSource: signal?.source ?? 'DECISION_DEFAULT', signalStatus: signal?.status ?? 'OBSERVED',
+        summary: decision.summary, occurredAt: decision.occurredAt,
+      };
+    }),
   });
 }
 

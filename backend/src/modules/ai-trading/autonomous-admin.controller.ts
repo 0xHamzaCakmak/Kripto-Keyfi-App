@@ -6,7 +6,7 @@ import {
   listGenerations, listLiveEligibilityStatus, pauseAutonomousBot, requestPaperPositionClose, resetPaperAccounting, resumeAutonomousBot, reviewPromotion, startAutonomousBot, triggerPaperGeneration,
 } from './autonomous-admin.service.js';
 import type {
-  autonomousGenerationQuerySchema, botCapitalSchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema,
+  arenaStatusQuerySchema, autonomousGenerationQuerySchema, botCapitalSchema, createAutonomousPaperBotSchema, nonCriticalBotSettingsSchema,
   closePaperPositionSchema, paperFleetActivationSchema, promotionReviewSchema, resetPaperAccountingSchema, resetTestnetAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema, triggerPaperGenerationSchema,
 } from './autonomous-admin.schema.js';
 import type { ManualBotCampaignCreateInput, ManualBotCampaignPreviewInput } from './autonomous-admin.schema.js';
@@ -16,7 +16,10 @@ import { getTestnetAccountSummary, getTestnetBotOperation, listTestnetBotOperati
 import { createManualBotCampaign, getManualBotCampaign, listManualBotCampaignCandidates, previewManualBotCampaign } from './manual-bot-campaign.service.js';
 
 export async function autonomousOverview(req: Request, res: Response) { return success(res, await getAutonomousOverview(req.user!.id)); }
-export async function arenaStatus(req: Request, res: Response) { return success(res, await getArenaStatus(req.user!.id)); }
+export async function arenaStatus(req: Request, res: Response) {
+  const query = req.query as unknown as z.infer<typeof arenaStatusQuerySchema>;
+  return success(res, await getArenaStatus(req.user!.id, query.exchangeAccountId));
+}
 export async function paperAccounting(req: Request, res: Response) { return success(res, await getPaperAccountingStatus(req.user!.id)); }
 export async function resetPaperPnl(req: Request, res: Response) {
   return success(res, await resetPaperAccounting(req.user!.id, req.body as z.infer<typeof resetPaperAccountingSchema>, req.ip), 201);

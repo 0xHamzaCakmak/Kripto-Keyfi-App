@@ -30,6 +30,12 @@ export type ArenaStatus = {
   throughputPerMinute: number;
   latestDecisionAt: string | null;
   executionMode: 'SIMULATION_ONLY';
+  recentDecisions: ArenaDecision[];
+};
+
+export type ArenaDecision = {
+  id: string; botId: string; botName: string; symbol: string; action: 'LONG' | 'SHORT' | 'HOLD';
+  confidence: number; confidenceSource: 'AI_MODEL' | 'RULE_ENGINE' | 'DECISION_DEFAULT'; signalStatus: string; summary: string; occurredAt: string;
 };
 
 export type PaperAccountingPeriod = {

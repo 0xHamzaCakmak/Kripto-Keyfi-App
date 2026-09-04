@@ -69,3 +69,57 @@
 .animate-marquee:hover {
   animation-play-state: paused;
 }
+
+@keyframes signal-flow-dash {
+  to { stroke-dashoffset: -56; }
+}
+
+@keyframes signal-node-arrival {
+  0% { opacity: 0.45; transform: translateY(-50%) scale(0.97); box-shadow: 0 0 0 transparent; }
+  35% { opacity: 1; transform: translateY(-50%) scale(1.018); box-shadow: 0 0 28px currentColor; }
+  100% { opacity: 1; transform: translateY(-50%) scale(1); box-shadow: 0 0 0 transparent; }
+}
+
+@keyframes signal-feed-arrival {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.signal-flow-path {
+  stroke-dasharray: 5 11;
+  animation: signal-flow-dash 1.8s linear infinite;
+  filter: drop-shadow(0 0 5px currentColor);
+}
+
+.signal-flow-glow,
+.signal-motion-particle {
+  filter: drop-shadow(0 0 7px currentColor);
+}
+
+.signal-node-pulse {
+  animation: signal-node-arrival 900ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+.signal-feed-enter {
+  animation: signal-feed-arrival 320ms ease-out both;
+}
+
+@media (max-width: 1023px) {
+  @keyframes signal-node-arrival {
+    0% { opacity: 0.45; transform: scale(0.97); box-shadow: 0 0 0 transparent; }
+    35% { opacity: 1; transform: scale(1.018); box-shadow: 0 0 24px currentColor; }
+    100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 transparent; }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signal-flow-path,
+  .signal-node-pulse,
+  .signal-feed-enter {
+    animation: none;
+  }
+
+  .signal-motion-particle {
+    display: none;
+  }
+}

@@ -6,6 +6,9 @@ export const createAutonomousPaperBotSchema = createFactoryBotBodySchema.extend(
 export const autonomousGenerationQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 }).strict();
+export const arenaStatusQuerySchema = z.object({
+  exchangeAccountId: z.string().cuid().optional(),
+}).strict();
 export const triggerPaperGenerationSchema = z.object({
   populationTarget: z.number().int().min(1).max(1_000).default(20),
   note: z.string().trim().min(3).max(500).optional(),

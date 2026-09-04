@@ -63,6 +63,7 @@ const AITradingMemory = lazy(() => import('./components/ai-trading/AITradingMemo
 const AITradingPerformance = lazy(() => import('./components/ai-trading/AITradingPerformance'));
 const AITradingRisk = lazy(() => import('./components/ai-trading/AITradingRisk'));
 const AITradingShadowLive = lazy(() => import('./components/ai-trading/AITradingShadowLive'));
+const AITradingProEntry = lazy(() => import('./components/AITradingProEntry'));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const KOLExplorer = lazy(() => import('./components/KOLIntelligence'));
 const KOLProfile = lazy(() => import('./components/KOLIntelligence').then((module) => ({ default: module.KOLProfile })));
@@ -89,13 +90,25 @@ const AdminChatRooms = lazy(() => import('./components/AdminChatRooms'));
 export default function App() {
   return (
     <Router>
+      <AppFrame />
+    </Router>
+  );
+}
+
+function AppFrame() {
+  const { pathname } = useLocation();
+  const isAITradingPro = pathname === '/admin/trading/ai-pro';
+
+  return (
+    <>
       <AnalyticsTracker />
       <div className="min-h-screen bg-background text-on-surface">
-        <Navbar />
-        <main className="mx-auto max-w-[1600px] px-4 pb-20 pt-24 sm:px-6 lg:px-8">
+        {!isAITradingPro && <Navbar />}
+        <main className={isAITradingPro ? 'min-h-screen w-full p-0' : 'mx-auto max-w-[1600px] px-4 pb-20 pt-24 sm:px-6 lg:px-8'}>
           <Suspense fallback={<div className="h-72 animate-pulse rounded-3xl bg-surface-high" aria-label="Sayfa yükleniyor" />}><Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/admin/trading/ai-pro" element={<AdminRoute><AITradingProEntry /></AdminRoute>} />
             <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
               <Route index element={<AdminDashboard />} />
               <Route path="users" element={<AdminUsers />} />
@@ -218,10 +231,10 @@ export default function App() {
             <Route path="/token-airdrop-manager" element={<TokenAirdropManager />} />
           </Routes></Suspense>
         </main>
-        <Suspense fallback={null}><TickerTape /></Suspense>
-        <PrivacyConsent />
+        {!isAITradingPro && <Suspense fallback={null}><TickerTape /></Suspense>}
+        {!isAITradingPro && <PrivacyConsent />}
       </div>
-    </Router>
+    </>
   );
 }
 

@@ -1,0 +1,6 @@
+{
+  "name": "KriptoKeyfi Trading Bot - Sinyal Akışı & Yönetim Merkezi",
+  "description": "Tam ekran neon Sleek Interface tasarımlı AI Trading Bot yönetim merkezi: Sinyal Akışı, 20 Botluk Arena, Liderlik Tablosu, Manuel İşlem Terminali, Borsa API Entegrasyonları ve Risk Kontrolü",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

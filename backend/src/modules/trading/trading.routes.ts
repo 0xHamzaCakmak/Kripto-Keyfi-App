@@ -48,7 +48,7 @@ import { runLiveEligibilityBodySchema } from '../ai-trading/live-eligibility.sch
 import { autonomousAudit, systemHealth } from '../ai-trading/autonomous-observability.controller.js';
 import { autonomousAuditQuerySchema } from '../ai-trading/autonomous-observability.schema.js';
 import { activateTestnet, activateTestnetFleet, archive, arenaStatus, autonomousOverview, capital, generations, liveEligibilityStatus, manualBotCampaign, manualBotCampaignCandidates, manualBotCampaignPreview, pausePaperBot, promotion, queueManualBotCampaign, resetTestnetAccounting, resumePaperBot, settings, testnetAccountSummary, testnetBotOperation, testnetOperations } from '../ai-trading/autonomous-admin.controller.js';
-import { autonomousBotParamsSchema, autonomousGenerationQuerySchema, botCapitalSchema, manualBotCampaignCreateSchema, manualBotCampaignParamsSchema, manualBotCampaignPreviewSchema, manualBotCampaignQuerySchema, nonCriticalBotSettingsSchema, promotionReviewSchema, resetTestnetAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema } from '../ai-trading/autonomous-admin.schema.js';
+import { arenaStatusQuerySchema, autonomousBotParamsSchema, autonomousGenerationQuerySchema, botCapitalSchema, manualBotCampaignCreateSchema, manualBotCampaignParamsSchema, manualBotCampaignPreviewSchema, manualBotCampaignQuerySchema, nonCriticalBotSettingsSchema, promotionReviewSchema, resetTestnetAccountingSchema, testnetActivationSchema, testnetFleetActivationSchema } from '../ai-trading/autonomous-admin.schema.js';
 import { addUniverseAsset, changeTradingUniverseAsset, searchUniverse, tradingUniverse } from '../ai-trading/trading-universe.controller.js';
 import { addTradingUniverseAssetSchema, searchTradingUniverseSchema, tradingUniverseAssetParamsSchema, updateTradingUniverseAssetSchema } from '../ai-trading/trading-universe.schema.js';
 import { coinPerformance } from '../ai-trading/coin-performance.controller.js';
@@ -62,7 +62,7 @@ tradingRouter.get('/overview', asyncHandler(overview));
 tradingRouter.get('/system-health', asyncHandler(systemHealth));
 tradingRouter.get('/system-health/audit', validateRequest({ query: autonomousAuditQuerySchema }), asyncHandler(autonomousAudit));
 tradingRouter.get('/autonomous/overview', asyncHandler(autonomousOverview));
-tradingRouter.get('/autonomous/arena-status', asyncHandler(arenaStatus));
+tradingRouter.get('/autonomous/arena-status', validateRequest({ query: arenaStatusQuerySchema }), asyncHandler(arenaStatus));
 tradingRouter.get('/autonomous/trading-universe', asyncHandler(tradingUniverse));
 tradingRouter.get('/autonomous/trading-universe/search', validateRequest({ query: searchTradingUniverseSchema }), asyncHandler(searchUniverse));
 tradingRouter.post('/autonomous/trading-universe', validateRequest({ body: addTradingUniverseAssetSchema }), asyncHandler(addUniverseAsset));

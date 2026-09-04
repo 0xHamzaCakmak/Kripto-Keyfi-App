@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg: #0b0e11;
+    --card: #1e2329;
+    --card-translucent: rgba(30, 35, 41, 0.75);
+    --border: #2b3139;
+    --border-subtle: rgba(43, 49, 57, 0.6);
+    --text: #eaecef;
+    --text-dim: #848e9c;
+    --green: #02c076;
+    --green-glow: rgba(2, 192, 118, 0.45);
+    --red: #f84960;
+    --red-glow: rgba(248, 73, 96, 0.45);
+    --orange: #f0b90b;
+    --orange-glow: rgba(240, 185, 11, 0.45);
+    --cyan: #00d2ff;
+    --cyan-glow: rgba(0, 210, 255, 0.5);
+  }
+}
+
+/* Custom glowing and laser effects for Sleek Interface */
+.glow-cyan {
+  box-shadow: 0 0 25px rgba(0, 210, 255, 0.35), inset 0 0 15px rgba(0, 210, 255, 0.15);
+}
+
+.glow-long {
+  box-shadow: 0 0 18px rgba(2, 192, 118, 0.4);
+}
+
+.glow-short {
+  box-shadow: 0 0 18px rgba(248, 73, 96, 0.4);
+}
+
+.glow-hold {
+  box-shadow: 0 0 18px rgba(240, 185, 11, 0.4);
+}
+
+/* Flow Viewport Radial Background */
+.flow-radial-bg {
+  background: radial-gradient(circle at 20% 50%, rgba(0, 210, 255, 0.07) 0%, transparent 65%),
+              radial-gradient(circle at 80% 80%, rgba(2, 192, 118, 0.05) 0%, transparent 60%);
+}
+
+/* Sleek scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(11, 14, 17, 0.6);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2b3139;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #848e9c;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+
