@@ -109,7 +109,7 @@ export async function getFactoryBotPaperPerformance(userId: string, id: string) 
       netPnl: position.realizedPnl.sub(position.totalFees).add(position.unrealizedPnl).toString(),
     } : null,
     fills: fills.map((fill) => ({
-      ...fill, id: fill.id.toString(), decisionId: fill.decisionId.toString(), quantity: fill.quantity.toString(),
+      ...fill, id: fill.id.toString(), decisionId: fill.decisionId?.toString() ?? null, quantity: fill.quantity.toString(),
       markPrice: fill.markPrice.toString(), fillPrice: fill.fillPrice.toString(), notional: fill.notional.toString(),
       fee: fill.fee.toString(), realizedPnl: fill.realizedPnl.toString(), slippageBps: fill.slippageBps.toString(), feeBps: fill.feeBps.toString(),
     })),

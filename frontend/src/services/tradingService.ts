@@ -105,7 +105,7 @@ export type TradingBotPaperPerformance = {
     openedAt: string | null; lastFilledAt: string | null; updatedAt: string;
   };
   fills: Array<{
-    id: string; decisionId: string; side: 'BUY' | 'SELL'; quantity: string; markPrice: string; fillPrice: string;
+    id: string; decisionId: string | null; side: 'BUY' | 'SELL'; quantity: string; markPrice: string; fillPrice: string;
     notional: string; fee: string; realizedPnl: string; slippageBps: string; feeBps: string; occurredAt: string;
   }>;
 };

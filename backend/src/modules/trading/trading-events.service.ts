@@ -65,7 +65,13 @@ export async function streamTradingEvents(
   response.setHeader('Connection', 'keep-alive');
   response.setHeader('X-Accel-Buffering', 'no');
   response.flushHeaders();
-  writeEvent(response, 'ready', { cursor: cursor.toString(), exchangeAccountId });
+  writeEvent(response, 'ready', {
+    cursor: cursor.toString(), exchangeAccountId,
+    // Disposable snapshot/decision notifications expire; reconnecting clients must
+    // refresh REST snapshots instead of reconstructing account state from the log.
+    resyncRequired: rawCursor !== undefined,
+    transientReplayRetentionHours: 24,
+  });
 
   let polling = false;
   let closed = false;

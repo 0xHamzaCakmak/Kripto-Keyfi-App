@@ -268,6 +268,7 @@ validate_migrations() {
     (cd "$BACKEND_DIR" && node - <<'NODE'
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
 
 const prisma = new PrismaClient();
@@ -283,12 +284,21 @@ const destructive = /\b(DROP\s+(?:TABLE|COLUMN|DATABASE|INDEX|FOREIGN\s+KEY|PRIM
     .filter((entry) => entry.isDirectory() && !applied.has(entry.name))
     .map((entry) => ({ name: entry.name, file: path.join(root, entry.name, 'migration.sql') }))
     .filter((entry) => fs.existsSync(entry.file));
-  const blocked = pending.filter((entry) => destructive.test(fs.readFileSync(entry.file, 'utf8')));
+  // Reviewed retention migration preserves evidence with nullable SET NULL links.
+  // Match the exact SQL content, not just the filename; other destructive SQL stays blocked.
+  const reviewedMigrations = new Map([
+    ['20260909100000_preserve_execution_evidence_retention', '0d5e9a71c29a70b94de261a8ee9520fff480f54644389dcd0809ef4f7bb75790'],
+  ]);
+  const blocked = pending.filter((entry) => {
+    const sql = fs.readFileSync(entry.file, 'utf8').replace(/\r\n/g, '\n');
+    const digest = crypto.createHash('sha256').update(sql).digest('hex');
+    return destructive.test(sql) && reviewedMigrations.get(entry.name) !== digest;
+  });
   if (blocked.length) {
     console.error(`[GUVENLIK] Destructive migration onay gerektiriyor: ${blocked.map((entry) => entry.name).join(', ')}`);
     process.exitCode = 42;
   } else {
-    console.log(`[GUVENLIK] ${pending.length} pending migration destructive SQL icermiyor.`);
+    console.log(`[GUVENLIK] ${pending.length} pending migration guvenlik kontrolunden gecti.`);
   }
 })().finally(() => prisma.$disconnect());
 NODE

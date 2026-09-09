@@ -1515,6 +1515,7 @@ model TradingBotDecision {
   @@index([tradingBotId, id])
   @@index([userId, occurredAt])
   @@index([exchangeAccountId, occurredAt])
+  @@index([type, occurredAt])
   @@index([kind, occurredAt])
   @@map("trading_bot_decisions")
 }
@@ -1543,7 +1544,7 @@ model TradingBotPaperPosition {
 model TradingBotPaperFill {
   id           BigInt              @id @default(autoincrement()) @db.UnsignedBigInt
   tradingBotId String
-  decisionId   BigInt              @unique @db.UnsignedBigInt
+  decisionId   BigInt?              @unique @db.UnsignedBigInt
   side         TradingBotPaperSide
   quantity     Decimal             @db.Decimal(36, 18)
   markPrice    Decimal             @db.Decimal(36, 18)
@@ -1557,7 +1558,7 @@ model TradingBotPaperFill {
   createdAt    DateTime            @default(now())
 
   tradingBot TradingBot         @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
-  decision   TradingBotDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  decision   TradingBotDecision? @relation(fields: [decisionId], references: [id], onDelete: SetNull)
 
   @@index([tradingBotId, id])
   @@index([occurredAt])
@@ -1567,7 +1568,7 @@ model TradingBotPaperFill {
 model ShadowTrade {
   id                 BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   tradingBotId       String
-  decisionId         BigInt   @unique @db.UnsignedBigInt
+  decisionId         BigInt?   @unique @db.UnsignedBigInt
   action             String   @db.VarChar(30)
   side               TradingBotPaperSide?
   quantity           Decimal? @db.Decimal(36, 18)
@@ -1588,7 +1589,7 @@ model ShadowTrade {
   createdAt          DateTime @default(now())
 
   tradingBot TradingBot         @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
-  decision   TradingBotDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  decision   TradingBotDecision? @relation(fields: [decisionId], references: [id], onDelete: SetNull)
 
   @@index([tradingBotId, occurredAt])
   @@index([action, occurredAt])
@@ -2189,6 +2190,7 @@ model TradingOutboxEvent {
   @@index([userId, id])
   @@index([exchangeAccountId, id])
   @@index([publishedAt, id])
+  @@index([eventType, createdAt, id])
   @@map("trading_outbox_events")
 }
 

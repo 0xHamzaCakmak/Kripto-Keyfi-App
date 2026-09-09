@@ -46,6 +46,8 @@ npm --prefix backend run configure:testnet-hedge-mode
 
 Beklenen değer `"hedgeMode": true` değeridir. Prisma Client üretimi ayrıca `deploy.sh` içinde bağımlılık kurulumundan hemen sonra otomatik çalışır.
 
+Trading saklama politikasi: [olcum, migration ve gunluk temizlik](TRADING_RETENTION_TR.md). Bu surum backend acilisinda eski karar/sinyal ve gecici outbox bildirimlerini temizler. Once rapor ve dry-run alinmalidir. Koruyucu migration backend baslamadan once uygulanmalidir; deploy.sh otomatik DB yedegi almaz.
+
 ## 3. Standart deploy
 
 ```bash

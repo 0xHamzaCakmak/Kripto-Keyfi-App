@@ -84,7 +84,7 @@ export async function getShadowPerformance(userId: string, query: ShadowSummaryQ
 }
 
 function presentShadowTrade(row: {
-  id: bigint; decisionId: bigint; tradingBotId: string; action: string; side: string | null;
+  id: bigint; decisionId: bigint | null; tradingBotId: string; action: string; side: string | null;
   quantity: Prisma.Decimal | null; markPrice: Prisma.Decimal; simulatedFillPrice: Prisma.Decimal | null;
   notional: Prisma.Decimal | null; fee: Prisma.Decimal; realizedPnl: Prisma.Decimal; netQuantity: Prisma.Decimal;
   avgEntryPrice: Prisma.Decimal; cumulativePnl: Prisma.Decimal; totalFees: Prisma.Decimal; unrealizedPnl: Prisma.Decimal;
@@ -92,7 +92,7 @@ function presentShadowTrade(row: {
   occurredAt: Date; createdAt: Date; tradingBot: { name: string; symbol: string; lifecycleStatus: string };
 }) {
   return {
-    ...row, id: row.id.toString(), decisionId: row.decisionId.toString(),
+    ...row, id: row.id.toString(), decisionId: row.decisionId?.toString() ?? null,
     quantity: row.quantity?.toString() ?? null, markPrice: row.markPrice.toString(),
     simulatedFillPrice: row.simulatedFillPrice?.toString() ?? null, notional: row.notional?.toString() ?? null,
     fee: row.fee.toString(), realizedPnl: row.realizedPnl.toString(), netQuantity: row.netQuantity.toString(),

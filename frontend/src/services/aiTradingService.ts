@@ -110,7 +110,7 @@ export type PaperPosition = {
   openedAt: string | null; lastFilledAt: string | null; updatedAt: string;
 };
 export type PaperFill = {
-  id: string; decisionId: string; side: 'BUY' | 'SELL'; quantity: string; markPrice: string; fillPrice: string;
+  id: string; decisionId: string | null; side: 'BUY' | 'SELL'; quantity: string; markPrice: string; fillPrice: string;
   notional: string; fee: string; realizedPnl: string; slippageBps: string; feeBps: string; occurredAt: string;
 };
 export type PaperTrade = {
@@ -273,7 +273,7 @@ export type TradingRiskProfile = {
 };
 export type TradingRiskEvent = { id: string; tradingOrderId: string | null; source: string; decision: string; code: string; message: string; metrics: unknown; occurredAt: string };
 export type ShadowTrade = {
-  id: string; decisionId: string; tradingBotId: string; action: 'WOULD_OPEN' | 'WOULD_CLOSE' | 'WOULD_MOVE_STOP'; side: 'BUY' | 'SELL' | null;
+  id: string; decisionId: string | null; tradingBotId: string; action: 'WOULD_OPEN' | 'WOULD_CLOSE' | 'WOULD_MOVE_STOP'; side: 'BUY' | 'SELL' | null;
   quantity: string | null; markPrice: string; simulatedFillPrice: string | null; notional: string | null; fee: string; realizedPnl: string;
   netQuantity: string; avgEntryPrice: string; cumulativePnl: string; totalFees: string; unrealizedPnl: string; slippageBps: string | null; feeBps: string | null; stopPrice: string | null;
   occurredAt: string; paperIncluded: false; submittedToExchange: false; tradingBot: { name: string; symbol: string; lifecycleStatus: AutonomousLifecycle };

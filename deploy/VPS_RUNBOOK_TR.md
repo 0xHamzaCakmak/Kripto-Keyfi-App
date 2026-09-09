@@ -64,9 +64,11 @@ sudo chmod 640 /etc/kriptokeyfi/backend.env /etc/kriptokeyfi/trading-engine.env
 
 ## 4. Build, migration ve servis kurulumu
 
+`deploy.sh` otomatik veritabani yedegi almaz. Mevcut VPS yedeklerini ve geri yuklenebilirligini deploydan once ayrica kontrol edin.
+
 Production process manager PM2'dir. Backend ve Go Engine için ayrıca doğrudan
 `kriptokeyfi-*.service` kurmayın; aynı uygulamanın iki kopyası port ve scheduler
-lease çakışması oluşturur. Build, yedek, migration, atomik Go binary kurulumu,
+lease çakışması oluşturur. Build, migration, atomik Go binary kurulumu,
 health kontrolü ve PM2 reboot entegrasyonu proje kökündeki `deploy.sh` tarafından
 tek akışta yapılır.
 
@@ -126,7 +128,7 @@ pm2 logs kriptokeyfi-api --lines 100 --nostream
 
 ## 8. Tek komut güvenli deployment
 
-Proje kökündeki `deploy.sh` backend/frontend bağımlılıklarını, typecheck/test/build işlemlerini, Go test ve atomik binary değişimini, DB yedeğini, Prisma migration'larını, PM2 restartını ve health kontrollerini birlikte yürütür. TESTNET botu varsa yalnız deploy sırasında duraklatır; backend ve engine hazır olmadan devam ettirmez.
+Proje kökündeki `deploy.sh` backend/frontend bağımlılıklarını, typecheck/test/build işlemlerini, Go test ve atomik binary değişimini, Prisma migration'larını, PM2 restartını ve health kontrollerini birlikte yürütür. TESTNET botu varsa yalnız deploy sırasında duraklatır; backend ve engine hazır olmadan devam ettirmez.
 
 ```bash
 cd /root/Projects/kriptokeyfi
