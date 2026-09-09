@@ -1558,7 +1558,7 @@ model TradingBotPaperFill {
   createdAt    DateTime            @default(now())
 
   tradingBot TradingBot         @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
-  decision   TradingBotDecision? @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+  decision   TradingBotDecision? @relation(fields: [decisionId], references: [id], onDelete: SetNull, map: "trading_bot_paper_fills_decisionId_retention_fkey")
 
   @@index([tradingBotId, id])
   @@index([occurredAt])
@@ -1589,7 +1589,7 @@ model ShadowTrade {
   createdAt          DateTime @default(now())
 
   tradingBot TradingBot         @relation(fields: [tradingBotId], references: [id], onDelete: Cascade)
-  decision   TradingBotDecision? @relation(fields: [decisionId], references: [id], onDelete: SetNull)
+  decision   TradingBotDecision? @relation(fields: [decisionId], references: [id], onDelete: SetNull, map: "shadow_trades_decisionId_retention_fkey")
 
   @@index([tradingBotId, occurredAt])
   @@index([action, occurredAt])

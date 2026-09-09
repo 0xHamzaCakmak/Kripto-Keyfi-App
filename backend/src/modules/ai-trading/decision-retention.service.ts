@@ -33,8 +33,8 @@ export async function deleteExpiredAutonomousDecisions(now = new Date()) {
   const constraints = await prisma.$queryRaw<Array<{ DELETE_RULE: string }>>`
     SELECT DELETE_RULE FROM information_schema.REFERENTIAL_CONSTRAINTS
     WHERE CONSTRAINT_SCHEMA = DATABASE() AND
-      ((TABLE_NAME = 'trading_bot_paper_fills' AND CONSTRAINT_NAME = 'trading_bot_paper_fills_decisionId_fkey') OR
-       (TABLE_NAME = 'shadow_trades' AND CONSTRAINT_NAME = 'shadow_trades_decisionId_fkey'))
+      ((TABLE_NAME = 'trading_bot_paper_fills' AND CONSTRAINT_NAME = 'trading_bot_paper_fills_decisionId_retention_fkey') OR
+       (TABLE_NAME = 'shadow_trades' AND CONSTRAINT_NAME = 'shadow_trades_decisionId_retention_fkey'))
   `;
   if (constraints.length !== 2 || constraints.some(row => row.DELETE_RULE !== 'SET NULL')) {
     throw new Error('Trading retention requires the preserve_execution_evidence_retention migration; no records deleted.');

@@ -81,3 +81,31 @@ OPTIMIZE TABLE otomatik çalıştırılmaz. Tabloyu yeniden oluşturabilir; ek b
 Kaynak: [MySQL OPTIMIZE TABLE](https://dev.mysql.com/doc/refman/8.4/en/optimize-table.html).
 
 Deploy kontrolu: koruyucu migration yalniz incelenmis SQL iceriginin SHA-256 degeri eslesirse genel destructive SQL kontrolunden gecer. Diger riskli migrationlar engellenmeye devam eder. deploy.sh otomatik DB yedegi almaz.
+
+## P3018 / MySQL 1826 retention migration kurtarma
+
+Ilk surum ayni ALTER TABLE icinde eski foreign key adini yeniden kullaniyordu. Duzeltilen migration yeni `*_decisionId_retention_fkey` adlarini kullanir; Prisma schema, worker kontrolu ve deploy SHA-256 kaydi birlikte guncellenmistir.
+
+Asagidaki akis yalniz `20260909100000_preserve_execution_evidence_retention` migration'inin ilk sorguda 1826 ile durdugu, onceki semanin korundugu durum icindir. Yeni duzeltmeleri commit/push ettikten sonra VPS'te:
+
+```bash
+cd ~/Projects/kriptokeyfi
+git pull --ff-only
+cd backend
+npx tsx scripts/verify-retention-recovery.ts && npx prisma migrate resolve --rolled-back 20260909100000_preserve_execution_evidence_retention
+```
+
+Precheck sadece okur: basarisiz migration kaydi, iki eski CASCADE foreign key, NOT NULL kolonlar ve yeni outbox indeksinin henuz bulunmadigi dogrulanir. Basarisizsa burada dur; sonraki komutu calistirma. `resolve --rolled-back` veri veya semayi geri almaz, basarisiz denemenin tekrar denenebilmesini saglar.
+
+Onceki komut basarili olduktan sonra:
+
+```bash
+cd ~/Projects/kriptokeyfi
+RESUME_DEPLOY_MAINTENANCE=true MAINTENANCE_RESUME_MINUTES=0 bash deploy.sh
+```
+
+Kurtarma secenegi `.deploy-maintenance-bots.json` dosyasini korur. Listedeki botlarin PAUSED oldugunu ve calisan autonomous TESTNET botu bulunmadigini dogrular. Yeni migration ve servis health/reconciliation kontrollerinden sonra sadece orijinal listedeki botlar devam ettirilir. `MAINTENANCE_RESUME_MINUTES=0` uzun suren kurtarmalarda 180 dakikalik filtreyi kaldirir; orijinal bot listesi kisitlamasi kalir. Varsayilan deploy davranisi degismez: kurtarma secenegi olmadan eski bakim kaydi varsa durur.
+
+Bakim dosyasini silme; `migrate reset`, `db push` veya gercekte uygulanmamis migration icin `resolve --applied` kullanma. Bu kurtarma SQL'i VPS uzerinde henuz uygulanmadi; yerelde Bash sozdizimi, Prisma validate/typecheck ve ilgili testler kontrol edildi.
+
+Kaynak: https://www.prisma.io/docs/orm/prisma-migrate/workflows/patching-and-hotfixing

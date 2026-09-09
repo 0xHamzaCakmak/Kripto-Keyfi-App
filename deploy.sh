@@ -250,7 +250,31 @@ pause_testnet_fleet() {
   if [ -e "$MAINTENANCE_STATE_FILE" ]; then
     printf 'Onceki deploydan kalan TESTNET bakim kaydi var: %s\n' "$MAINTENANCE_STATE_FILE" >&2
     printf 'Engine ve Binance durumunu kontrol edip onceki bakimi sonlandirmadan yeni deploy baslatmayin.\n' >&2
-    exit 1
+    if [ "${RESUME_DEPLOY_MAINTENANCE:-false}" != "true" ]; then exit 1; fi
+    # Explicit recovery reuses the original ownership list; never overwrite it.
+    (cd "$BACKEND_DIR" && node - "$MAINTENANCE_STATE_FILE" <<'NODE'
+const fs = require('fs');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+(async () => {
+  const ids = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+  if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string') || new Set(ids).size !== ids.length) {
+    throw new Error('Invalid maintenance state file');
+  }
+  const bots = await prisma.tradingBot.findMany({
+    where: { type: 'AUTONOMOUS', mode: 'DEMO' },
+    select: { id: true, state: true, desiredState: true },
+  });
+  if (ids.some(id => !bots.some(bot => bot.id === id && bot.state === 'PAUSED' && bot.desiredState === 'PAUSED')) ||
+      bots.some(bot => ['STARTING', 'RUNNING', 'RECONCILING', 'RISK_BLOCKED'].includes(bot.state) || bot.desiredState === 'RUNNING')) {
+    throw new Error('Fleet is not safely paused; maintenance recovery refused');
+  }
+  console.log('Original maintenance list preserved; fleet remains paused.');
+})().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => prisma.$disconnect());
+NODE
+    )
+    FLEET_MAINTENANCE_STARTED=true
+    return
   fi
   FLEET_MAINTENANCE_STARTED=true
   npm --prefix "$BACKEND_DIR" run control:ai-testnet-fleet -- \
@@ -287,7 +311,7 @@ const destructive = /\b(DROP\s+(?:TABLE|COLUMN|DATABASE|INDEX|FOREIGN\s+KEY|PRIM
   // Reviewed retention migration preserves evidence with nullable SET NULL links.
   // Match the exact SQL content, not just the filename; other destructive SQL stays blocked.
   const reviewedMigrations = new Map([
-    ['20260909100000_preserve_execution_evidence_retention', '0d5e9a71c29a70b94de261a8ee9520fff480f54644389dcd0809ef4f7bb75790'],
+    ['20260909100000_preserve_execution_evidence_retention', '0ee9380b9d1a267e5f3a8aa832908d1d144dfbe876d7d587836063c0019c5a3c'],
   ]);
   const blocked = pending.filter((entry) => {
     const sql = fs.readFileSync(entry.file, 'utf8').replace(/\r\n/g, '\n');

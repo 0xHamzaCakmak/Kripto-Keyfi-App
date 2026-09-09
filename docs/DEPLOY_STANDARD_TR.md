@@ -130,3 +130,4 @@ Azami açık pozisyon:                    20
 Parite başına pozisyon:                  2
 Dakikalık emir limiti:                    0
 Günlük emir limiti:                       0
+Retention deploy P3018 / MySQL 1826 ile durursa: [kontrollu migration kurtarma adimlari](TRADING_RETENTION_TR.md#p3018--mysql-1826-retention-migration-kurtarma). `.deploy-maintenance-bots.json` dosyasini silmeyin.
