@@ -1,0 +1,3 @@
+export const RETENTION_DAYS = 7;
+export const RETENTION_HOURS = RETENTION_DAYS * 24;
+export const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;

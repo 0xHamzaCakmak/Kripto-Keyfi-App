@@ -1,13 +1,13 @@
 import { prisma } from '../../database/prisma.js';
 import { deleteImageByPublicUrl } from '../../storage/r2-image.js';
 import { logger } from '../../utils/logger.js';
+import { scheduleDailyMaintenance } from '../../utils/daily-maintenance.js';
+import { RETENTION_DAYS, RETENTION_INTERVAL_MS } from '../../utils/retention-policy.js';
 
-export const NEWS_RETENTION_DAYS = 7;
-export const NEWS_RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const NEWS_RETENTION_DAYS = RETENTION_DAYS;
+export const NEWS_RETENTION_INTERVAL_MS = RETENTION_INTERVAL_MS;
 const DELETE_BATCH_SIZE = 250;
 const IMAGE_DELETE_CONCURRENCY = 10;
-
-let retentionRunning = false;
 
 export async function deleteExpiredNews(now = new Date()) {
   const cutoff = new Date(now.getTime() - NEWS_RETENTION_DAYS * 24 * 60 * 60 * 1000);
@@ -53,20 +53,5 @@ export async function deleteExpiredNews(now = new Date()) {
 }
 
 export function scheduleNewsRetention() {
-  const execute = async () => {
-    if (retentionRunning) return;
-    retentionRunning = true;
-    try {
-      const result = await deleteExpiredNews();
-      logger.info(result, 'daily news retention completed');
-    } catch (error) {
-      logger.error({ err: error }, 'daily news retention failed');
-    } finally {
-      retentionRunning = false;
-    }
-  };
-  void execute();
-  const timer = setInterval(() => { void execute(); }, NEWS_RETENTION_INTERVAL_MS);
-  timer.unref();
-  return () => clearInterval(timer);
+  return scheduleDailyMaintenance('news retention', () => deleteExpiredNews());
 }

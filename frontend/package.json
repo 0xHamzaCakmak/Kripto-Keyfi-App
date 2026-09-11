@@ -9,6 +9,7 @@
     "start": "node server.mjs",
     "start:seo": "node server.mjs",
     "test:seo": "node --test tests/seo-render.test.mjs",
+    "test:ai-trading-pro": "node --test tests/ai-trading-pro-positions.test.mjs",
     "test:e2e-news": "node tests/news-flow.e2e.mjs",
     "preview": "vite --configLoader runner preview",
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",

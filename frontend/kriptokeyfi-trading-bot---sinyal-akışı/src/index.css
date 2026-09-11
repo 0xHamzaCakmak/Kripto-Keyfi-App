@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+#exchange-accounts-view .input {
+  width: 100%;
+  border: 1px solid #2b3139;
+  border-radius: 0.75rem;
+  background: #0b0e11;
+  color: #eaecef;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+}
+
+#exchange-accounts-view .input.pl-10 { padding-left: 2.5rem; }
+#exchange-accounts-view .input.pr-11 { padding-right: 2.75rem; }
+#exchange-accounts-view .input:focus-visible { outline: 2px solid #00d2ff; outline-offset: 2px; }
+#exchange-accounts-view .input:disabled { opacity: 0.6; }
+
 @layer base {
   :root {
     --bg: #0b0e11;
@@ -80,5 +95,4 @@
 .animate-pulse-ring {
   animation: pulse-ring 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
-
 

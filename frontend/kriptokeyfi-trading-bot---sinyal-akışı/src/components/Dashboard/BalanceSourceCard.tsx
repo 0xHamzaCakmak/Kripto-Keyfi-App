@@ -12,7 +12,7 @@ type BalanceSourceCardProps = {
   selectedAccountId: string;
   onSelectAccount: (accountId: string) => void;
   mode: TradeProMode;
-  onToggleMode: () => void;
+  onToggleMode?: () => void;
   balances: TradeProBalance[];
   arena: TradeProArena | null;
   loading: boolean;
@@ -43,19 +43,11 @@ export const BalanceSourceCard: React.FC<BalanceSourceCardProps> = ({
         <div className="flex items-center justify-between gap-2 pb-3 border-b border-[#2b3139]">
           <h3 className="shrink-0 text-xs font-bold tracking-wider text-[#eaecef] uppercase font-['Inter','Plus_Jakarta_Sans',sans-serif]">KAYNAK / BAKİYE</h3>
           <div className="flex min-w-0 items-center justify-end gap-1.5">
-            <select
-              aria-label="Borsa hesabı"
-              value={selectedAccountId}
-              onChange={(event) => onSelectAccount(event.target.value)}
-              disabled={accounts.length === 0}
-              className="min-w-0 max-w-[112px] rounded border border-[#2b3139] bg-[#0b0e11] px-1.5 py-1 text-[9px] font-bold uppercase text-[#eaecef] outline-none focus:border-[#00d2ff] disabled:text-[#848e9c]"
-            >
-              {accounts.length === 0 && <option value="">BORSA YOK</option>}
-              {accounts.map((account) => <option key={account.id} value={account.id}>{account.provider} · {account.name}</option>)}
-            </select>
+            <span className="truncate text-[10px] font-bold text-[#eaecef]" title={accounts.find((account) => account.id === selectedAccountId)?.name}>{accounts.find((account) => account.id === selectedAccountId)?.name ?? "Hesap seçilmedi"}</span>
             <button
               type="button"
               onClick={onToggleMode}
+              disabled={!onToggleMode}
               aria-label={`İşlem modu: ${mode}`}
               className={`rounded border px-1.5 py-1 text-[9px] font-bold transition-colors ${mode === 'DEMO' ? 'border-[#f0b90b]/40 bg-[#f0b90b]/10 text-[#f0b90b]' : 'border-[#02c076]/40 bg-[#02c076]/10 text-[#02c076]'}`}
             >

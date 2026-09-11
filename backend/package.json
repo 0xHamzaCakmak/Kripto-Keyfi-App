@@ -47,6 +47,7 @@
     "deploy:ai-testnet-fleet": "tsx scripts/deploy-autonomous-testnet-fleet.ts",
     "prune:paper-bots": "tsx scripts/prune-paper-bots.ts",
     "retention:trading": "tsx scripts/retain-trading-history.ts",
+    "retention:news": "tsx scripts/retain-news-history.ts",
     "report:db-storage": "tsx scripts/report-database-storage.ts",
     "news:bootstrap": "tsx scripts/bootstrap-news.ts",
     "news:localize": "tsx scripts/localize-news.ts",

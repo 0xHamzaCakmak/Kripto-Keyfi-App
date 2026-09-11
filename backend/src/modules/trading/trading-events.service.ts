@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import type { ExchangeProvider, Prisma } from '@prisma/client';
 import { prisma } from '../../database/prisma.js';
 import { ApiError } from '../../utils/api-error.js';
+import { RETENTION_HOURS } from '../../utils/retention-policy.js';
 
 const batchSize = 100;
 const pollIntervalMs = 750;
@@ -70,7 +71,7 @@ export async function streamTradingEvents(
     // Disposable snapshot/decision notifications expire; reconnecting clients must
     // refresh REST snapshots instead of reconstructing account state from the log.
     resyncRequired: rawCursor !== undefined,
-    transientReplayRetentionHours: 24,
+    transientReplayRetentionHours: RETENTION_HOURS,
   });
 
   let polling = false;

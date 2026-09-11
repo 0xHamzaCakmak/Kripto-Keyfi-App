@@ -16,18 +16,21 @@ Outbox dağılımı: 1.141.867 BOT_STATE_CHANGED, 339.107 BOT_PAPER_DECISION, 28
 
 Audit tablosunda 225.497 AUTONOMOUS_RISK_APPROVED, 27.150 AUTONOMOUS_RISK_REJECTED ve 3.528 AUTONOMOUS_RISK_BLOCKED vardır. Risk/denetim kayıtları bu değişiklikte silinmez; özellikle BLOCKED kayıtları canlıya geçiş değerlendirmesinde kullanılır. Bu tablo ve muhasebe geçmişi büyümeye devam edebilir; raporla izlenmelidir.
 
-## Otomatik politika
+## Otomatik politika — son 7 gün
 
-Backend başladığında ve ardından her 24 saatte bir:
+Trading ve haber temizliği ayrı görevlerdir. Her görev ilk kurulumda backend açılışında çalışır; sonraki çalışma zamanı veritabanındaki maintenance_jobs tablosunda tutulur. Son başlangıçtan 24 saat geçmeden yeniden çalışmaz. Backend her dakika yalnızca görev vadesini kontrol eder; bu kontrol veri silmez. Restart ve birden fazla API süreci aynı günlük görevi tekrar başlatmaz. Backend kapalıyken geçen süre açılışta kontrol edilir; vadesi geçen görev yeniden başlatılır. Ayrı cron gerekmez.
 
-- Hem occurredAt hem createdAt değeri 24 saatten eski AUTONOMOUS kararları temizlenir. Geç yazılmış kararlar en az 24 saat korunur.
-- AUTONOMOUS botların 24 saatten eski sinyalleri, karar bağlantısı olmasa da temizlenir. Yeni sinyaller eski karara bağlıysa sinyal korunur, bağlantısı NULL olur.
-- Yalnız yukarıdaki dört outbox bildirim türünün 24 saatten eski kayıtları temizlenir. publishedAt tüketici onayı olarak kullanılmaz; mevcut SSE akışı bu alanı güncellemez.
-- Gerçek emirler, testnet fill, paper fill, paper trade, açık pozisyonlar, shadow performans kanıtları, audit ve risk olayları korunur. Silinen kararın paper fill/shadow bağlantısı NULL olur.
+- trading_bot_decisions: Hem occurredAt hem createdAt değeri 7 günden eski AUTONOMOUS kararlar silinir. Geç yazılmış kararlar da en az 7 gün korunur.
+- trading_bot_signals: AUTONOMOUS botların 7 günden eski sinyalleri, karar bağlantısı olmasa da silinir. Yeni sinyaller korunur; silinen karara bağlantıları NULL olur.
+- trading_outbox_events: **Tüm event türlerinin** createdAt değeri 7 günden eski bildirimleri silinir. Bu tablo SSE bildirim geçmişidir; motorun emir kuyruğu değildir. publishedAt tüketici onayı değildir ve silme şartı olarak kullanılmaz.
+- Asıl emirler, testnet/paper fill, paper trade, pozisyon, shadow performans kanıtları, audit ve risk kayıtları korunur. Karara bağlı paper fill/shadow kayıtları silinmez, decisionId bağlantısı NULL olur.
+- Haberler: Mevcut politika **haber adedi değil yayın tarihine göre 7 gündür**. publishedAt değeri 7 günden eski haberler, ilişkili analitik kayıtları ve ilişkiler silinir; haber görselleri R2'den kaldırılır, kullanılmayan etiketler temizlenir. YouTube videoları bu kapsamda değildir.
 
-Temizlik 1000 kayıtlık batch'ler ve aralarda 100 ms bekleme ile çalışır. Hata loglanır; sonraki çalıştırma kalan kayıtları temizler. Aynı süreçte üst üste çalışması engellenir; farklı süreçlerin aynı satırları temizlemesi idempotenttir. Günlük çalışma, temizlik anında son 24 saati bırakır; bir sonraki temizlikten önce yaklaşık 48 saatlik geçmiş bulunabilir. Backend kapalıysa temizlik yeniden açılışta devam eder. Ayrı cron gerekmez.
+Trading temizliği 1000 kayıtlık batch'ler ve aralarda 100 ms bekleme ile çalışır. Haberler 250 kayıtlık batch'ler halinde işlenir. Her çalışmanın silme sayıları loglanır. Günlük temizlik son 7 günü bırakır; iki temizlik arasında en eski kayıt yaklaşık 8 günlük olabilir. Daha önceki 24 saatlik politikayla silinmiş kayıtlar geri getirilemez.
 
-Eski karar ayrıntıları/sinyaller geriye dönük incelenemez. SSE ready mesajı yeniden bağlanan istemcilerde resyncRequired=true ve transientReplayRetentionHours=24 bildirir. Cursor ile bağlanan tüketiciler güncel durumu REST snapshot uçlarından yenilemelidir; geçmiş bildirimlerden tam hesap durumu oluşturulmamalıdır. ID boşlukları geçerlidir; cursor sorgusu id > cursor şeklindedir.
+Görev başarısız olursa status=FAILED kaydedilir; kısmen temizlenmiş kayıtlar sonraki günlük çalışmada tamamlanır. Süreç yarıda kapanırsa status=RUNNING kalabilir; nextRunAt dolunca görev tekrar alınabilir. Hata sebebi giderildikten sonra aşağıdaki --apply komutlarıyla manuel tekrar yapılabilir. Manuel komutlar günlük sınırı bilinçli olarak atlar; otomatik görevlerle aynı anda çalıştırılmamalıdır.
+
+SSE ready mesajı yeniden bağlanan istemcilere resyncRequired=true ve transientReplayRetentionHours=168 bildirir. Cursor ile dönen istemciler hesap durumunu REST snapshot uçlarından yenilemelidir. Eski karar/sinyal ayrıntıları 7 gün sonrasında geriye dönük incelenemez.
 
 ## Kurulum
 
@@ -39,28 +42,37 @@ Kod commit edilip VPS'in kullandığı dala gönderildikten sonra mevcut standar
 cd ~/Projects/kriptokeyfi
 npm --prefix backend run report:db-storage
 npm --prefix backend run retention:trading
+npm --prefix backend run retention:news
 ```
 
-İkinci komut varsayılan olarak dry-run'dır. Veritabanı .env üzerinden seçilir; doğru ortama baktığını doğrula. İlk rapor büyük tablolarda tam sayım yaptığı için zaman alabilir. Gerekli eski geçmişi saklayacaksan deploydan önce VPS dışına yedekle.
+İki retention komutu varsayılan olarak dry-run'dır. Veritabanı .env üzerinden seçilir; doğru ortama baktığını doğrula. İlk rapor büyük tablolarda tam sayım yaptığı için zaman alabilir. Gerekli eski geçmişi saklayacaksan deploydan önce VPS dışına yedekle.
 
 ```bash
 ./deploy.sh
 ```
 
-Deploy, yeni indeks migration'ını ve preserve_execution_evidence_retention migration'ını backend başlamadan önce uygulamalıdır. Bu ikinci migration eski ON DELETE CASCADE ilişkilerini ON DELETE SET NULL yapar. Worker bu ilişkileri information_schema üzerinden doğrular; migration eksikse hiçbir kayıt silmeden hata verir. Eski backend sürümü nullable decisionId alanlarıyla uyumlu değildir; migration sonrasında eski backend'e doğrudan dönülmemelidir.
+Deploy, bekleyen indeks ve preserve_execution_evidence_retention migration'larını, ardından 20260909120000_daily_retention_schedule migration'ını (kalıcı günlük görev tablosu ve outbox tarih indeksi) backend başlamadan önce uygulamalıdır. Koruyucu migration eski ON DELETE CASCADE ilişkilerini ON DELETE SET NULL yapar. Worker bu ilişkileri information_schema üzerinden doğrular; migration eksikse trading kayıtlarını silmeden hata verir. Eski backend sürümü nullable decisionId alanlarıyla uyumlu değildir; migration sonrasında eski backend'e doğrudan dönülmemelidir.
 
 Deploy sonrası:
 
 ```bash
 pm2 logs kriptokeyfi-api --lines 100 --nostream
 npm --prefix backend run retention:trading
+npm --prefix backend run retention:news
 npm --prefix backend run report:db-storage
 ```
 
-Logda daily trading retention completed ve silinen kayıt sayıları beklenir. retention:trading çıktısında yeniden birikenler dışında eski kayıt kalmamalıdır. Gerekirse, migration uygulanmış ortamda tek seferlik manuel çalıştırma:
+Logda daily trading retention completed / daily news retention completed ve silinen kayıt sayıları beklenir. İşlem planını ve son durumunu MySQL oturumunda kontrol et:
+
+```sql
+SELECT name, status, lastStartedAt, lastCompletedAt, nextRunAt FROM maintenance_jobs;
+```
+
+Tarihler UTC cinsindedir. FAILED veya vadesi geçmiş RUNNING varsa loglardaki hatayı incele; koruyucu migration eksikse worker karar/sinyal temizliğini başlatmaz. retention:trading çıktısında yeniden birikenler dışında eski kayıt kalmamalıdır. Gerekirse, migration uygulanmış ortamda tek seferlik manuel çalıştırma:
 
 ```bash
 npm --prefix backend run retention:trading -- --apply
+npm --prefix backend run retention:news -- --apply
 ```
 
 ## Gerçek disk alanı

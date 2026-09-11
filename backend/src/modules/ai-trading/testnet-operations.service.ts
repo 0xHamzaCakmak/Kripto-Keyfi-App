@@ -16,26 +16,29 @@ const cache = new Map<string, Cached>();
 const inFlight = new Map<string, Promise<Awaited<ReturnType<typeof loadOperations>>>>();
 const accountSummaryCache = new Map<string, { expiresAt: number; value: Awaited<ReturnType<typeof loadAccountSummary>> }>();
 
-export async function listTestnetBotOperations(userId: string) {
-  const value = await cachedOperations(userId);
+export async function listTestnetBotOperations(userId: string, exchangeAccountId?: string) {
+  const value = await cachedOperations(userId, exchangeAccountId);
   return autonomousDTO('TESTNET_BOT_OPERATIONS', value.map(({ fills: _fills, ...summary }) => summary));
 }
 
 export async function getTestnetBotOperation(userId: string, botId: string) {
-  const value = await cachedOperations(userId);
+  const bot = await prisma.tradingBot.findFirst({ where: { id: botId, userId, mode: 'DEMO' }, select: { exchangeAccountId: true } });
+  if (!bot) throw new ApiError(404, 'TESTNET bot bulunamadı.', 'TESTNET_BOT_OPERATION_NOT_FOUND');
+  const value = await cachedOperations(userId, bot.exchangeAccountId);
   const operation = value.find((item) => item.botId === botId);
   if (!operation) throw new ApiError(404, 'TESTNET bot operasyon kaydı bulunamadı.', 'TESTNET_BOT_OPERATION_NOT_FOUND');
   return autonomousDTO('TESTNET_BOT_OPERATION', operation);
 }
 
-export async function getTestnetAccountSummary(userId: string) {
-  const existing = accountSummaryCache.get(userId);
+export async function getTestnetAccountSummary(userId: string, exchangeAccountId?: string) {
+  const cacheKey = `${userId}:${exchangeAccountId ?? "default"}`;
+  const existing = accountSummaryCache.get(cacheKey);
   if (existing && existing.expiresAt > Date.now()) return autonomousDTO('TESTNET_ACCOUNT_SUMMARY', existing.value);
   // Account equity and open positions must remain observable even when the
   // exchange's historical-trades endpoint is temporarily unavailable.
-  const operations = await cachedOperations(userId).catch(() => []);
-  const value = await loadAccountSummary(userId, operations);
-  accountSummaryCache.set(userId, { expiresAt: Date.now() + ACCOUNT_SUMMARY_CACHE_MS, value });
+  const operations = await cachedOperations(userId, exchangeAccountId).catch(() => []);
+  const value = await loadAccountSummary(userId, operations, exchangeAccountId);
+  accountSummaryCache.set(cacheKey, { expiresAt: Date.now() + ACCOUNT_SUMMARY_CACHE_MS, value });
   return autonomousDTO('TESTNET_ACCOUNT_SUMMARY', value);
 }
 
@@ -64,28 +67,29 @@ export async function resetTestnetAccountingCheckpoint(userId: string, note: str
     metadata: { checkpointNumber: checkpoint.number, positionsPreserved: true, ordersCanceled: false, productionLive: false },
     ...(ipAddress ? { ipAddress } : {}),
   } });
-  accountSummaryCache.delete(userId);
+  for (const key of accountSummaryCache.keys()) if (key.startsWith(`${userId}:`)) accountSummaryCache.delete(key);
   return autonomousDTO('TESTNET_ACCOUNTING_CHECKPOINT', checkpointView(checkpoint, financials));
 }
 
-async function cachedOperations(userId: string) {
-  const existing = cache.get(userId);
+async function cachedOperations(userId: string, exchangeAccountId?: string) {
+  const cacheKey = `${userId}:${exchangeAccountId ?? "default"}`;
+  const existing = cache.get(cacheKey);
   if (existing && existing.expiresAt > Date.now()) return existing.value;
-  const pending = inFlight.get(userId);
+  const pending = inFlight.get(cacheKey);
   if (pending) return pending;
-  const refresh = loadOperations(userId)
+  const refresh = loadOperations(userId, exchangeAccountId)
     .then((value) => {
-      cache.set(userId, { expiresAt: Date.now() + OPERATIONS_CACHE_MS, value });
+      cache.set(cacheKey, { expiresAt: Date.now() + OPERATIONS_CACHE_MS, value });
       return value;
     })
-    .finally(() => { inFlight.delete(userId); });
-  inFlight.set(userId, refresh);
+    .finally(() => { inFlight.delete(cacheKey); });
+  inFlight.set(cacheKey, refresh);
   return refresh;
 }
 
-async function loadOperations(userId: string) {
+async function loadOperations(userId: string, exchangeAccountId?: string) {
   const account = await prisma.exchangeAccount.findFirst({
-    where: { userId, provider: 'BINANCE', environment: 'TESTNET', accountType: 'USDT_M', isActive: true },
+    where: { userId, ...(exchangeAccountId ? { id: exchangeAccountId } : {}), provider: 'BINANCE', environment: 'TESTNET', accountType: 'USDT_M', isActive: true },
     orderBy: { createdAt: 'asc' },
   });
   if (!account) return [];
@@ -172,8 +176,8 @@ async function loadOperations(userId: string) {
   });
 }
 
-async function loadAccountSummary(userId: string, operations: Awaited<ReturnType<typeof loadOperations>>) {
-  const account = await activeTestnetAccount(userId);
+async function loadAccountSummary(userId: string, operations: Awaited<ReturnType<typeof loadOperations>>, exchangeAccountId?: string) {
+  const account = await activeTestnetAccount(userId, exchangeAccountId);
   if (!account) return { connected: false as const, accountId: null, startingBalance: decimalText(TESTNET_STARTING_BALANCE_USD), totalBalance: '0', availableBalance: '0', unrealizedPnl: '0', equity: '0', activeMargin: '0', activeNotional: '0', activeBots: 0, openPositions: 0, activeEntryOrders: 0 };
   const snapshot = await loadTradingEngineSnapshot(account);
   const { stableBalances, collateral, totalBalance, availableBalance, unrealizedPnl } = accountFinancials(snapshot);
@@ -208,9 +212,9 @@ export function fixedTestnetPerformance(totalStableBalance: number, unrealizedPn
   return { startingBalance: TESTNET_STARTING_BALANCE_USD, walletPnl, openPnl: unrealizedPnl, netPnl, pnlPercent: netPnl / TESTNET_STARTING_BALANCE_USD };
 }
 
-async function activeTestnetAccount(userId: string) {
+async function activeTestnetAccount(userId: string, exchangeAccountId?: string) {
   return prisma.exchangeAccount.findFirst({
-    where: { userId, provider: 'BINANCE', environment: 'TESTNET', accountType: 'USDT_M', isActive: true },
+    where: { userId, ...(exchangeAccountId ? { id: exchangeAccountId } : {}), provider: 'BINANCE', environment: 'TESTNET', accountType: 'USDT_M', isActive: true },
     orderBy: { createdAt: 'asc' },
   });
 }

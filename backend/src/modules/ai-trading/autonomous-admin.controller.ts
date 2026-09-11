@@ -61,9 +61,9 @@ export async function activateTestnetFleet(req: Request, res: Response) {
 export async function activatePaperFleet(req: Request, res: Response) {
   return success(res, await activateAutonomousPaperFleet(req.user!.id, req.body as z.infer<typeof paperFleetActivationSchema>, req.ip));
 }
-export async function testnetOperations(req: Request, res: Response) { return success(res, await listTestnetBotOperations(req.user!.id)); }
+export async function testnetOperations(req: Request, res: Response) { return success(res, await listTestnetBotOperations(req.user!.id, req.query.exchangeAccountId as string | undefined)); }
 export async function testnetBotOperation(req: Request, res: Response) { return success(res, await getTestnetBotOperation(req.user!.id, req.params.id as string)); }
-export async function testnetAccountSummary(req: Request, res: Response) { return success(res, await getTestnetAccountSummary(req.user!.id)); }
+export async function testnetAccountSummary(req: Request, res: Response) { return success(res, await getTestnetAccountSummary(req.user!.id, req.query.exchangeAccountId as string | undefined)); }
 export async function resetTestnetAccounting(req: Request, res: Response) {
   const body = req.body as z.infer<typeof resetTestnetAccountingSchema>;
   return success(res, await resetTestnetAccountingCheckpoint(req.user!.id, body.note, req.ip), 201);

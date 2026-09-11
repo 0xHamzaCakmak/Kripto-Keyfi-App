@@ -2191,7 +2191,18 @@ model TradingOutboxEvent {
   @@index([exchangeAccountId, id])
   @@index([publishedAt, id])
   @@index([eventType, createdAt, id])
+  @@index([createdAt, id])
   @@map("trading_outbox_events")
+}
+
+model MaintenanceJob {
+  name            String    @id @db.VarChar(80)
+  nextRunAt       DateTime
+  lastStartedAt   DateTime?
+  lastCompletedAt DateTime?
+  status          String    @default("PENDING") @db.VarChar(20)
+
+  @@map("maintenance_jobs")
 }
 
 model RefreshSession {

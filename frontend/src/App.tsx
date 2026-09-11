@@ -41,16 +41,12 @@ const AdminUserDetail = lazy(() => import('./components/AdminUserDetail'));
 const AdminLayout = lazy(() => import('./components/AdminLayout'));
 const TradingBotDashboard = lazy(() => import('./components/TradingBotDashboard'));
 const TradingBots = lazy(() => import('./components/TradingBots'));
-const TradingBotGuide = lazy(() => import('./components/TradingBotGuide'));
 const AdminNewsSources = lazy(() => import('./components/AdminNewsSources'));
 const AdminVideos = lazy(() => import('./components/AdminVideos'));
 const AdminYoutubeChannels = lazy(() => import('./components/AdminYoutubeChannels'));
 const AdminYoutubeScoring = lazy(() => import('./components/AdminYoutubeScoring'));
 const AdminCreatorApplications = lazy(() => import('./components/AdminCreatorApplications'));
-const ExchangeAccounts = lazy(() => import('./components/ExchangeAccounts'));
 const ManualTrading = lazy(() => import('./components/ManualTrading'));
-const OpenOrdersPage = lazy(() => import('./components/TradingActivity').then((module) => ({ default: module.OpenOrdersPage })));
-const OpenPositionsPage = lazy(() => import('./components/TradingActivity').then((module) => ({ default: module.OpenPositionsPage })));
 const GridBotsPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.GridBotsPage })));
 const TradingProfitLossPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingProfitLossPage })));
 const TradingRiskManagementPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingRiskManagementPage })));
@@ -116,11 +112,11 @@ function AppFrame() {
               <Route path="trading" element={<TradingModuleLayout />}>
                 <Route index element={<TradingBotDashboard />} />
                 <Route path="bots" element={<TradingBots />} />
-                <Route path="guide" element={<TradingBotGuide />} />
+                <Route path="guide" element={<Navigate to="/admin/trading/ai-pro?tab=bot-guide" replace />} />
                 <Route path="manual" element={<ManualTrading />} />
-                <Route path="exchanges" element={<ExchangeAccounts />} />
-                <Route path="orders" element={<OpenOrdersPage />} />
-                <Route path="positions" element={<OpenPositionsPage />} />
+                <Route path="exchanges" element={<Navigate to="/admin/trading/ai-pro?tab=exchange-accounts" replace />} />
+                <Route path="orders" element={<Navigate to="/admin/trading/ai-pro?tab=orders" replace />} />
+                <Route path="positions" element={<Navigate to="/admin/trading/ai-pro?tab=positions" replace />} />
                 <Route path="grid" element={<GridBotsPage />} />
                 <Route path="profit-loss" element={<TradingProfitLossPage />} />
                 <Route path="risk" element={<TradingRiskManagementPage />} />
@@ -135,7 +131,7 @@ function AppFrame() {
                   <Route path="shadow-live" element={<AITradingShadowLive />} />
                 </Route>
                 <Route path="accounts" element={<Navigate to="/admin/trading/exchanges" replace />} />
-                <Route path="bots/guide" element={<Navigate to="/admin/trading/guide" replace />} />
+                <Route path="bots/guide" element={<Navigate to="/admin/trading/ai-pro?tab=bot-guide" replace />} />
               </Route>
               <Route path="news/sources" element={<AdminNewsSources />} />
               <Route path="videos" element={<VideoModuleLayout />}>

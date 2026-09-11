@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MainTabType, AiTradingSubTabType, SignalDecision, SignalEvent } from './types';
+import { MainTabType, AiTradingSubTabType } from './types';
 import { ManagementNavigation } from './components/ManagementNavigation';
 import { SignalFlow, SignalFeed } from './components/SignalFlow';
 import { BalanceSourceCard } from './components/Dashboard/BalanceSourceCard';
@@ -23,7 +23,8 @@ import { MyBotsView } from './components/Dashboard/MyBotsView';
 import { BotGuideView } from './components/Dashboard/BotGuideView';
 import { PnLAnalyticsView } from './components/Dashboard/PnLAnalyticsView';
 import { SettingsModal } from './components/SettingsModal';
-import { BOT_OVERVIEW_STATS, signalEmitter } from './services/mockSignalEngine';
+import { useProBotControl } from './services/useProBotControl';
+import { useTradeProPositions } from './services/useTradeProPositions';
 import {
   getTradeProAccounts,
   getTradeProArena,
@@ -38,53 +39,58 @@ import {
   type TradeProMode,
 } from './services/backendDashboard';
 
-export default function App() {
-  const [stats, setStats] = useState(BOT_OVERVIEW_STATS);
-  const [activeMainTab, setActiveMainTab] = useState<MainTabType>('ai-trading');
+export default function App({ requestedTab, onTabChange }: { requestedTab?: string | null; onTabChange?: (tab: MainTabType) => void }) {
+  const [localTab, setLocalTab] = useState<MainTabType>('ai-trading');
+  const mainTabs: MainTabType[] = ['ai-trading', 'positions', 'my-bots', 'bot-guide', 'manual-trade', 'exchange-accounts', 'orders', 'grid-bot', 'pnl', 'risk', 'system'];
+  const activeMainTab = requestedTab === undefined ? localTab : mainTabs.includes(requestedTab as MainTabType) ? requestedTab as MainTabType : 'ai-trading';
+  const setActiveMainTab = (tab: MainTabType) => { setLocalTab(tab); onTabChange?.(tab); };
+  const [accountsRevision, setAccountsRevision] = useState(0);
   const [activeAiSubTab, setActiveAiSubTab] = useState<AiTradingSubTabType>('overview');
-  const [isBotsRunning, setIsBotsRunning] = useState<boolean>(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [exchangeAccounts, setExchangeAccounts] = useState<TradeProExchangeAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
-  const [tradeMode, setTradeMode] = useState<TradeProMode>('DEMO');
+  const tradeMode: TradeProMode = 'DEMO';
   const [balances, setBalances] = useState<TradeProBalance[]>([]);
   const [balanceAccountId, setBalanceAccountId] = useState('');
   const [arena, setArena] = useState<TradeProArena | null>(null);
   const [arenaAccountId, setArenaAccountId] = useState('');
-  const [dashboardDetails, setDashboardDetails] = useState<TradeProDashboardDetails>({ positions: [], operations: [], riskProfile: null, health: null });
+  const [dashboardDetails, setDashboardDetails] = useState<TradeProDashboardDetails>({ operations: [], riskProfile: null, health: null });
   const [detailsAccountId, setDetailsAccountId] = useState('');
   const [dashboardLoading, setDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState('');
+  const [accountsError, setAccountsError] = useState('');
+  const [accountsLoading, setAccountsLoading] = useState(true);
 
   const selectedAccount = exchangeAccounts.find((account) => account.id === selectedAccountId) ?? null;
-  const dataAccount = selectedAccount
-    ? (tradeMode === 'DEMO'
-      ? (isDemoAccount(selectedAccount) ? selectedAccount : exchangeAccounts.find((account) => account.provider === selectedAccount.provider && isDemoAccount(account)))
-      : (!isDemoAccount(selectedAccount) ? selectedAccount : exchangeAccounts.find((account) => account.provider === selectedAccount.provider && !isDemoAccount(account))))
-    : null;
+  const dataAccount = selectedAccount?.isActive && isDemoAccount(selectedAccount) ? selectedAccount : null;
+  const botControl = useProBotControl(dataAccount?.id ?? null);
+  const positionState = useTradeProPositions(dataAccount?.id ?? null);
   const activeArena = dataAccount && arenaAccountId === dataAccount.id ? arena : null;
   const activeBalances = dataAccount && balanceAccountId === dataAccount.id ? balances : [];
   const activeDetails = dataAccount && detailsAccountId === dataAccount.id
     ? { ...dashboardDetails, operations: isDemoAccount(dataAccount) ? dashboardDetails.operations : [] }
-    : { positions: [], operations: [], riskProfile: null, health: null };
+    : { operations: [], riskProfile: null, health: null };
 
   useEffect(() => {
     let cancelled = false;
+    setAccountsLoading(true);
+    setAccountsError('');
     void getTradeProAccounts()
       .then((accounts) => {
         if (cancelled) return;
-        setExchangeAccounts(accounts);
-        setSelectedAccountId((current) => current || accounts.find(isDemoAccount)?.id || accounts[0]?.id || '');
+        const demoAccounts = accounts.filter((account) => account.isActive && isDemoAccount(account));
+        setExchangeAccounts(demoAccounts);
+        setSelectedAccountId((current) => (demoAccounts.some((account) => account.id === current) ? current : '') || demoAccounts[0]?.id || '');
         if (accounts.length === 0) setDashboardLoading(false);
       })
       .catch(() => {
         if (!cancelled) {
-          setDashboardError('Borsa hesapları backend üzerinden alınamadı.');
+          setAccountsError('Borsa hesapları backend üzerinden alınamadı.');
           setDashboardLoading(false);
         }
-      });
+      }).finally(() => { if (!cancelled) setAccountsLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [accountsRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +100,7 @@ export default function App() {
       setBalanceAccountId('');
       setArena(null);
       setArenaAccountId('');
-      setDashboardDetails({ positions: [], operations: [], riskProfile: null, health: null });
+      setDashboardDetails({ operations: [], riskProfile: null, health: null });
       setDetailsAccountId('');
       setDashboardLoading(false);
       setDashboardError('');
@@ -150,7 +156,7 @@ export default function App() {
     setBalanceAccountId('');
     setArena(null);
     setArenaAccountId('');
-    setDashboardDetails({ positions: [], operations: [], riskProfile: null, health: null });
+    setDashboardDetails({ operations: [], riskProfile: null, health: null });
     setDetailsAccountId('');
     void refreshArena();
     void refreshBalances();
@@ -166,32 +172,6 @@ export default function App() {
     };
   }, [dataAccount?.id]);
 
-  const handleToggleBotsRunning = () => {
-    const running = signalEmitter.toggle();
-    setIsBotsRunning(running);
-  };
-
-  const handleTriggerSignal = () => {
-    const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'AVAXUSDT', 'DOGEUSDT', 'SUIUSDT'];
-    const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
-    const decisions: SignalDecision[] = ['LONG', 'SHORT', 'HOLD'];
-    const randomDecision = decisions[Math.floor(Math.random() * decisions.length)];
-    const now = new Date();
-
-    const manualSignal: SignalEvent = {
-      id: 'manual-' + Date.now(),
-      timestamp: now.toTimeString().split(' ')[0],
-      timeMs: Date.now(),
-      symbol: randomSymbol,
-      decision: randomDecision,
-      confidence: Math.floor(Math.random() * 35) + 60,
-      changePercent: randomDecision === 'LONG' ? 1.25 : randomDecision === 'SHORT' ? -1.1 : 0.2,
-      price: 0,
-    };
-
-    signalEmitter.emit(manualSignal);
-  };
-
   return (
     <div className="min-h-screen bg-[#0b0e11] text-[#eaecef] flex flex-col font-['Inter','Plus_Jakarta_Sans',sans-serif] selection:bg-[#00d2ff]/30 selection:text-[#00d2ff] w-full overflow-x-hidden">
       {/* Top Header & Horizontal Navigation Hub (Full Width) */}
@@ -200,15 +180,28 @@ export default function App() {
         onSelectMainTab={setActiveMainTab}
         activeAiSubTab={activeAiSubTab}
         onSelectAiSubTab={setActiveAiSubTab}
-        isBotsRunning={isBotsRunning}
-        onToggleBotsRunning={handleToggleBotsRunning}
-        onTriggerSignal={handleTriggerSignal}
+        isBotsRunning={botControl.paused === null || botControl.error || botControl.loading ? null : !botControl.paused}
+        controlDisabled={botControl.loading || botControl.busy || Boolean(botControl.error) || !botControl.bots.length}
+        controlCount={botControl.bots.length}
+        onToggleBotsRunning={() => void botControl.toggle()}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        openPositionsCount={stats.activePositionsCount}
+        accountControl={<div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
+          <span className="rounded border border-[#f0b90b]/40 bg-[#f0b90b]/10 px-2 py-1 font-bold text-[#f0b90b]">{selectedAccount ? (selectedAccount.environment === 'TESTNET' ? 'DEMO / TESTNET' : selectedAccount.environment) : 'HESAP SEÇİLMEDİ'}</span>
+          <label className="flex min-w-0 flex-wrap items-center gap-2 text-[#848e9c]">Seçili hesap
+            <select aria-label="Seçili hesap" value={selectedAccountId} disabled={accountsLoading || !exchangeAccounts.length} onChange={(event) => setSelectedAccountId(event.target.value)} className="max-w-full rounded-lg border border-[#2b3139] bg-[#0b0e11] p-2 text-[#eaecef]">
+              {!exchangeAccounts.length && <option value="">{accountsLoading ? 'Hesaplar yükleniyor…' : 'Aktif demo hesabı yok'}</option>}
+              {exchangeAccounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.provider} · {account.environment}</option>)}
+            </select>
+          </label>
+          {accountsError && <div role="alert" className="w-full text-[#f84960]">{accountsError} <button type="button" onClick={() => setAccountsRevision((current) => current + 1)} className="underline">Yeniden dene</button></div>}
+        </div>}
+        botCount={activeArena ? Object.values(activeArena.states).reduce((sum, count) => sum + count, 0) : undefined}
+        openPositionsCount={positionState.positions.length}
       />
 
       {/* Main Full-Screen Application View Container */}
       <main className="flex-1 px-3 sm:px-5 lg:px-6 pt-1 pb-4 w-full max-w-[1920px] mx-auto space-y-4">
+        {botControl.error && <p role="alert" className="text-sm text-[#f84960]">{botControl.error} <button onClick={botControl.refresh} className="underline">Yeniden dene</button></p>}
         {/* TAB ROUTING */}
         {activeMainTab === 'ai-trading' && (
           <>
@@ -223,7 +216,6 @@ export default function App() {
                       selectedAccountId={selectedAccountId}
                       onSelectAccount={setSelectedAccountId}
                       mode={tradeMode}
-                      onToggleMode={() => setTradeMode((current) => current === 'DEMO' ? 'LIVE' : 'DEMO')}
                       balances={activeBalances}
                       arena={activeArena}
                       loading={dashboardLoading}
@@ -237,7 +229,7 @@ export default function App() {
                     <SignalFlow
                       accountId={dataAccount?.id ?? null}
                       arena={activeArena}
-                      positions={activeDetails.positions}
+                      positions={positionState.positions}
                       totalBalance={tradeProTotalBalance(activeBalances)}
                     />
                   </div>
@@ -256,7 +248,7 @@ export default function App() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 items-stretch">
                   {/* 1. AKTİF POZİSYONLAR (Cols: 5) */}
                   <div className="lg:col-span-5 h-full">
-                    <ActivePositionsTable positions={activeDetails.positions} operations={activeDetails.operations} loading={dashboardLoading} />
+                    <ActivePositionsTable positions={positionState.positions} operations={activeDetails.operations} loading={accountsLoading || positionState.loading} error={positionState.error} hasAccount={Boolean(dataAccount)} onRefresh={positionState.refresh} />
                   </div>
 
                   {/* 2. PERFORMANS (Cols: 3) */}
@@ -266,42 +258,46 @@ export default function App() {
 
                   {/* 3. BOT İSTATİSTİKLERİ (Cols: 2) */}
                   <div className="lg:col-span-2 h-full">
-                    <BotStatsCard arena={activeArena} positions={activeDetails.positions} operations={activeDetails.operations} riskProfile={activeDetails.riskProfile} health={activeDetails.health} />
+                    <BotStatsCard arena={activeArena} positions={positionState.positions} operations={activeDetails.operations} riskProfile={activeDetails.riskProfile} health={activeDetails.health} />
                   </div>
 
                   {/* 4. RİSK KONTROL (Cols: 2) */}
                   <div className="lg:col-span-2 h-full">
-                    <RiskControlCard positions={activeDetails.positions} operations={activeDetails.operations} riskProfile={activeDetails.riskProfile} health={activeDetails.health} />
+                    <RiskControlCard positions={positionState.positions} operations={activeDetails.operations} riskProfile={activeDetails.riskProfile} health={activeDetails.health} />
                   </div>
                 </div>
               </div>
             )}
 
-            {activeAiSubTab === 'arena' && <BotArenaView />}
+            {activeAiSubTab === 'arena' && <BotArenaView key={dataAccount?.id ?? "no-account"} accountId={dataAccount?.id ?? null} openPositionsCount={positionState.positions.length} />}
             {activeAiSubTab === 'champions' && <ChampionsView />}
             {activeAiSubTab === 'memory' && <MemoryView />}
             {activeAiSubTab === 'performance' && <PerformanceDeepView />}
-            {activeAiSubTab === 'risk' && <RiskFullView />}
+            {activeAiSubTab === 'risk' && <RiskFullView key={dataAccount?.id ?? 'no-account'} accountId={dataAccount?.id ?? null} accountName={dataAccount?.name} />}
             {activeAiSubTab === 'live-prep' && <LivePrepView />}
           </>
         )}
 
         {activeMainTab === 'positions' && (
           <PositionsFullView
+            key={dataAccount?.id ?? 'no-account'}
             accountId={dataAccount?.id ?? null}
-            positions={activeDetails.positions}
+            positions={positionState.positions}
             operations={activeDetails.operations}
-            loading={dashboardLoading}
+            loading={accountsLoading || positionState.loading}
+            error={positionState.error}
+            updatedAt={positionState.updatedAt}
+            onRefresh={positionState.refresh}
           />
         )}
-        {activeMainTab === 'my-bots' && <MyBotsView />}
+        {activeMainTab === 'my-bots' && <MyBotsView key={dataAccount?.id ?? "no-account"} bots={botControl.bots} loading={botControl.loading} error={botControl.error} onRefresh={botControl.refresh} onRisk={() => setActiveMainTab("risk")} />}
         {activeMainTab === 'bot-guide' && <BotGuideView />}
         {activeMainTab === 'manual-trade' && <ManualTradeView />}
-        {activeMainTab === 'exchange-accounts' && <ExchangeAccountsView />}
-        {activeMainTab === 'orders' && <OrdersFullView />}
+        {activeMainTab === 'exchange-accounts' && <ExchangeAccountsView onAccountsChanged={() => setAccountsRevision((current) => current + 1)} />}
+        {activeMainTab === 'orders' && <OrdersFullView key={dataAccount?.id ?? 'no-account'} accountId={dataAccount?.id ?? null} accountName={dataAccount?.name} />}
         {activeMainTab === 'grid-bot' && <GridBotView />}
         {activeMainTab === 'pnl' && <PnLAnalyticsView />}
-        {activeMainTab === 'risk' && <RiskFullView />}
+        {activeMainTab === 'risk' && <RiskFullView key={dataAccount?.id ?? 'no-account'} accountId={dataAccount?.id ?? null} accountName={dataAccount?.name} />}
         {activeMainTab === 'system' && <SystemFullView />}
       </main>
 

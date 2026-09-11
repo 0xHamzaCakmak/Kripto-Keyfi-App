@@ -385,8 +385,8 @@ export const aiTradingApi = {
   regimeLeaderboard: (regime: MarketRegime, limit = 100) => getData<Array<LeaderboardRow & { regime: MarketRegime }>>(`/admin/trading/regimes/${regime}/leaderboard`, { limit }),
   champions: () => getData<ChampionCandidate[]>('/admin/trading/champions'),
   liveEligibility: () => getAutonomousData<LiveEligibilityStatus[]>('/admin/trading/autonomous/live-eligibility'),
-  testnetOperations: () => getAutonomousData<TestnetBotOperation[]>('/admin/trading/autonomous/testnet-operations'),
-  testnetAccountSummary: () => getAutonomousData<TestnetAccountSummary>('/admin/trading/autonomous/testnet-account-summary'),
+  testnetOperations: (exchangeAccountId?: string) => getAutonomousData<TestnetBotOperation[]>('/admin/trading/autonomous/testnet-operations', exchangeAccountId ? { exchangeAccountId } : undefined),
+  testnetAccountSummary: (exchangeAccountId?: string) => getAutonomousData<TestnetAccountSummary>('/admin/trading/autonomous/testnet-account-summary', exchangeAccountId ? { exchangeAccountId } : undefined),
   resetTestnetAccounting: (note: string) =>
     api.post<ResponseEnvelope<AutonomousEnvelope<unknown>>>('/admin/trading/autonomous/testnet-accounting/reset', { confirmation: 'RESET TESTNET PNL', note })
       .then((response) => response.data.data.data),

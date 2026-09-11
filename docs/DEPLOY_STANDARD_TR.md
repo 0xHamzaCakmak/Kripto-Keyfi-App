@@ -60,6 +60,8 @@ chmod +x deploy.sh
 
 ## 4. Her deploy sonrası
 
+Günlük veri temizliği: karar/sinyal ve outbox bildirimlerinde son **7 gün**, haberlerde yayın tarihine göre son **7 gün** tutulur. Haberler için adet sınırı kullanılmaz. `20260909120000_daily_retention_schedule` migration'ı günlük görev zamanlarını kalıcı tutar; yeniden başlatma 24 saat dolmadan temizliği tekrarlatmaz. Politika, dry-run ve MySQL görev durumu kontrolü: [Veri saklama ve günlük temizlik](TRADING_RETENTION_TR.md#otomatik-politika--son-7-gün).
+
 ```bash
 cd ~/Projects/kriptokeyfi
 pm2 status

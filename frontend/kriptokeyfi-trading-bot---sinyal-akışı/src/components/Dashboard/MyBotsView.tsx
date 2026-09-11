@@ -1,135 +1,32 @@
-import React from 'react';
-import { Bot, Plus, Play, Pause, Settings, RefreshCw, Cpu, Layers } from 'lucide-react';
-import { getCoinIcon } from '../CoinIcons';
+import { useState } from 'react';
+import { aiTradingApi, botSymbols, type AutonomousBot } from '../../../../src/services/aiTradingService';
+import { getApiErrorMessage } from '../../../../src/services/apiClient';
 
-export const MyBotsView: React.FC = () => {
-  const botsList = [
-    {
-      name: 'AI Momentum Scalper Pro',
-      symbol: 'BTCUSDT',
-      status: 'ACTIVE',
-      strategy: 'High Frequency Flow',
-      leverage: '10x',
-      pnl30d: '+486.20 USDT',
-      winRate: '71.4%',
-      trades: 28,
-    },
-    {
-      name: 'ETH Volatility Breakout',
-      symbol: 'ETHUSDT',
-      status: 'ACTIVE',
-      strategy: 'Breakout ML',
-      leverage: '10x',
-      pnl30d: '+312.50 USDT',
-      winRate: '66.7%',
-      trades: 24,
-    },
-    {
-      name: 'SOL Ultra Trend Hunter',
-      symbol: 'SOLUSDT',
-      status: 'ACTIVE',
-      strategy: 'Trend Continuation',
-      leverage: '15x',
-      pnl30d: '+640.80 USDT',
-      winRate: '77.4%',
-      trades: 31,
-    },
-    {
-      name: 'Altcoin Mean Reversion G1',
-      symbol: 'AVAXUSDT',
-      status: 'ACTIVE',
-      strategy: 'Mean Reversion',
-      leverage: '12x',
-      pnl30d: '+280.90 USDT',
-      winRate: '72.7%',
-      trades: 22,
-    },
-  ];
-
-  return (
-    <div id="my-bots-view" className="w-full space-y-5 animate-in fade-in duration-200">
-      {/* Header */}
-      <div className="bg-[#1e2329]/90 border border-[#2b3139] rounded-2xl p-6 shadow-xl flex items-center justify-between">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-[#0b0e11] border border-[#f0b90b]/40 flex items-center justify-center text-[#f0b90b] shadow-[0_0_15px_rgba(240,185,11,0.25)]">
-            <Bot className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#eaecef]">
-                Botlarım & Özel Strateji Yönetimi
-              </h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#f0b90b]/15 text-[#f0b90b] border border-[#f0b90b]/30">
-                4 AKTİF BOT
-              </span>
-            </div>
-            <p className="text-xs text-[#848e9c] mt-0.5">
-              Kendinize ait özelleştirilmiş bot şablonları, indikatör ağırlıkları ve kâr hedefleri.
-            </p>
-          </div>
-        </div>
-
-        <button className="flex items-center gap-1.5 px-4 py-2 bg-[#f0b90b] hover:bg-[#f0b90b]/90 text-[#0b0e11] font-bold rounded-xl text-xs shadow-[0_0_15px_rgba(240,185,11,0.3)] transition-all">
-          <Plus className="w-4 h-4" />
-          <span>Yeni Bot Oluştur</span>
-        </button>
-      </div>
-
-      {/* Bot Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {botsList.map((b, idx) => (
-          <div
-            key={idx}
-            className="bg-[#1e2329]/80 border border-[#2b3139] rounded-2xl p-5 shadow-xl flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-center justify-between pb-3 border-b border-[#2b3139] mb-3">
-                <div className="flex items-center gap-2">
-                  {getCoinIcon(b.symbol, 20)}
-                  <div>
-                    <h3 className="text-sm font-bold text-[#eaecef]">{b.name}</h3>
-                    <span className="text-[10px] text-[#848e9c]">{b.strategy} • {b.leverage}</span>
-                  </div>
-                </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#02c076]/15 text-[#02c076] border border-[#02c076]/30">
-                  {b.status}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 p-3 bg-[#0b0e11]/80 rounded-xl border border-[#2b3139] text-center font-['JetBrains_Mono',monospace] text-xs mb-4">
-                <div>
-                  <span className="text-[10px] text-[#848e9c] block font-['Inter',sans-serif]">30G PNL</span>
-                  <span className="font-bold text-[#02c076]">{b.pnl30d}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-[#848e9c] block font-['Inter',sans-serif]">KAZANMA</span>
-                  <span className="font-bold text-[#eaecef]">{b.winRate}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-[#848e9c] block font-['Inter',sans-serif]">İŞLEM</span>
-                  <span className="font-bold text-[#00d2ff]">{b.trades}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-2 border-t border-[#2b3139]">
-              <div className="flex items-center gap-2">
-                <button className="p-1.5 rounded-lg bg-[#0b0e11] hover:bg-[#2b3139] border border-[#2b3139] text-[#eaecef] text-xs transition-colors">
-                  <Pause className="w-3.5 h-3.5" />
-                </button>
-                <button className="p-1.5 rounded-lg bg-[#0b0e11] hover:bg-[#2b3139] border border-[#2b3139] text-[#eaecef] text-xs transition-colors">
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <button className="flex items-center gap-1 text-xs font-bold text-[#00d2ff] hover:underline">
-                <Settings className="w-3.5 h-3.5" />
-                <span>Parametreleri Düzenle</span>
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+export function MyBotsView({ bots, loading, error, onRefresh, onRisk }: { bots: AutonomousBot[]; loading: boolean; error: string; onRefresh: () => void; onRisk: () => void }) {
+  const [busy, setBusy] = useState('');
+  const [notice, setNotice] = useState('');
+  async function control(bot: AutonomousBot, action: 'pause' | 'start' | 'resume') {
+    if (busy || loading || error) return;
+    if (!window.confirm(`${bot.name}: ${action === 'pause' ? 'duraklatma' : 'başlatma'} isteği gönderilsin mi? Açık pozisyonlar kapanmaz. Hesap durdurması ve risk limitleri ayrıca geçerlidir.`)) return;
+    setBusy(bot.id); setNotice('');
+    try {
+      if (action === 'pause') await aiTradingApi.pauseBot(bot.id);
+      else if (action === 'resume') await aiTradingApi.resumeBot(bot.id);
+      else await aiTradingApi.startBot(bot.id);
+      setNotice(`${bot.name}: istek kabul edildi; motorun güncel durumu yeniden okunuyor.`);
+      onRefresh();
+    } catch (reason) { setNotice(getApiErrorMessage(reason, 'Bot isteği başarısız.')); }
+    finally { setBusy(''); }
+  }
+  return <section className="space-y-5">
+    <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#2b3139] bg-[#1e2329] p-5"><div><h1 className="text-xl font-bold">Botlarım · {bots.length} demo bot</h1><p className="mt-2 text-xs text-[#848e9c]">Seçili hesabın gerçek botları. Bot durumu ile hesabın otomatik işlem izni ayrı kontrol edilir.</p></div><div className="flex gap-4"><button disabled={loading || Boolean(busy)} onClick={onRefresh} className="text-sm text-[#00d2ff]">Yenile</button><button onClick={onRisk} className="text-sm text-[#f0b90b]">İşlem ve risk ayarları</button></div></header>
+    {error && <p role="alert" className="text-sm text-[#f84960]">{error} Son veriler güncel olmayabilir; bot kontrolleri kapalı.</p>}
+    {notice && <p role="status" className="text-sm text-[#f0b90b]">{notice}</p>}
+    {!bots.length && <p className="text-sm text-[#848e9c]">{loading ? 'Botlar yükleniyor…' : error ? 'Bot listesi doğrulanamadı.' : 'Seçili hesapta demo bot bulunmuyor.'}</p>}
+    <div className="grid gap-4 md:grid-cols-2">{bots.map((bot) => <article key={bot.id} className="space-y-4 rounded-2xl border border-[#2b3139] bg-[#1e2329] p-5">
+      <h2 className="font-bold">{bot.name}</h2><p className="text-xs text-[#848e9c]">{botSymbols(bot.symbols).join(', ') || 'Parite yok'} · {bot.strategyVersion?.strategy.family ?? 'Strateji bilgisi yok'}</p>
+      <dl className="grid grid-cols-3 gap-3 rounded-xl bg-[#0b0e11] p-3 text-xs"><div><dt>Motor durumu</dt><dd className="mt-1 text-[#00d2ff]">{bot.state}</dd></div><div><dt>Hedef durum</dt><dd className="mt-1">{bot.desiredState}</dd></div><div><dt>Yaşam döngüsü</dt><dd className="mt-1">{bot.lifecycleStatus}</dd></div></dl>
+      <div className="flex gap-3"><button disabled={Boolean(busy) || loading || Boolean(error)} onClick={() => void control(bot, bot.desiredState === 'RUNNING' ? 'pause' : bot.state === 'PAUSED' ? 'resume' : 'start')} className="rounded-lg border border-[#00d2ff]/40 px-3 py-2 text-sm text-[#00d2ff] disabled:opacity-40">{busy === bot.id ? 'İşleniyor…' : bot.desiredState === 'RUNNING' ? 'Botu duraklat' : 'Botu başlat'}</button><button onClick={onRisk} className="text-xs text-[#f0b90b]">Hesap parametreleri</button></div>
+    </article>)}</div>
+  </section>;
+}

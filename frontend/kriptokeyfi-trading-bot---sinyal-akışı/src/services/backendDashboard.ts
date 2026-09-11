@@ -109,7 +109,6 @@ export type TradeProHealth = {
 };
 
 export type TradeProDashboardDetails = {
-  positions: TradeProPosition[];
   operations: TradeProOperation[];
   riskProfile: TradeProRiskProfile | null;
   health: TradeProHealth | null;
@@ -142,18 +141,33 @@ export async function getTradeProArena(exchangeAccountId: string) {
 }
 
 export async function getTradeProDashboardDetails(exchangeAccountId: string): Promise<TradeProDashboardDetails> {
-  const [positions, operations, riskProfile, health] = await Promise.allSettled([
-    api.get<{ data: TradeProPosition[] }>('/admin/trading/positions', { params: { exchangeAccountId } }),
-    api.get<{ data: AutonomousEnvelope<TradeProOperation[]> }>('/admin/trading/autonomous/testnet-operations'),
+  const [operations, riskProfile, health] = await Promise.allSettled([
+    getTradeProOperations(exchangeAccountId),
     api.get<{ data: TradeProRiskProfile }>(`/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`),
     api.get<{ data: TradeProHealth }>('/admin/trading/system-health'),
   ]);
   return {
-    positions: positions.status === 'fulfilled' ? positions.value.data.data : [],
-    operations: operations.status === 'fulfilled' ? operations.value.data.data.data : [],
+    operations: operations.status === 'fulfilled' ? operations.value : [],
     riskProfile: riskProfile.status === 'fulfilled' ? riskProfile.value.data.data : null,
     health: health.status === 'fulfilled' ? health.value.data.data : null,
   };
+}
+
+// Exchange positions are authoritative, including orders placed outside this app.
+// Do not join/filter them against bot operations or turn read failures into [].
+export async function getTradeProPositions(exchangeAccountId: string, signal?: AbortSignal) {
+  return (await api.get<{ data: TradeProPosition[] }>('/admin/trading/positions', {
+    params: { exchangeAccountId }, signal,
+  })).data.data;
+}
+
+export async function getTradeProOperations(exchangeAccountId: string) {
+  const [bots, operations] = await Promise.all([
+    api.get<{ data: Array<{ id: string; exchangeAccountId: string; mode: string }> }>('/admin/trading/bot-factory/bots'),
+    api.get<{ data: AutonomousEnvelope<TradeProOperation[]> }>('/admin/trading/autonomous/testnet-operations', { params: { exchangeAccountId } }),
+  ]);
+  const botIds = new Set(bots.data.data.filter((bot) => bot.exchangeAccountId === exchangeAccountId && bot.mode === 'DEMO').map((bot) => bot.id));
+  return operations.data.data.data.filter((operation) => botIds.has(operation.botId));
 }
 
 export async function closeTradeProPosition(exchangeAccountId: string, position: TradeProPosition) {

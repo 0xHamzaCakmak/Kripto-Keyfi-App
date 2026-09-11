@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { ArenaBotItem } from '../../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { getProArena } from '../../services/backendArena';
+import { updateTradingExecutionProfile } from '../../../../src/services/tradingService';
+import { getApiErrorMessage } from '../../../../src/services/apiClient';
 import { getCoinIcon } from '../CoinIcons';
 import {
   Bot,
@@ -20,443 +22,50 @@ import {
 } from 'lucide-react';
 
 interface BotArenaViewProps {
+  accountId: string | null;
+  openPositionsCount: number;
   onSelectCoin?: (symbol: string) => void;
 }
 
-export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
-  const [botsRunning, setBotsRunning] = useState<boolean>(false);
+export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin, accountId, openPositionsCount }) => {
+  const [entryPaused, setEntryPaused] = useState<boolean | null>(null);
+  const botsRunning = entryPaused === false;
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const refresh = () => setRevision((value) => value + 1);
+    window.addEventListener('trading-execution-updated', refresh);
+    return () => window.removeEventListener('trading-execution-updated', refresh);
+  }, []);
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [selectedStrategy, setSelectedStrategy] = useState<string>('ALL');
   const [selectedGeneration, setSelectedGeneration] = useState<string>('ALL');
-  const [selectedRegime, setSelectedRegime] = useState<string>('ALL');
   const [minScore, setMinScore] = useState<string>('ALL');
   const [minPnl, setMinPnl] = useState<string>('ALL');
   const [sortBy, setSortBy] = useState<string>('index');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Initial 20 Binance TESTNET bots as shown in screenshots
-  const [bots, setBots] = useState<ArenaBotItem[]>([
-    {
-      id: 'bot-001',
-      index: 1,
-      name: 'AI Momentum G1 #001',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'BTCUSDT',
-      entryPrice: 63840.5,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 142.8,
-      tradesCount: 28,
-      score: 88,
-      totalPnl: 486.2,
-      openPnl: 142.8,
-      roi: 14.28,
-      profitFactor: 2.45,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 71.4,
-    },
-    {
-      id: 'bot-002',
-      index: 2,
-      name: 'AI Momentum G1 #002',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'ETHUSDT',
-      entryPrice: 3450.2,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 58.4,
-      tradesCount: 24,
-      score: 82,
-      totalPnl: 312.5,
-      openPnl: 58.4,
-      roi: 8.52,
-      profitFactor: 1.95,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 66.7,
-    },
-    {
-      id: 'bot-003',
-      index: 3,
-      name: 'AI Momentum G1 #003',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'BTCUSDT',
-      entryPrice: null,
-      directionLeverage: null,
-      currentPnl: null,
-      tradesCount: 19,
-      score: 74,
-      totalPnl: 185.0,
-      openPnl: null,
-      roi: 6.2,
-      profitFactor: 1.72,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Ranging',
-      winRate: 63.1,
-    },
-    {
-      id: 'bot-004',
-      index: 4,
-      name: 'AI Momentum G1 #004',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'SOLUSDT',
-      entryPrice: 154.2,
-      directionLeverage: 'LONG 15x',
-      currentPnl: 92.6,
-      tradesCount: 31,
-      score: 91,
-      totalPnl: 640.8,
-      openPnl: 92.6,
-      roi: 18.64,
-      profitFactor: 2.88,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 77.4,
-    },
-    {
-      id: 'bot-005',
-      index: 5,
-      name: 'AI Momentum G1 #005',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'XRPUSDT',
-      entryPrice: 0.582,
-      directionLeverage: 'SHORT 8x',
-      currentPnl: -14.2,
-      tradesCount: 16,
-      score: 68,
-      totalPnl: 94.2,
-      openPnl: -14.2,
-      roi: -2.1,
-      profitFactor: 1.41,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bearish',
-      winRate: 56.2,
-    },
-    {
-      id: 'bot-006',
-      index: 6,
-      name: 'AI Momentum G1 #006',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'BTCUSDT',
-      entryPrice: null,
-      directionLeverage: null,
-      currentPnl: null,
-      tradesCount: 0,
-      score: 0,
-      totalPnl: null,
-      openPnl: null,
-      roi: null,
-      profitFactor: null,
-      status: 'STOPPED',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 0,
-    },
-    {
-      id: 'bot-007',
-      index: 7,
-      name: 'AI Momentum G1 #007',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'BNBUSDT',
-      entryPrice: 590.1,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 45.2,
-      tradesCount: 18,
-      score: 79,
-      totalPnl: 210.4,
-      openPnl: 45.2,
-      roi: 7.8,
-      profitFactor: 1.82,
-      status: 'RUNNING',
-      strategy: 'Mean Reversion',
-      generation: 'G1',
-      regime: 'Ranging',
-      winRate: 64.0,
-    },
-    {
-      id: 'bot-008',
-      index: 8,
-      name: 'AI Momentum G1 #008',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'AVAXUSDT',
-      entryPrice: 28.4,
-      directionLeverage: 'LONG 12x',
-      currentPnl: 34.1,
-      tradesCount: 22,
-      score: 84,
-      totalPnl: 280.9,
-      openPnl: 34.1,
-      roi: 9.4,
-      profitFactor: 2.1,
-      status: 'RUNNING',
-      strategy: 'Breakout',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 72.7,
-    },
-    {
-      id: 'bot-009',
-      index: 9,
-      name: 'AI Momentum G1 #009',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'DOGEUSDT',
-      entryPrice: null,
-      directionLeverage: null,
-      currentPnl: null,
-      tradesCount: 12,
-      score: 65,
-      totalPnl: 78.2,
-      openPnl: null,
-      roi: 3.5,
-      profitFactor: 1.35,
-      status: 'PAUSED',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'High Volatility',
-      winRate: 50.0,
-    },
-    {
-      id: 'bot-010',
-      index: 10,
-      name: 'AI Momentum G1 #010',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'NEARUSDT',
-      entryPrice: 4.82,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 28.6,
-      tradesCount: 17,
-      score: 77,
-      totalPnl: 195.3,
-      openPnl: 28.6,
-      roi: 6.9,
-      profitFactor: 1.76,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 64.7,
-    },
-    {
-      id: 'bot-011',
-      index: 11,
-      name: 'AI Momentum G1 #011',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'ADAUSDT',
-      entryPrice: null,
-      directionLeverage: null,
-      currentPnl: null,
-      tradesCount: 0,
-      score: 0,
-      totalPnl: null,
-      openPnl: null,
-      roi: null,
-      profitFactor: null,
-      status: 'STOPPED',
-      strategy: 'Grid ML',
-      generation: 'G1',
-      regime: 'Ranging',
-      winRate: 0,
-    },
-    {
-      id: 'bot-012',
-      index: 12,
-      name: 'AI Momentum G1 #012',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'LINKUSDT',
-      entryPrice: 12.4,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 22.1,
-      tradesCount: 15,
-      score: 80,
-      totalPnl: 165.7,
-      openPnl: 22.1,
-      roi: 7.2,
-      profitFactor: 1.9,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 66.7,
-    },
-    {
-      id: 'bot-013',
-      index: 13,
-      name: 'AI Momentum G1 #013',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'SUIUSDT',
-      entryPrice: 1.85,
-      directionLeverage: 'LONG 12x',
-      currentPnl: 48.9,
-      tradesCount: 26,
-      score: 89,
-      totalPnl: 420.5,
-      openPnl: 48.9,
-      roi: 15.2,
-      profitFactor: 2.65,
-      status: 'RUNNING',
-      strategy: 'Breakout',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 76.9,
-    },
-    {
-      id: 'bot-014',
-      index: 14,
-      name: 'AI Momentum G1 #014',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'PEPEUSDT',
-      entryPrice: null,
-      directionLeverage: null,
-      currentPnl: null,
-      tradesCount: 14,
-      score: 72,
-      totalPnl: 110.3,
-      openPnl: null,
-      roi: 4.8,
-      profitFactor: 1.55,
-      status: 'PAUSED',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'High Volatility',
-      winRate: 57.1,
-    },
-    {
-      id: 'bot-015',
-      index: 15,
-      name: 'AI Momentum G1 #015',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'APTUSDT',
-      entryPrice: 8.9,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 18.4,
-      tradesCount: 11,
-      score: 75,
-      totalPnl: 132.0,
-      openPnl: 18.4,
-      roi: 5.9,
-      profitFactor: 1.68,
-      status: 'RUNNING',
-      strategy: 'Mean Reversion',
-      generation: 'G1',
-      regime: 'Ranging',
-      winRate: 63.6,
-    },
-    {
-      id: 'bot-016',
-      index: 16,
-      name: 'AI Momentum G1 #016',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'FETUSDT',
-      entryPrice: 1.34,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 31.2,
-      tradesCount: 20,
-      score: 83,
-      totalPnl: 260.4,
-      openPnl: 31.2,
-      roi: 9.8,
-      profitFactor: 2.2,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 70.0,
-    },
-    {
-      id: 'bot-017',
-      index: 17,
-      name: 'AI Momentum G1 #017',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'RENDERUSDT',
-      entryPrice: 5.65,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 15.6,
-      tradesCount: 13,
-      score: 78,
-      totalPnl: 145.8,
-      openPnl: 15.6,
-      roi: 6.4,
-      profitFactor: 1.8,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 61.5,
-    },
-    {
-      id: 'bot-018',
-      index: 18,
-      name: 'AI Momentum G1 #018',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'INJUSDT',
-      entryPrice: 22.8,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 27.3,
-      tradesCount: 19,
-      score: 81,
-      totalPnl: 230.1,
-      openPnl: 27.3,
-      roi: 8.7,
-      profitFactor: 2.05,
-      status: 'RUNNING',
-      strategy: 'Breakout',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 68.4,
-    },
-    {
-      id: 'bot-019',
-      index: 19,
-      name: 'AI Momentum G1 #019',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'SHIBUSDT',
-      entryPrice: null,
-      directionLeverage: null,
-      currentPnl: null,
-      tradesCount: 0,
-      score: 0,
-      totalPnl: null,
-      openPnl: null,
-      roi: null,
-      profitFactor: null,
-      status: 'STOPPED',
-      strategy: 'Grid ML',
-      generation: 'G1',
-      regime: 'Ranging',
-      winRate: 0,
-    },
-    {
-      id: 'bot-020',
-      index: 20,
-      name: 'AI Momentum G1 #020',
-      accountLabel: 'DEMO - BİNANCE TESTNET - TEST BAKİYESİ',
-      coin: 'TONUSDT',
-      entryPrice: 5.25,
-      directionLeverage: 'LONG 10x',
-      currentPnl: 24.8,
-      tradesCount: 15,
-      score: 80,
-      totalPnl: 172.6,
-      openPnl: 24.8,
-      roi: 7.4,
-      profitFactor: 1.92,
-      status: 'RUNNING',
-      strategy: 'AI Momentum',
-      generation: 'G1',
-      regime: 'Bullish',
-      winRate: 66.7,
-    },
-  ]);
+  const [bots, setBots] = useState<Awaited<ReturnType<typeof getProArena>>['bots']>([]);
+  useEffect(() => {
+    let active = true;
+    let fetching = false;
+    setBots([]); setEntryPaused(null); setError(''); setLoading(Boolean(accountId));
+    if (!accountId) return;
+    const load = async () => {
+      if (fetching) return;
+      fetching = true;
+      try {
+        const result = await getProArena(accountId);
+        if (active) { setBots(result.bots); setEntryPaused(result.entryPaused); setError(result.error); }
+      } catch (reason) { if (active) { setEntryPaused(null); setError(getApiErrorMessage(reason, 'Arena alınamadı.')); } }
+      finally { fetching = false; if (active) setLoading(false); }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 30_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [accountId, revision]);
 
   // Filter & Sort logic
   const filteredBots = useMemo(() => {
@@ -465,10 +74,10 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
         if (selectedStatus !== 'ALL' && bot.status !== selectedStatus) return false;
         if (selectedStrategy !== 'ALL' && bot.strategy !== selectedStrategy) return false;
         if (selectedGeneration !== 'ALL' && bot.generation !== selectedGeneration) return false;
-        if (selectedRegime !== 'ALL' && bot.regime !== selectedRegime) return false;
-        if (minScore === '50+' && bot.score < 50) return false;
-        if (minScore === '70+' && bot.score < 70) return false;
-        if (minScore === '85+' && bot.score < 85) return false;
+
+        if (minScore === '50+' && (bot.score ?? -Infinity) < 50) return false;
+        if (minScore === '70+' && (bot.score ?? -Infinity) < 70) return false;
+        if (minScore === '85+' && (bot.score ?? -Infinity) < 85) return false;
         if (minPnl === 'POSITIVE' && (bot.totalPnl === null || bot.totalPnl <= 0)) return false;
         if (minPnl === 'NEGATIVE' && (bot.totalPnl === null || bot.totalPnl >= 0)) return false;
         if (searchQuery.trim()) {
@@ -482,42 +91,32 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
         return true;
       })
       .sort((a, b) => {
-        if (sortBy === 'score') return b.score - a.score;
+        if (sortBy === 'score') return (b.score ?? -Infinity) - (a.score ?? -Infinity);
         if (sortBy === 'totalPnl') return (b.totalPnl || 0) - (a.totalPnl || 0);
         if (sortBy === 'openPnl') return (b.openPnl || 0) - (a.openPnl || 0);
-        if (sortBy === 'tradesCount') return b.tradesCount - a.tradesCount;
+        if (sortBy === 'tradesCount') return (b.tradesCount ?? -1) - (a.tradesCount ?? -1);
         return a.index - b.index;
       });
-  }, [bots, selectedStatus, selectedStrategy, selectedGeneration, selectedRegime, minScore, minPnl, sortBy, searchQuery]);
+  }, [bots, selectedStatus, selectedStrategy, selectedGeneration, minScore, minPnl, sortBy, searchQuery]);
 
-  const activePositionsCount = bots.filter((b) => b.openPnl !== null).length;
-  const scoreProducedCount = bots.filter((b) => b.score > 0).length;
+  const activePositionsCount = openPositionsCount;
+  const scoreProducedCount = bots.filter((b) => b.score !== null).length;
 
-  const handleToggleGlobalBots = () => {
-    setBotsRunning((prev) => !prev);
+  const handleToggleGlobalBots = async () => {
+    if (!accountId || entryPaused === null || busy || loading) return;
+    if (!window.confirm('Seçili demo hesabının otomatik işlem durumu değiştirilsin mi?')) return;
+    setBusy(true); setError('');
+    try { const profile = await updateTradingExecutionProfile(accountId, { entryPaused: !entryPaused }); setEntryPaused(profile.entryPaused); setRevision((value) => value + 1); }
+    catch (reason) { setError(getApiErrorMessage(reason, 'İşlem durumu değiştirilemedi.')); }
+    finally { setBusy(false); }
   };
-
-  const handleRefresh = () => {
-    // Quick score and pnl jitter simulation
-    setBots((prev) =>
-      prev.map((b) => {
-        if (b.status === 'RUNNING' && b.currentPnl !== null) {
-          const delta = (Math.random() - 0.48) * 4;
-          const newCurrent = Number((b.currentPnl + delta).toFixed(2));
-          return {
-            ...b,
-            currentPnl: newCurrent,
-            openPnl: newCurrent,
-            totalPnl: Number(((b.totalPnl || 0) + delta * 0.2).toFixed(2)),
-          };
-        }
-        return b;
-      })
-    );
-  };
+  const handleRefresh = () => setRevision((value) => value + 1);
 
   return (
     <div id="bot-arena-view" className="w-full space-y-5 animate-in fade-in duration-200">
+      {error && <div role="alert" className="rounded-xl bg-[#f84960]/10 p-3 text-sm text-[#f84960]">{error}</div>}
+      {loading && <p className="text-sm text-[#848e9c]">Arena yükleniyor…</p>}
+      {!loading && !bots.length && <p className="text-sm text-[#848e9c]">{accountId ? "Bu demo hesabında bot bulunmuyor." : "Aktif demo hesabı seçin."}</p>}
       {/* Bot Arena Hero Banner */}
       <div className="bg-[#1e2329]/90 border border-[#2b3139] rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-start gap-3.5">
@@ -534,7 +133,7 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
               </span>
             </div>
             <p className="text-xs sm:text-sm text-[#848e9c] mt-0.5">
-              20 Binance TESTNET botunun skorunu, işlem geçmişini ve sermaye kotasını tek yerden izleyin.
+              Seçili demo hesabının botlarını, skorlarını ve borsa işlemlerini izleyin.
             </p>
           </div>
         </div>
@@ -542,12 +141,13 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
         {/* Global Action Buttons (Matching Screenshot) */}
         <div className="flex items-center flex-wrap gap-2.5">
           <div className="px-3 py-1.5 rounded-lg bg-[#0b0e11] border border-[#2b3139] text-xs font-bold text-[#848e9c] font-['JetBrains_Mono',monospace]">
-            20 TESTNET botu
+            {bots.length} TESTNET botu
           </div>
 
           <button
             id="btn-arena-start-toggle"
-            onClick={handleToggleGlobalBots}
+            disabled={busy || loading || !accountId || entryPaused === null}
+            onClick={() => void handleToggleGlobalBots()}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md ${
               botsRunning
                 ? 'bg-[#f84960]/20 hover:bg-[#f84960]/30 text-[#f84960] border border-[#f84960]/40'
@@ -560,6 +160,7 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
 
           <button
             id="btn-arena-refresh"
+            disabled={busy || loading || !accountId}
             onClick={handleRefresh}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-[#f0b90b] hover:bg-[#f0b90b]/90 text-[#0b0e11] shadow-[0_0_15px_rgba(240,185,11,0.3)] transition-all"
           >
@@ -583,7 +184,7 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
           <AlertTriangle className="w-4 h-4 shrink-0 text-[#f84960]" />
         )}
         <span>
-          {botsRunning
+          {entryPaused === null ? 'İşlem durumu henüz doğrulanamadı.' : botsRunning
             ? 'Botlar devrede: Yeni emir girişi, gerçek zamanlı sinyal akışı ve otomatik açık pozisyon yönetimi aktiftir.'
             : 'Botlar durduruldu: yeni emir girişi ve otomatik açık pozisyon yönetimi kapalıdır.'}
         </span>
@@ -595,9 +196,9 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
         <div className="bg-[#1e2329]/80 border border-[#2b3139] rounded-xl p-4 shadow-lg flex flex-col justify-between">
           <span className="text-[11px] font-bold text-[#848e9c] uppercase tracking-wider">TESTNET BOTU</span>
           <div className="my-2 text-2xl sm:text-3xl font-black font-['JetBrains_Mono',monospace] text-[#02c076]">
-            20
+            {bots.length}
           </div>
-          <span className="text-[11px] text-[#848e9c]">Sabit filo: 20</span>
+          <span className="text-[11px] text-[#848e9c]">Seçili hesaptaki botlar</span>
         </div>
 
         {/* Card 2: SCORE ÜRETİLEN */}
@@ -613,7 +214,7 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
         <div className="bg-[#1e2329]/80 border border-[#2b3139] rounded-xl p-4 shadow-lg flex flex-col justify-between">
           <span className="text-[11px] font-bold text-[#848e9c] uppercase tracking-wider">CHALLENGER</span>
           <div className="my-2 text-2xl sm:text-3xl font-black font-['JetBrains_Mono',monospace] text-[#eaecef]">
-            0
+            {bots.filter((bot) => bot.lifecycle === 'CHALLENGER').length}
           </div>
           <span className="text-[11px] text-[#848e9c]">A/B test botu</span>
         </div>
@@ -671,10 +272,8 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
               onChange={(e) => setSelectedStatus(e.target.value)}
               className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-lg px-2.5 py-1.5 text-[#eaecef] focus:outline-none focus:border-[#00d2ff] font-medium"
             >
-              <option value="ALL">ALL</option>
-              <option value="RUNNING">RUNNING</option>
-              <option value="STOPPED">STOPPED</option>
-              <option value="PAUSED">PAUSED</option>
+              <option value="ALL">Tümü</option>
+              {[...new Set(bots.map((bot) => bot.status))].map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </div>
 
@@ -686,11 +285,8 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
               onChange={(e) => setSelectedStrategy(e.target.value)}
               className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-lg px-2.5 py-1.5 text-[#eaecef] focus:outline-none focus:border-[#00d2ff] font-medium"
             >
-              <option value="ALL">ALL</option>
-              <option value="AI Momentum">AI Momentum</option>
-              <option value="Mean Reversion">Mean Reversion</option>
-              <option value="Breakout">Breakout</option>
-              <option value="Grid ML">Grid ML</option>
+              <option value="ALL">Tümü</option>
+              {[...new Set(bots.map((bot) => bot.strategy))].map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </div>
 
@@ -702,26 +298,8 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
               onChange={(e) => setSelectedGeneration(e.target.value)}
               className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-lg px-2.5 py-1.5 text-[#eaecef] focus:outline-none focus:border-[#00d2ff] font-medium"
             >
-              <option value="ALL">ALL</option>
-              <option value="G1">G1</option>
-              <option value="G2">G2</option>
-              <option value="G3">G3</option>
-            </select>
-          </div>
-
-          {/* Regime */}
-          <div>
-            <label className="block text-[10px] font-bold text-[#848e9c] uppercase mb-1">Regime</label>
-            <select
-              value={selectedRegime}
-              onChange={(e) => setSelectedRegime(e.target.value)}
-              className="w-full bg-[#0b0e11] border border-[#2b3139] rounded-lg px-2.5 py-1.5 text-[#eaecef] focus:outline-none focus:border-[#00d2ff] font-medium"
-            >
-              <option value="ALL">ALL</option>
-              <option value="Bullish">Bullish</option>
-              <option value="Bearish">Bearish</option>
-              <option value="Ranging">Ranging</option>
-              <option value="High Volatility">High Volatility</option>
+              <option value="ALL">Tümü</option>
+              {[...new Set(bots.map((bot) => bot.generation))].map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </div>
 
@@ -884,7 +462,7 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
                         <div>
                           <span className="text-[#848e9c] text-[9px] uppercase block font-['Inter',sans-serif]">İŞLEM</span>
                           <span className="text-[#eaecef] font-bold mt-0.5 block">
-                            {bot.tradesCount}
+                            {bot.tradesCount ?? '—'}
                           </span>
                         </div>
                       </div>
@@ -903,7 +481,7 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin }) => {
                             : 'text-[#848e9c]'
                         }`}
                       >
-                        {bot.score}
+                        {bot.score ?? '—'}
                       </span>
                     </td>
 

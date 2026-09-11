@@ -13,7 +13,7 @@ vi.mock('../src/database/prisma.js', () => ({ prisma: {
 } }));
 import { deleteExpiredAutonomousDecisions, previewTradingRetention, retentionFilters } from '../src/modules/ai-trading/decision-retention.service.js';
 const now = new Date('2026-09-09T12:00:00Z');
-const cutoff = new Date('2026-09-08T12:00:00Z');
+const cutoff = new Date('2026-09-02T12:00:00Z');
 describe('trading retention', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -35,15 +35,16 @@ describe('trading retention', () => {
     // No paper/shadow/order model exists in the mock: any access would fail this test.
     expect(result).toMatchObject({ deletedDecisions: 1, deletedSignals: 1 });
   });
-  it('restricts outbox deletion to disposable event types and rechecks age when deleting', async () => {
+  it('expires every old outbox notification and rechecks age when deleting', async () => {
     mocks.outbox.findMany.mockResolvedValueOnce([{ id: 20n }]);
     await deleteExpiredAutonomousDecisions(now);
     expect(mocks.outbox.deleteMany).toHaveBeenCalledWith({ where: {
-      eventType: 'BOT_PAPER_DECISION', createdAt: { lt: cutoff }, id: { in: [20n] },
+      createdAt: { lt: cutoff }, id: { in: [20n] },
     } });
-    expect(mocks.outbox.findMany.mock.calls.map(([arg]) => arg.where.eventType)).toEqual([
-      'BOT_PAPER_DECISION', 'BOT_PAPER_DECISION', 'BOT_SHADOW_DECISION', 'SNAPSHOT_RECONCILED', 'BOT_STATE_CHANGED',
-    ]);
+    expect(mocks.outbox.findMany).toHaveBeenCalledWith({
+      where: { createdAt: { lt: cutoff } }, select: { id: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1000,
+    });
   });
   it('previews the same filters without mutations', async () => {
     expect(await previewTradingRetention(now)).toEqual({ cutoff, decisions: 7, signals: 7, outbox: 7 });

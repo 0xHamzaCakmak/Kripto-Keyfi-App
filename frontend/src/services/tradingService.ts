@@ -201,6 +201,7 @@ export async function updateTradingExecutionProfile(exchangeAccountId: string, i
     `/admin/trading/exchange-accounts/${encodeURIComponent(exchangeAccountId)}/risk-profile`,
     payload,
   )).data.data;
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('trading-execution-updated'));
   return normalizeTradingExecutionProfile(profile);
 }
 export async function closeOpenPosition(

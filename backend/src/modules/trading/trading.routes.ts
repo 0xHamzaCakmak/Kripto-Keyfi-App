@@ -71,8 +71,8 @@ tradingRouter.get('/autonomous/coin-performance', validateRequest({ query: coinP
 tradingRouter.get('/autonomous/ai-mentor-performance', validateRequest({ query: aiMentorPerformanceQuerySchema }), asyncHandler(aiMentorPerformance));
 tradingRouter.get('/autonomous/generations', validateRequest({ query: autonomousGenerationQuerySchema }), asyncHandler(generations));
 tradingRouter.get('/autonomous/live-eligibility', asyncHandler(liveEligibilityStatus));
-tradingRouter.get('/autonomous/testnet-operations', asyncHandler(testnetOperations));
-tradingRouter.get('/autonomous/testnet-account-summary', asyncHandler(testnetAccountSummary));
+tradingRouter.get('/autonomous/testnet-operations', validateRequest({ query: tradingAccountQuerySchema.partial() }), asyncHandler(testnetOperations));
+tradingRouter.get('/autonomous/testnet-account-summary', validateRequest({ query: tradingAccountQuerySchema.partial() }), asyncHandler(testnetAccountSummary));
 tradingRouter.get('/autonomous/manual-bot-campaigns/candidates', validateRequest({ query: manualBotCampaignQuerySchema }), asyncHandler(manualBotCampaignCandidates));
 tradingRouter.post('/autonomous/manual-bot-campaigns/preview', validateRequest({ body: manualBotCampaignPreviewSchema }), asyncHandler(manualBotCampaignPreview));
 tradingRouter.post('/autonomous/manual-bot-campaigns', validateRequest({ body: manualBotCampaignCreateSchema }), asyncHandler(queueManualBotCampaign));

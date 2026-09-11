@@ -33,11 +33,14 @@ interface ManagementNavigationProps {
   onSelectMainTab: (tab: MainTabType) => void;
   activeAiSubTab: AiTradingSubTabType;
   onSelectAiSubTab: (tab: AiTradingSubTabType) => void;
-  isBotsRunning: boolean;
+  isBotsRunning: boolean | null;
+  controlDisabled: boolean;
+  controlCount: number;
   onToggleBotsRunning: () => void;
-  onTriggerSignal: () => void;
   onOpenSettings: () => void;
   openPositionsCount: number;
+  accountControl?: React.ReactNode;
+  botCount?: number;
 }
 
 export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
@@ -46,10 +49,13 @@ export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
   activeAiSubTab,
   onSelectAiSubTab,
   isBotsRunning,
+  controlDisabled,
+  controlCount,
   onToggleBotsRunning,
-  onTriggerSignal,
   onOpenSettings,
   openPositionsCount,
+  accountControl,
+  botCount,
 }) => {
   const mainTabs = [
     { id: 'ai-trading' as MainTabType, label: 'AI Trading', icon: Sparkles, badge: 'PRO' },
@@ -67,7 +73,7 @@ export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
 
   const aiSubTabs = [
     { id: 'overview' as AiTradingSubTabType, label: 'Genel Bakış (Sinyal Akışı)', icon: LayoutGrid },
-    { id: 'arena' as AiTradingSubTabType, label: 'Arena (20 Bot)', icon: Bot, badge: '20' },
+    { id: 'arena' as AiTradingSubTabType, label: 'Arena', icon: Bot, badge: botCount === undefined ? '—' : String(botCount) },
     { id: 'champions' as AiTradingSubTabType, label: 'Champions', icon: Trophy },
     { id: 'memory' as AiTradingSubTabType, label: 'Memory', icon: Database },
     { id: 'performance' as AiTradingSubTabType, label: 'Performance', icon: BarChart3 },
@@ -96,28 +102,20 @@ export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
           </div>
 
           <div className="hidden md:flex items-center gap-2 pl-3 border-l border-[#2b3139]">
-            <span className="w-2 h-2 rounded-full bg-[#02c076] animate-pulse" />
-            <span className="text-[11px] font-semibold text-[#02c076] font-['JetBrains_Mono',monospace]">
-              {isBotsRunning ? 'BOTLAR AKTİF (20 MOTOR)' : 'BOTLAR BEKLEMEDE'}
+            <span className={`w-2 h-2 rounded-full ${isBotsRunning === null ? 'bg-[#848e9c]' : isBotsRunning ? 'bg-[#02c076]' : 'bg-[#f0b90b]'}`} />
+            <span className="text-[11px] font-semibold text-[#848e9c] font-['JetBrains_Mono',monospace]">
+              {isBotsRunning === null ? 'DURUM BEKLENİYOR' : `OTOMATİK İŞLEM ${isBotsRunning ? 'İZNİ AÇIK' : 'DURAKLATILDI'} · ${controlCount} DEMO BOT`}
             </span>
           </div>
         </div>
 
         {/* Global Action Hub */}
         <div className="flex items-center flex-wrap gap-2">
-          {/* Quick Signal Generator */}
-          <button
-            onClick={onTriggerSignal}
-            title="Anlık Test Sinyali ve Lazer Akışı Üret"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#00d2ff]/10 hover:bg-[#00d2ff]/20 text-[#00d2ff] border border-[#00d2ff]/30 text-xs font-bold transition-all"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Sinyal Tetikle</span>
-          </button>
-
           {/* Master Bot Start / Stop Toggle */}
           <button
             onClick={onToggleBotsRunning}
+            disabled={controlDisabled}
+            title="Seçili hesabın otomatik işlem ve pozisyon yönetimini duraklatır/devam ettirir. Pozisyonları kapatmaz."
             className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md ${
               isBotsRunning
                 ? 'bg-[#f84960]/20 hover:bg-[#f84960]/30 text-[#f84960] border border-[#f84960]/40'
@@ -125,7 +123,7 @@ export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
             }`}
           >
             {isBotsRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
-            <span>{isBotsRunning ? 'Botları Durdur' : 'Botları Başlat'}</span>
+            <span>{isBotsRunning ? 'Otomatik İşlemleri Durdur' : 'Otomatik İşlemleri Aç'}</span>
           </button>
 
           {/* Settings / API Guide Modal */}
@@ -156,13 +154,16 @@ export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
       <div className="w-full bg-[#1e2329]/90 border border-[#2b3139] rounded-2xl px-4 pt-1 pb-1 sm:px-5 shadow-xl space-y-4">
         {/* Module Header & Subtext */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
+          <div className="shrink-0">
             <span className="text-[11px] font-black tracking-widest text-[#f0b90b] uppercase block font-['Inter',sans-serif]">
               YÖNETİM MODÜLÜ
             </span>
             <h1 className="text-xl sm:text-2xl font-black text-[#eaecef] tracking-tight">
               Trading Bot
             </h1>
+          </div>
+          {accountControl}
           </div>
           <p className="text-xs text-[#848e9c] sm:text-right">
             Botlar, hesaplar, işlemler ve risk kontrolleri tek çalışma alanında.

@@ -3,10 +3,10 @@ import { ArrowDownRight, ArrowUpRight, ExternalLink, X } from 'lucide-react';
 import { type TradeProOperation, type TradeProPosition } from '../../services/backendDashboard';
 import { getCoinIcon } from '../CoinIcons';
 
-type Props = { positions: TradeProPosition[]; operations: TradeProOperation[]; loading: boolean };
+type Props = { positions: TradeProPosition[]; operations: TradeProOperation[]; loading: boolean; error?: string; hasAccount?: boolean; onRefresh?: () => void };
 type PositionRow = TradeProPosition & { roe: number; stopLoss: string | null; takeProfit: string | null };
 
-export const ActivePositionsTable: React.FC<Props> = ({ positions, operations, loading }) => {
+export const ActivePositionsTable: React.FC<Props> = ({ positions, operations, loading, error, hasAccount = true, onRefresh }) => {
   const [showAll, setShowAll] = useState(false);
   const rows = useMemo(() => positions.filter((position) => Math.abs(Number(position.quantity)) > 0).map((position): PositionRow => {
     const operation = operations.find((item) => item.symbol === position.symbol && item.position?.side === position.side);
@@ -21,11 +21,12 @@ export const ActivePositionsTable: React.FC<Props> = ({ positions, operations, l
         <div className="flex items-center gap-2"><h3 className="text-xs font-bold tracking-wider text-[#eaecef] uppercase">AKTİF POZİSYONLAR ({rows.length})</h3><span className={`w-2 h-2 rounded-full ${rows.length ? 'bg-[#02c076] shadow-[0_0_6px_#02c076] animate-pulse' : 'bg-[#848e9c]'}`} /></div>
         <button type="button" id="view-all-positions-btn" onClick={() => setShowAll(true)} className="text-xs text-[#00d2ff] hover:text-cyan-300 font-medium transition-colors flex items-center gap-1"><span>Tümünü Gör</span><ExternalLink className="w-3 h-3" /></button>
       </div>
-      <div className="max-h-[220px] overflow-auto">{loading && rows.length === 0 ? <Empty text="Pozisyonlar yükleniyor…" /> : rows.length === 0 ? <Empty text="Bu borsa hesabında açık pozisyon yok" /> : <PositionsTable rows={rows} />}</div>
+      {error && <div role="alert" className="mb-2 text-xs text-[#f84960]">{error} {rows.length > 0 && 'Son başarılı okumadaki pozisyonlar gösteriliyor.'}<button type="button" onClick={onRefresh} className="ml-2 underline">Yeniden dene</button></div>}
+      <div className="max-h-[220px] overflow-auto">{loading && rows.length === 0 ? <Empty text="Pozisyonlar yükleniyor…" /> : error && rows.length === 0 ? <Empty text="Pozisyonlar alınamadı" /> : rows.length === 0 ? <Empty text={hasAccount ? "Bu demo borsa hesabında açık pozisyon yok" : "Aktif demo hesabı seçin"} /> : <PositionsTable rows={rows} />}</div>
     </div>
     {showAll && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"><div className="flex max-h-[85vh] w-full max-w-6xl flex-col rounded-2xl border border-[#2b3139] bg-[#1e2329] p-6 shadow-2xl">
       <div className="flex items-center justify-between border-b border-[#2b3139] pb-3"><div><h3 className="font-bold text-[#eaecef]">Tüm Açık Pozisyonlar</h3><p className="text-[11px] text-[#848e9c]">Seçili borsa hesabından alınan gerçek pozisyonlar · {rows.length} kayıt</p></div><button type="button" onClick={() => setShowAll(false)} className="rounded-lg border border-[#2b3139] bg-[#0b0e11] p-2 text-[#848e9c] hover:text-[#eaecef]" aria-label="Kapat"><X className="h-4 w-4" /></button></div>
-      <div className="mt-4 overflow-auto">{rows.length ? <PositionsTable rows={rows} /> : <Empty text="Açık pozisyon yok" />}</div>
+      <div className="mt-4 overflow-auto">{error && <div role="alert" className="mb-3 text-xs text-[#f84960]">{error} Son başarılı okuma gösteriliyor.</div>}{rows.length ? <PositionsTable rows={rows} /> : <Empty text={loading ? "Pozisyonlar yükleniyor…" : error ? "Pozisyonlar alınamadı" : hasAccount ? "Açık pozisyon yok" : "Aktif demo hesabı seçin"} />}</div>
     </div></div>}
   </>;
 };

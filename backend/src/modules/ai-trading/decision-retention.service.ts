@@ -1,13 +1,11 @@
 ﻿import { setTimeout as pause } from 'node:timers/promises';
 import { prisma } from '../../database/prisma.js';
-import { logger } from '../../utils/logger.js';
+import { scheduleDailyMaintenance } from '../../utils/daily-maintenance.js';
+import { RETENTION_HOURS, RETENTION_INTERVAL_MS } from '../../utils/retention-policy.js';
 
-export const AI_DECISION_RETENTION_HOURS = 24;
-export const AI_DECISION_RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
-// Only disposable UI notifications; order/risk/account events are deliberately excluded.
-export const EXPIRING_OUTBOX_EVENT_TYPES = ['BOT_PAPER_DECISION', 'BOT_SHADOW_DECISION', 'SNAPSHOT_RECONCILED', 'BOT_STATE_CHANGED'];
+export const AI_DECISION_RETENTION_HOURS = RETENTION_HOURS;
+export const AI_DECISION_RETENTION_INTERVAL_MS = RETENTION_INTERVAL_MS;
 const DELETE_BATCH_SIZE = 1_000;
-let retentionRunning = false;
 
 export function retentionFilters(now = new Date()) {
   const cutoff = new Date(now.getTime() - AI_DECISION_RETENTION_HOURS * 3_600_000);
@@ -15,7 +13,9 @@ export function retentionFilters(now = new Date()) {
     cutoff,
     decisions: { type: 'AUTONOMOUS' as const, occurredAt: { lt: cutoff }, createdAt: { lt: cutoff } },
     signals: { tradingBot: { type: 'AUTONOMOUS' as const }, createdAt: { lt: cutoff } },
-    outbox: { eventType: { in: EXPIRING_OUTBOX_EVENT_TYPES }, createdAt: { lt: cutoff } },
+    // Outbox contains SSE notifications, not the engine's order queue. The
+    // underlying order/fill/risk/audit records are not removed by this policy.
+    outbox: { createdAt: { lt: cutoff } },
   };
 }
 
@@ -70,9 +70,9 @@ export async function deleteExpiredAutonomousDecisions(now = new Date()) {
     if (!result.count) break;
     await pause(100);
   }
-  // Sweep each event type separately to use the (eventType, createdAt, id) index.
-  for (const eventType of EXPIRING_OUTBOX_EVENT_TYPES) {
-    const where = { eventType, createdAt: { lt: filters.cutoff } };
+  // Old notifications of all types expire using the (createdAt, id) index.
+  {
+    const where = filters.outbox;
     while (true) {
       const rows = await prisma.tradingOutboxEvent.findMany({
         where, select: { id: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: DELETE_BATCH_SIZE,
@@ -88,19 +88,5 @@ export async function deleteExpiredAutonomousDecisions(now = new Date()) {
 }
 
 export function scheduleAutonomousDecisionRetention() {
-  const execute = async () => {
-    if (retentionRunning) return;
-    retentionRunning = true;
-    try {
-      logger.info(await deleteExpiredAutonomousDecisions(), 'daily trading retention completed');
-    } catch (error) {
-      logger.error({ err: error }, 'daily trading retention failed');
-    } finally {
-      retentionRunning = false;
-    }
-  };
-  void execute();
-  const timer = setInterval(() => { void execute(); }, AI_DECISION_RETENTION_INTERVAL_MS);
-  timer.unref();
-  return () => clearInterval(timer);
+  return scheduleDailyMaintenance('trading retention', () => deleteExpiredAutonomousDecisions());
 }
