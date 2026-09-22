@@ -109,7 +109,7 @@ func (s *AccountStore) ListRealtimeAccounts(ctx context.Context) ([]account.Reso
 	const query = `SELECT id, userId, provider, environment, accountType,
 apiKeyEncrypted, apiSecretEncrypted, COALESCE(passphraseEncrypted, ''), isActive, executionEngine, connectionStatus
 FROM exchange_accounts
-WHERE isActive = TRUE AND connectionStatus = 'CONNECTED' AND provider = 'BINANCE'
+WHERE isActive = TRUE AND connectionStatus = 'CONNECTED' AND provider = 'BINANCE' AND accountType <> 'SPOT'
 ORDER BY id`
 	rows, err := s.database.QueryContext(ctx, query)
 	if err != nil {

@@ -174,9 +174,23 @@ export class BinanceFuturesAdapter implements ExchangeAdapter {
     await this.signedRequest('/fapi/v1/positionSide/dual', 'POST', { dualSidePosition: enabled.toString() });
   }
 
-  async getUserTrades(symbol: string, limit = 1000): Promise<ExchangeTrade[]> {
+  async getConditionalExecutionOrderId(exchangeOrderId: string, symbol: string, clientOrderId: string): Promise<string | null> {
+    try {
+      const body = await this.signedRequest('/fapi/v1/algoOrder', 'GET', { clientAlgoId: clientOrderId }) as { actualOrderId?: string | number };
+      return body.actualOrderId && String(body.actualOrderId) !== '0' ? String(body.actualOrderId) : null;
+    } catch (error) {
+      if (!(error instanceof ExchangeAdapterError) || String(error.exchangeCode) !== '-2013') throw error;
+      // Older conditional orders and reconciled actual IDs live in the regular order endpoint.
+      const regular = await this.signedRequest('/fapi/v1/order', 'GET', { symbol, orderId: exchangeOrderId }) as { orderId?: string | number };
+      if (regular.orderId === undefined) throw error;
+      return String(regular.orderId);
+    }
+  }
+
+  async getUserTrades(symbol: string, limit = 1000, range?: { startTime: number; endTime: number }): Promise<ExchangeTrade[]> {
     const body = await this.signedRequest('/fapi/v1/userTrades', 'GET', {
       symbol, limit: Math.max(1, Math.min(1000, Math.trunc(limit))).toString(),
+      ...(range ? { startTime: String(range.startTime), endTime: String(range.endTime) } : {}),
     });
     return (Array.isArray(body) ? body as BinanceUserTrade[] : []).flatMap((trade) => {
       if (trade.id === undefined || trade.orderId === undefined || !trade.symbol || trade.time === undefined) return [];

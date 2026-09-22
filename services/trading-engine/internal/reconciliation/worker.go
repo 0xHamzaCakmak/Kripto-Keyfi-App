@@ -77,6 +77,9 @@ func New(options Options) *Worker {
 		factory = func(resolved account.Resolved) (Reader, error) {
 			switch resolved.Reference.Provider {
 			case domain.ProviderBinance:
+				if resolved.Reference.AccountType == domain.AccountTypeSpot {
+					return binanceexchange.NewSpot(binanceexchange.Options{Credentials: resolved.Credentials, Client: client, SpotURL: options.Endpoints.BinanceSpot}), nil
+				}
 				return binanceexchange.New(binanceexchange.Options{
 					Credentials: resolved.Credentials, Client: client,
 					FuturesURL: options.Endpoints.BinanceFutures, SpotURL: options.Endpoints.BinanceSpot,

@@ -42,12 +42,44 @@ type cachedSnapshot struct {
 	at    time.Time
 }
 
+// OpenOrders does not depend on unrelated balance or symbol requests.
+func (s *Service) OpenOrders(ctx context.Context, userID, accountID string) ([]domain.Order, error) {
+	if userID == "" || accountID == "" {
+		return nil, errors.New("userId and accountId are required")
+	}
+	var resolved account.Resolved
+	var err error
+	if readStore, ok := s.store.(readOnlyAccountStore); ok {
+		resolved, err = readStore.ResolveReadOnly(ctx, userID, accountID)
+	} else {
+		resolved, err = s.store.Resolve(ctx, userID, accountID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	reader, err := s.factory(resolved)
+	if err != nil {
+		return nil, err
+	}
+	orders, err := reader.GetOpenOrders(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if orders == nil {
+		orders = []domain.Order{}
+	}
+	return orders, nil
+}
+
 const snapshotTTL = 5 * time.Second
 
 func New(store account.Store, client *http.Client, endpoints exchange.Endpoints) *Service {
 	return &Service{store: store, factory: func(resolved account.Resolved) (exchange.Reader, error) {
 		switch resolved.Reference.Provider {
 		case domain.ProviderBinance:
+			if resolved.Reference.AccountType == domain.AccountTypeSpot {
+				return binance.NewSpot(binance.Options{Credentials: resolved.Credentials, Client: client, SpotURL: endpoints.BinanceSpot}), nil
+			}
 			return binance.New(binance.Options{
 				Credentials: resolved.Credentials, Client: client,
 				FuturesURL: endpoints.BinanceFutures, SpotURL: endpoints.BinanceSpot,

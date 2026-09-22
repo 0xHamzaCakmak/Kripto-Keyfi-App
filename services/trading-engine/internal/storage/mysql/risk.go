@@ -14,7 +14,7 @@ import (
 )
 
 func (s *AccountStore) LoadProfile(ctx context.Context, userID, accountID string) (risk.Profile, error) {
-	const query = `SELECT p.enabled, c.globalKillSwitch, p.accountKillSwitch,
+	const query = `SELECT p.enabled, c.globalKillSwitch, p.accountKillSwitch, p.entryPaused,
 CAST(p.maxOrderNotional AS CHAR), CAST(p.maxInitialMargin AS CHAR), CAST(p.maxAccountOpenNotional AS CHAR),
 p.maxOpenPositions, p.maxSymbolPositions, p.minLeverage, p.maxLeverage, CAST(p.minAvailableBalance AS CHAR),
 p.maxOrdersPerMinute, p.maxDailyOrders, p.allowedSymbols, p.blockedSymbols
@@ -24,7 +24,7 @@ WHERE p.userId = ? AND p.exchangeAccountId = ? LIMIT 1`
 	var profile risk.Profile
 	var allowed, blocked []byte
 	err := s.database.QueryRowContext(ctx, query, userID, accountID).Scan(
-		&profile.Enabled, &profile.GlobalKillSwitch, &profile.AccountKillSwitch,
+		&profile.Enabled, &profile.GlobalKillSwitch, &profile.AccountKillSwitch, &profile.EntryPaused,
 		&profile.MaxOrderNotional, &profile.MaxInitialMargin, &profile.MaxAccountOpenNotional,
 		&profile.MaxOpenPositions, &profile.MaxSymbolPositions, &profile.MinLeverage, &profile.MaxLeverage, &profile.MinAvailableBalance,
 		&profile.MaxOrdersPerMinute, &profile.MaxDailyOrders, &allowed, &blocked,

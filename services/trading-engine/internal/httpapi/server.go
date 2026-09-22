@@ -47,6 +47,7 @@ func New(options Options) *Server {
 	mux.Handle("GET /internal/v1/status", server.requireInternalToken(http.HandlerFunc(server.status)))
 	if server.shadow != nil {
 		mux.Handle("GET /internal/v1/shadow/accounts/{accountId}/snapshot", server.requireInternalToken(http.HandlerFunc(server.shadowSnapshot)))
+		mux.Handle("GET /internal/v1/shadow/accounts/{accountId}/orders", server.requireInternalToken(http.HandlerFunc(server.openOrders)))
 	}
 	if server.execution != nil {
 		mux.Handle("POST /internal/v1/execution/orders/preview", server.requireInternalToken(http.HandlerFunc(server.previewOrder)))
@@ -149,6 +150,15 @@ func (s *Server) placeOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"order": result, "idempotentReplay": replay})
+}
+
+func (s *Server) openOrders(w http.ResponseWriter, r *http.Request) {
+	orders, err := s.shadow.OpenOrders(r.Context(), r.URL.Query().Get("userId"), r.PathValue("accountId"))
+	if err != nil {
+		writeExecutionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"orders": orders})
 }
 
 func (s *Server) cancelOrder(w http.ResponseWriter, r *http.Request) {

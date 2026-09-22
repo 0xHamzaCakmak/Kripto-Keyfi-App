@@ -103,7 +103,8 @@ export interface ExchangeAdapter {
   getOpenOrders(): Promise<ExchangeOrder[]>;
   cancelOrder(symbol: string, exchangeOrderId: string): Promise<ExchangeOrder>;
   getPositions(): Promise<ExchangePosition[]>;
-  getUserTrades?(symbol: string, limit?: number): Promise<ExchangeTrade[]>;
+  getUserTrades?(symbol: string, limit?: number, range?: { startTime: number; endTime: number }): Promise<ExchangeTrade[]>;
+  getConditionalExecutionOrderId?(exchangeOrderId: string, symbol: string, clientOrderId: string): Promise<string | null>;
   getHedgeMode?(): Promise<boolean>;
   setHedgeMode?(enabled: boolean): Promise<void>;
 }

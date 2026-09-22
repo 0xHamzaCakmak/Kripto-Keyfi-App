@@ -1,4 +1,4 @@
-import type { ChatChannel, ChatMessage, ChatNewsItem, ChatReaction, ChatUser } from '../types';
+import type { ChatChannel, ChatMessage, ChatReaction, ChatUser } from '../types';
 import { api } from './apiClient';
 
 export type ApiChatUser = { id: string; name: string; username: string; avatar: string | null; role: string };
@@ -27,10 +27,3 @@ export async function getChatMessages(roomSlug: string, before?: string) {
   const response = await api.get<{ data: { messages: ApiChatMessage[]; nextCursor: string | null } }>(`/chat/rooms/${roomSlug}/messages`, { params: { limit: 50, before } });
   return { messages: response.data.data.messages.map(mapChatMessage), nextCursor: response.data.data.nextCursor };
 }
-
-export const CHAT_NEWS: ChatNewsItem[] = [
-  { id: 'cn1', title: 'Bitcoin ETF girişlerinde artış', slug: 'bitcoin-etf-girisleri-piyasada-yeni-beklenti-olusturdu', category: 'Bitcoin', publishedAt: '10 dk önce' },
-  { id: 'cn2', title: 'Ethereum Layer-2 işlem hacmi yükseldi', slug: 'ethereum-layer-2-aglarinda-islem-hacmi-artiyor', category: 'Ethereum', publishedAt: '22 dk önce' },
-  { id: 'cn3', title: 'Büyük borsadan yeni listeleme duyurusu', slug: 'buyuk-borsadan-yeni-altcoin-listeleme-duyurusu', category: 'Borsa', publishedAt: '41 dk önce' },
-];
-export function getChatNews() { return CHAT_NEWS; }

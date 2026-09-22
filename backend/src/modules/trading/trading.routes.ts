@@ -1,3 +1,6 @@
+import { manualBatchRouter } from './manual-batch.routes.js';
+import { proChampions } from '../ai-trading/bot-score.controller.js';
+import { exchangeOrdersRouter } from './exchange-orders.routes.js';
 import { UserRole } from '@prisma/client';
 import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate.js';
@@ -7,11 +10,13 @@ import { validateRequest } from '../../middleware/validate-request.js';
 import { asyncHandler } from '../../utils/async-handler.js';
 import { balances, changeCredentials, changeExecutionEngine, createAccount, listAccounts, removeAccount, testAccount } from './exchange-account.controller.js';
 import { createExchangeAccountBodySchema, exchangeAccountIdParamsSchema, updateExchangeCredentialsBodySchema, updateExecutionEngineBodySchema } from './exchange-account.schema.js';
-import { cancel, close, events, mentorPositions, orders, positions, preview, publishMentor, submit, symbols } from './manual-trading.controller.js';
-import { cancelOrderBodySchema, cancelOrderParamsSchema, closePositionBodySchema, closePositionParamsSchema, previewOrderBodySchema, publishMentorSignalBodySchema, submitOrderBodySchema, tradingAccountQuerySchema, tradingEventsQuerySchema } from './manual-trading.schema.js';
+import { cancel, close, events, mentorPositions, orders, positions, preview, publishMentor, submit, symbolPrice, symbols } from './manual-trading.controller.js';
+import { cancelOrderBodySchema, cancelOrderParamsSchema, closePositionBodySchema, closePositionParamsSchema, previewOrderBodySchema, publishMentorSignalBodySchema, submitOrderBodySchema, tradingAccountQuerySchema, tradingEventsQuerySchema, tradingSymbolPriceQuerySchema } from './manual-trading.schema.js';
 import { changeKillSwitch, changeRiskProfile, riskEvents, riskProfile } from './risk.controller.js';
 import { updateKillSwitchBodySchema, updateRiskProfileBodySchema } from './risk.schema.js';
 import { bots, create as createBot, decisions as botDecisions, emergencyStop, gridPlan, gridPlanPreview, paperPerformance, pause as pauseBot, resume as resumeBot, signals as botSignals, start as startBot, stop as stopBot, validate as validateBot } from './bot.controller.js';
+import { gridDemoRouter } from './grid-demo.routes.js';
+import { botPnlRouter } from './bot-pnl.routes.js';
 import { botIdParamsSchema, createBotBodySchema, gridPlanPreviewBodySchema } from './bot.schema.js';
 import { create as createStrategy, createVersion as createStrategyVersion, strategies, strategy, validateParameters as validateStrategyParameters } from '../ai-trading/strategy-registry.controller.js';
 import { createStrategyBodySchema, createStrategyVersionBodySchema, strategyIdParamsSchema, validateStrategyParametersBodySchema } from '../ai-trading/strategy-registry.schema.js';
@@ -58,6 +63,9 @@ import { aiMentorPerformanceQuerySchema } from '../ai-trading/ai-mentor-performa
 
 export const tradingRouter = Router();
 tradingRouter.use(authenticate, authorize(UserRole.ADMIN));
+tradingRouter.use('/manual-batches', manualBatchRouter);
+tradingRouter.get('/pro-champions', validateRequest({ query: tradingAccountQuerySchema }), asyncHandler(proChampions));
+tradingRouter.use('/exchange-orders', exchangeOrdersRouter);
 tradingRouter.get('/overview', asyncHandler(overview));
 tradingRouter.get('/system-health', asyncHandler(systemHealth));
 tradingRouter.get('/system-health/audit', validateRequest({ query: autonomousAuditQuerySchema }), asyncHandler(autonomousAudit));
@@ -125,6 +133,8 @@ tradingRouter.get('/shadow-trades', validateRequest({ query: shadowTradesQuerySc
 tradingRouter.get('/shadow-trades/performance', validateRequest({ query: shadowSummaryQuerySchema }), asyncHandler(shadowPerformance));
 tradingRouter.post('/live-eligibility/evaluate', validateRequest({ body: runLiveEligibilityBodySchema }), asyncHandler(evaluateLiveEligible));
 tradingRouter.get('/bots', asyncHandler(bots));
+tradingRouter.use('/grid-demo', gridDemoRouter);
+tradingRouter.use('/bot-pnl', botPnlRouter);
 tradingRouter.post('/bots', validateRequest({ body: createBotBodySchema }), asyncHandler(createBot));
 tradingRouter.post('/bots/grid-plan/preview', validateRequest({ body: gridPlanPreviewBodySchema }), asyncHandler(gridPlanPreview));
 tradingRouter.get('/bots/:id/grid-plan', validateRequest({ params: botIdParamsSchema }), asyncHandler(gridPlan));
@@ -149,6 +159,7 @@ tradingRouter.patch('/exchange-accounts/:id/risk-profile', validateRequest({ par
 tradingRouter.get('/exchange-accounts/:id/risk-events', validateRequest({ params: exchangeAccountIdParamsSchema }), asyncHandler(riskEvents));
 tradingRouter.post('/risk/kill-switch', validateRequest({ body: updateKillSwitchBodySchema }), asyncHandler(changeKillSwitch));
 tradingRouter.get('/symbols', validateRequest({ query: tradingAccountQuerySchema }), asyncHandler(symbols));
+tradingRouter.get('/symbols/price', validateRequest({ query: tradingSymbolPriceQuerySchema }), asyncHandler(symbolPrice));
 tradingRouter.post('/orders/preview', validateRequest({ body: previewOrderBodySchema }), asyncHandler(preview));
 tradingRouter.post('/orders', validateRequest({ body: submitOrderBodySchema }), asyncHandler(submit));
 tradingRouter.get('/orders', validateRequest({ query: tradingAccountQuerySchema }), asyncHandler(orders));

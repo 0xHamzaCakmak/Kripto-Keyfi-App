@@ -12,31 +12,44 @@ import { cancelTradingEngineOrder, executeTradingEngineOrder, getTradingEngineSn
 import { appendTradingEvent } from './trading-events.service.js';
 import { assertCentralRiskExecution } from './execution-safety.js';
 import { env } from '../../config/env.js';
+import { logger } from '../../utils/logger.js';
+import type { ExchangeSymbol } from './exchanges/exchange-adapter.js';
 
 const PREVIEW_TTL_MS = 2 * 60 * 1000;
+const SYMBOL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const symbolRefreshJobs = new Map<string, Promise<ExchangeSymbol[]>>();
 
 export async function listSymbols(userId: string, exchangeAccountId: string) {
   const account = await readableTradingAccount(userId, exchangeAccountId);
-  const symbols = await readExchangeState(account.executionEngine,
-    async () => (await getTradingEngineSnapshot(account)).symbols,
-    () => exchangeCall(() => adapterFor(account).getSymbols()));
-  if (account.executionEngine === 'TYPESCRIPT') scheduleShadowComparison(userId, exchangeAccountId, 'symbols', symbols);
-  return symbols;
+  assertFuturesAccount(account);
+  const cached = await readCachedSymbols(exchangeAccountId);
+  if (cached.length > 0) {
+    const stale = cached.some((row) => row.lastSeenAt.getTime() < Date.now() - SYMBOL_CACHE_TTL_MS);
+    if (stale) void refreshSymbols(account).catch((error) => {
+      logger.warn({ error, exchangeAccountId }, 'Vadeli parite önbelleği arka planda yenilenemedi');
+    });
+    return cached.map(cachedSymbol);
+  }
+  return refreshSymbols(account);
+}
+
+export async function getSymbolMarkPrice(userId: string, exchangeAccountId: string, symbol: string) {
+  const account = await readableTradingAccount(userId, exchangeAccountId);
+  assertFuturesAccount(account);
+  let cached = (await readCachedSymbols(exchangeAccountId, symbol))[0];
+  if (!cached?.isActive) {
+    await refreshSymbols(account);
+    cached = (await readCachedSymbols(exchangeAccountId, symbol))[0];
+  }
+  if (!cached?.isActive) throw new ApiError(404, 'İşleme açık vadeli parite bulunamadı.', 'TRADING_SYMBOL_NOT_FOUND');
+  const markPrice = normalizeDecimal(await exchangeCall(() => adapterFor(account).getMarkPrice(symbol)));
+  return { symbol, markPrice, fetchedAt: new Date() };
 }
 
 export async function createOrderPreview(userId: string, input: PreviewOrderInput) {
   const account = await tradingAccount(userId, input.exchangeAccountId);
-  if (account.provider === 'BINANCE' && !input.reduceOnly && !input.symbol.endsWith('USDC')) {
-    throw new ApiError(400, 'Manuel yeni işlemler bot sermayesinden ayrılmak için USDC vadeli paritelerinde açılmalıdır.', 'MANUAL_USDC_REQUIRED');
-  }
-  if (account.provider === 'BINANCE' && !input.reduceOnly) {
-    const botConflict = await prisma.tradingBot.count({
-      where: { userId, exchangeAccountId: account.id, type: 'AUTONOMOUS', mode: 'DEMO', symbol: input.symbol, lifecycleStatus: { not: 'ARCHIVED' } },
-    });
-    if (botConflict > 0) {
-      throw new ApiError(409, 'Bu USDC paritesi aktif bir bot tarafından kullanılıyor. Manuel ve bot pozisyonlarının birleşmemesi için başka bir USDC paritesi seçin.', 'MANUAL_SYMBOL_BOT_CONFLICT');
-    }
-  }
+  assertFuturesAccount(account);
+  // Bot symbol assignments do not reserve the market against manual orders.
   const goPreview = account.executionEngine === 'GO' ? await previewTradingEngineOrder(account, input) : undefined;
   const adapter = account.executionEngine === 'TYPESCRIPT' ? adapterFor(account) : undefined;
   const symbols = goPreview ? [goPreview.rule] : await exchangeCall(() => adapter!.getSymbols());
@@ -434,6 +447,64 @@ async function guardAutonomousReentryAfterManualClose(
       ...(ipAddress ? { ipAddress } : {}),
     } }),
   ]);
+}
+
+type TradingAccountRecord = Awaited<ReturnType<typeof ownedAccount>>;
+
+function refreshSymbols(account: TradingAccountRecord) {
+  const running = symbolRefreshJobs.get(account.id);
+  if (running) return running;
+  const job = (async () => {
+    const symbols = await exchangeCall(() => adapterFor(account).getSymbols());
+    const seenAt = new Date();
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`UPDATE exchange_symbol_cache SET isActive = FALSE, updatedAt = ${seenAt} WHERE exchangeAccountId = ${account.id}`;
+      if (symbols.length > 0) {
+        const values = Prisma.join(symbols.map((symbol) => Prisma.sql`
+          (${account.id}, ${symbol.symbol}, ${symbol.baseAsset}, ${symbol.quoteAsset}, ${symbol.tickSize}, ${symbol.stepSize}, ${symbol.minQuantity}, ${symbol.maxQuantity}, ${symbol.minNotional}, ${symbol.maxLeverage}, TRUE, ${seenAt}, ${seenAt}, ${seenAt})
+        `));
+        await tx.$executeRaw(Prisma.sql`
+          INSERT INTO exchange_symbol_cache
+            (exchangeAccountId, symbol, baseAsset, quoteAsset, tickSize, stepSize, minQuantity, maxQuantity, minNotional, maxLeverage, isActive, lastSeenAt, createdAt, updatedAt)
+          VALUES ${values}
+          ON DUPLICATE KEY UPDATE
+            baseAsset = VALUES(baseAsset), quoteAsset = VALUES(quoteAsset), tickSize = VALUES(tickSize), stepSize = VALUES(stepSize),
+            minQuantity = VALUES(minQuantity), maxQuantity = VALUES(maxQuantity), minNotional = VALUES(minNotional),
+            maxLeverage = VALUES(maxLeverage), isActive = TRUE, lastSeenAt = VALUES(lastSeenAt), updatedAt = VALUES(updatedAt)
+        `);
+      }
+    }, { maxWait: 10_000, timeout: 30_000 });
+    if (account.executionEngine === 'TYPESCRIPT') scheduleShadowComparison(account.userId, account.id, 'symbols', symbols);
+    return symbols.sort((left, right) => left.symbol.localeCompare(right.symbol));
+  })().finally(() => symbolRefreshJobs.delete(account.id));
+  symbolRefreshJobs.set(account.id, job);
+  return job;
+}
+
+type CachedSymbolRow = {
+  symbol: string; baseAsset: string; quoteAsset: string; tickSize: Prisma.Decimal; stepSize: Prisma.Decimal;
+  minQuantity: Prisma.Decimal; maxQuantity: Prisma.Decimal; minNotional: Prisma.Decimal; maxLeverage: number;
+  isActive: boolean; lastSeenAt: Date;
+};
+
+function readCachedSymbols(exchangeAccountId: string, symbol?: string) {
+  return symbol
+    ? prisma.$queryRaw<CachedSymbolRow[]>`SELECT symbol, baseAsset, quoteAsset, tickSize, stepSize, minQuantity, maxQuantity, minNotional, maxLeverage, isActive, lastSeenAt FROM exchange_symbol_cache WHERE exchangeAccountId = ${exchangeAccountId} AND symbol = ${symbol} LIMIT 1`
+    : prisma.$queryRaw<CachedSymbolRow[]>`SELECT symbol, baseAsset, quoteAsset, tickSize, stepSize, minQuantity, maxQuantity, minNotional, maxLeverage, isActive, lastSeenAt FROM exchange_symbol_cache WHERE exchangeAccountId = ${exchangeAccountId} AND isActive = TRUE ORDER BY symbol ASC`;
+}
+
+function cachedSymbol(row: CachedSymbolRow): ExchangeSymbol {
+  return {
+    symbol: row.symbol, baseAsset: row.baseAsset, quoteAsset: row.quoteAsset, status: 'TRADING',
+    tickSize: row.tickSize.toString(), stepSize: row.stepSize.toString(), minQuantity: row.minQuantity.toString(),
+    maxQuantity: row.maxQuantity.toString(), minNotional: row.minNotional.toString(), maxLeverage: row.maxLeverage,
+  };
+}
+
+function assertFuturesAccount(account: { accountType: string }) {
+  if (account.accountType === 'SPOT') {
+    throw new ApiError(409, 'Tek coin manuel işlem yalnızca vadeli işlem hesaplarında kullanılabilir.', 'FUTURES_ACCOUNT_REQUIRED');
+  }
 }
 
 async function tradingAccount(userId: string, exchangeAccountId: string) {

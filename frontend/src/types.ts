@@ -272,14 +272,6 @@ export interface WhaleEvent {
   importance: 'Düşük' | 'Orta' | 'Yüksek';
 }
 
-export interface ChatNewsItem {
-  id: string;
-  title: string;
-  slug: string;
-  category: string;
-  publishedAt: string;
-}
-
 export interface EcosystemProject {
   id: string;
   slug: string;

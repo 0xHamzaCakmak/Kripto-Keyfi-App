@@ -33,7 +33,10 @@ import { cn } from '../lib/utils';
 import { getCoinBySymbol, getMentionedCoins, MOCK_COINS } from '../services/coinService';
 import { askKriptoKeyfiAi } from '../services/aiService';
 import { getWhaleFeed } from '../services/whaleService';
-import { getChatMessages, getChatNews, getChatRooms } from '../services/chatService';
+import { getChatMessages, getChatRooms } from '../services/chatService';
+import { getNews } from '../services/newsService';
+import type { NewsArticle } from '../types';
+import NewsArtwork from './NewsArtwork';
 import { disconnectChatSocket, getChatSocket, joinChatRoom, leaveChatRoom, mapSocketMessage, mapSocketReactions, mapSocketUsers, reactToChatMessage, sendChatMessage } from '../services/chatSocket';
 import { getApiErrorMessage } from '../services/apiClient';
 
@@ -449,21 +452,50 @@ function MarketHighlights() {
 }
 
 function BreakingNewsWidget() {
-  const news = getChatNews();
+  const [news, setNews] = useState<NewsArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    let reading = false;
+    const load = async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        const result = await getNews({ limit: 3 });
+        if (active) { setNews(result.articles); setError(''); }
+      } catch {
+        if (active) setError('Haberler güncellenemedi.');
+      } finally {
+        reading = false;
+        if (active) setLoading(false);
+      }
+    };
+    const refresh = () => { if (!document.hidden) void load(); };
+    void load();
+    const timer = window.setInterval(refresh, 60_000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener('visibilitychange', refresh); };
+  }, []);
 
   return (
     <Widget title="Son Dakika Haberleri">
+      {error && <p role="status" className="mb-3 text-xs text-error">{error}</p>}
       {news.length ? (
         <div className="space-y-3">
           {news.map((item) => (
-            <Link key={item.id} to={`/blog/${item.slug}`} className="block rounded-2xl bg-surface-high/50 p-3 hover:bg-surface-high">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-secondary">{item.category} / {item.publishedAt}</p>
-              <h4 className="mt-1 text-sm font-bold text-white">{item.title}</h4>
-              <p className="mt-2 text-xs font-bold text-primary">Habere git</p>
+            <Link key={item.id} to={`/haberler/${item.slug}`} className="flex gap-3 rounded-2xl bg-surface-high/50 p-3 hover:bg-surface-high">
+              <NewsArtwork article={item} className="h-16 w-20 shrink-0 rounded-lg" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-secondary">{item.category ?? 'Kripto'} / <time dateTime={item.publishedAt}>{new Date(item.publishedAt).toLocaleString('tr-TR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time></p>
+                <h4 className="mt-1 line-clamp-3 text-sm font-bold text-white">{item.title}</h4>
+                <p className="mt-2 text-xs font-bold text-primary">Habere git</p>
+              </div>
             </Link>
           ))}
         </div>
-      ) : <EmptyState label="Haber bulunamadı." />}
+      ) : <EmptyState label={loading ? 'Haberler yükleniyor…' : error ? 'Haberler şu anda alınamıyor.' : 'Haber bulunamadı.'} />}
     </Widget>
   );
 }

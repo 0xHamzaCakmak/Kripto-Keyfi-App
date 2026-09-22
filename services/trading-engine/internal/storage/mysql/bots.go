@@ -28,6 +28,7 @@ FROM trading_bots b
 LEFT JOIN trading_strategy_versions sv ON sv.id = b.strategyVersionId
 LEFT JOIN trading_strategies s ON s.id = sv.strategyId
 WHERE b.desiredState = 'RUNNING'
+  AND COALESCE(JSON_UNQUOTE(JSON_EXTRACT(b.configuration, '$.gridVersion')), '') <> '2'
   AND (b.mode <> 'DEMO' OR ?)
   AND state IN ('STARTING', 'RUNNING', 'RISK_BLOCKED', 'RECONCILING', 'ERROR')
   AND (leaseExpiresAt IS NULL OR leaseExpiresAt < ? OR schedulerOwner = ?)
@@ -57,6 +58,29 @@ LIMIT 1 FOR UPDATE SKIP LOCKED`
 	if err := json.Unmarshal(configuration, &instance.Configuration); err != nil {
 		return nil, fmt.Errorf("decode bot configuration: %w", err)
 	}
+	if instance.Type == "AUTONOMOUS" && instance.Mode == "DEMO" {
+		rows, queryErr := tx.QueryContext(ctx, `SELECT symbol FROM trading_universe_assets WHERE userId = ? AND enabled = TRUE ORDER BY sortOrder, symbol`, instance.UserID)
+		if queryErr != nil {
+			return nil, fmt.Errorf("read bot universe: %w", queryErr)
+		}
+		var symbols []string
+		for rows.Next() {
+			var symbol string
+			if scanErr := rows.Scan(&symbol); scanErr != nil {
+				rows.Close()
+				return nil, scanErr
+			}
+			symbols = append(symbols, symbol)
+		}
+		queryErr = rows.Err()
+		rows.Close()
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		if err := bot.SelectUniverseMarket(&instance, symbols); err != nil {
+			return nil, err
+		}
+	}
 	instance.NeedsReconciliation = instance.State == bot.StateRunning && (!previousOwner.Valid || previousOwner.String != owner || !previousLease.Valid || previousLease.Time.Before(now))
 	result, err := tx.ExecContext(ctx, `UPDATE trading_bots SET schedulerOwner = ?, leaseExpiresAt = ?, heartbeatAt = ?, version = version + 1
 WHERE id = ? AND (leaseExpiresAt IS NULL OR leaseExpiresAt < ? OR schedulerOwner = ?)`, owner, leaseUntil, now, instance.ID, now, owner)
@@ -66,6 +90,13 @@ WHERE id = ? AND (leaseExpiresAt IS NULL OR leaseExpiresAt < ? OR schedulerOwner
 	affected, _ := result.RowsAffected()
 	if affected != 1 {
 		return nil, errors.New("bot lease was claimed concurrently")
+	}
+	if instance.UniverseScan {
+		// Persist on claim, including failed attempts, so an unavailable market
+		// is retried next round rather than blocking all remaining markets.
+		if _, err := tx.ExecContext(ctx, `UPDATE trading_bots SET configuration = JSON_SET(configuration, '$.lastAnalyzedUniverseSymbol', ?) WHERE id = ? AND schedulerOwner = ?`, instance.Symbol, instance.ID, owner); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, fmt.Errorf("commit bot lease: %w", err)
@@ -195,8 +226,12 @@ func (s *AccountStore) completeCycleOnce(ctx context.Context, instance bot.Insta
 		return bot.CycleResult{}, fmt.Errorf("begin bot cycle: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	leaseSymbol := instance.Symbol
+	if instance.UniverseScan {
+		leaseSymbol = instance.LeaseSymbol
+	}
 	result, err := tx.ExecContext(ctx, `UPDATE trading_bots SET heartbeatAt = ?, lastDecisionAt = ?, leaseExpiresAt = ?, version = version + 1
-WHERE id = ? AND schedulerOwner = ? AND state = 'RUNNING' AND symbol = ?`, now, now, leaseUntil, instance.ID, owner, instance.Symbol)
+WHERE id = ? AND schedulerOwner = ? AND state = 'RUNNING' AND symbol = ?`, now, now, leaseUntil, instance.ID, owner, leaseSymbol)
 	if err != nil {
 		return bot.CycleResult{}, fmt.Errorf("heartbeat bot cycle: %w", err)
 	}
@@ -1265,6 +1300,15 @@ WHERE id = ? AND schedulerOwner = ?`, botID, owner)
 		return fmt.Errorf("release bot lease: %w", err)
 	}
 	return nil
+}
+
+func (s *AccountStore) LoadLatestBotSymbolDecisionPrice(ctx context.Context, botID, symbol string) (string, error) {
+	var price string
+	err := s.database.QueryRowContext(ctx, `SELECT markPrice FROM trading_bot_decisions WHERE tradingBotId = ? AND symbol = ? ORDER BY id DESC LIMIT 1`, botID, symbol).Scan(&price)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return price, err
 }
 
 func (s *AccountStore) LoadLatestBotDecisionPrice(ctx context.Context, botID string) (string, error) {

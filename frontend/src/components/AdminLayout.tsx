@@ -25,7 +25,7 @@ const primaryLinks = [
   { label: 'Haber Yönetimi', to: '/admin/news/sources', icon: Radio, end: true },
   { label: 'Videolar', to: '/admin/videos', icon: Youtube },
   { label: 'KOL Intelligence', to: '/admin/kol', icon: UsersRound },
-  { label: 'Trading Bot', to: '/admin/trading', icon: Bot },
+  { label: 'Trading Bot', to: '/admin/trading/ai-pro', icon: Bot },
   { label: 'Analytics', to: '/admin/analytics', icon: BarChart3 },
   { label: 'Sohbet', to: '/admin/chat', icon: MessageSquare },
 ];

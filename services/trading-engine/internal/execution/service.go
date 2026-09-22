@@ -195,6 +195,9 @@ func New(accounts account.Store, orders OrderStore, riskStore risk.Store, client
 	return &Service{accounts: accounts, orders: orders, risk: risk.New(riskStore), now: time.Now, factory: func(resolved account.Resolved) (exchange.Writer, error) {
 		switch resolved.Reference.Provider {
 		case domain.ProviderBinance:
+			if resolved.Reference.AccountType == domain.AccountTypeSpot {
+				return binance.NewSpot(binance.Options{Credentials: resolved.Credentials, Client: client, SpotURL: endpoints.BinanceSpot}), nil
+			}
 			return binance.New(binance.Options{Credentials: resolved.Credentials, Client: client, FuturesURL: endpoints.BinanceFutures, SpotURL: endpoints.BinanceSpot}), nil
 		case domain.ProviderBybit:
 			return bybit.New(bybit.Options{Credentials: resolved.Credentials, Client: client, BaseURL: endpoints.Bybit}), nil
@@ -314,7 +317,8 @@ func (s *Service) Place(ctx context.Context, command tradingv1.PlaceOrderCommand
 		}
 	}
 	result, err := writer.PlaceOrder(ctx, exchange.PlaceOrderInput{
-		Symbol: stored.Symbol, Side: stored.Side, Type: stored.Type, Quantity: stored.Quantity,
+		PostOnly: stored.Source == "GRID_BOT" && stored.Type == domain.OrderLimit && !stored.ReduceOnly,
+		Symbol:   stored.Symbol, Side: stored.Side, Type: stored.Type, Quantity: stored.Quantity,
 		Price: stored.Price, StopPrice: stored.StopPrice, ReduceOnly: stored.ReduceOnly, ClientOrderID: stored.ClientOrderID,
 		PositionSide: stored.PositionSide,
 	})

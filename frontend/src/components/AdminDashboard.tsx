@@ -40,7 +40,7 @@ export default function AdminDashboard() {
     {
       title: "Trading operasyonları",
       description: "Botlar, borsa hesapları, risk ve sistem durumu.",
-      to: "/admin/trading",
+      to: "/admin/trading/ai-pro",
       icon: Bot,
       accent: "text-primary",
     },
@@ -62,7 +62,7 @@ export default function AdminDashboard() {
     {
       title: "Sistem güvenliği",
       description: "Denetim, erişim ve servis sağlığı için kontrol alanı.",
-      to: "/admin/trading/system",
+      to: "/admin/trading/ai-pro?tab=system",
       icon: ShieldCheck,
       accent: "text-primary",
     },

@@ -12,6 +12,19 @@ export async function getTradingEngineSnapshot(account: Account): Promise<Snapsh
   return engineRequest(`/internal/v1/shadow/accounts/${encodeURIComponent(account.id)}/snapshot?userId=${encodeURIComponent(account.userId)}`, { method: 'GET' });
 }
 
+export async function getTradingEngineOpenOrders(account: Account): Promise<ExchangeOrder[]> {
+  let result: { orders: ExchangeOrder[] };
+  try {
+    result = await engineRequest<{ orders: ExchangeOrder[] }>(`/internal/v1/shadow/accounts/${encodeURIComponent(account.id)}/orders?userId=${encodeURIComponent(account.userId)}`, { method: 'GET' });
+  } catch (error) {
+    // Allow backend-first deployment while the previous engine is still running.
+    if (!(error instanceof ApiError) || error.statusCode !== 404) throw error;
+    result = await getTradingEngineSnapshot(account);
+  }
+  if (!Array.isArray(result.orders)) throw new ApiError(502, 'Borsa emir yanıtı doğrulanamadı.', 'INVALID_ORDER_RESPONSE');
+  return result.orders;
+}
+
 export async function previewTradingEngineOrder(account: Account, input: PreviewOrderInput) {
   return engineRequest<{
     request: PreviewOrderInput; rule: ExchangeSymbol; markPrice: string; estimatedNotional: string;
@@ -20,7 +33,7 @@ export async function previewTradingEngineOrder(account: Account, input: Preview
   });
 }
 
-export async function executeTradingEngineOrder(account: Account, preview: ManualOrderPreview, order: TradingOrder) {
+export async function executeTradingEngineOrder(account: Account, preview: Pick<ManualOrderPreview, 'symbol' | 'side' | 'type' | 'positionSide' | 'quantity' | 'price' | 'stopPrice' | 'leverage' | 'marginMode' | 'reduceOnly'>, order: TradingOrder) {
   return engineRequest<{ order: ExchangeOrder; idempotentReplay: boolean }>('/internal/v1/execution/orders', {
     method: 'POST', body: JSON.stringify({
       meta: commandMeta(account.userId, order.idempotencyKey, order.clientOrderId), tradingOrderId: order.id,

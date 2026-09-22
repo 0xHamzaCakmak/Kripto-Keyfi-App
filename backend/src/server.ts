@@ -1,3 +1,4 @@
+import { scheduleManualBatches } from './modules/trading/manual-batch.worker.js';
 import type { Server } from 'node:http';
 import { createServer } from 'node:http';
 import type { ChatIo } from './modules/chat/chat.socket.js';
@@ -16,6 +17,8 @@ import { scheduleAutonomousEvolution } from './modules/ai-trading/evolution.work
 import { scheduleAutonomousUniverse } from './modules/ai-trading/universe.worker.js';
 import { scheduleAutonomousLearning } from './modules/ai-trading/learning.worker.js';
 import { scheduleAutonomousDecisionRetention } from './modules/ai-trading/decision-retention.service.js';
+import { scheduleDemoGrids } from './modules/trading/grid-demo.worker.js';
+import { schedulePlatformPnlSync } from './modules/trading/platform-pnl-sync.js';
 
 let server: Server | undefined;
 let shuttingDown = false;
@@ -29,6 +32,9 @@ let stopAutonomousUniverse: (() => void) | undefined;
 let stopAutonomousLearning: (() => void) | undefined;
 let stopAutonomousDecisionRetention: (() => void) | undefined;
 let chatIo: ChatIo | undefined;
+let stopManualBatches: (() => void) | undefined;
+let stopDemoGrids: (() => void) | undefined;
+let stopPlatformPnlSync: (() => void) | undefined;
 
 async function shutdown(signal: string) {
   if (shuttingDown) return;
@@ -42,6 +48,9 @@ async function shutdown(signal: string) {
   stopAutonomousUniverse?.();
   stopAutonomousLearning?.();
   stopAutonomousDecisionRetention?.();
+  stopManualBatches?.();
+  stopDemoGrids?.();
+  stopPlatformPnlSync?.();
   chatIo?.close();
   logger.info({ signal }, 'graceful shutdown started');
   server?.close((error) => {
@@ -78,6 +87,9 @@ async function start() {
     if (env.AI_TRADING_UNIVERSE_ENABLED) stopAutonomousUniverse = scheduleAutonomousUniverse();
     if (env.AI_TRADING_LEARNING_ENABLED) stopAutonomousLearning = scheduleAutonomousLearning();
     stopAutonomousDecisionRetention = scheduleAutonomousDecisionRetention();
+    stopDemoGrids = scheduleDemoGrids();
+    stopManualBatches = scheduleManualBatches();
+    stopPlatformPnlSync = schedulePlatformPnlSync();
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : undefined;
     logger.fatal({ err: error instanceof Error ? { name: error.name, message: error.message, ...(code ? { code } : {}) } : error }, code === 'EADDRINUSE' ? `Port ${env.PORT} is already in use; stop the existing backend process before starting another.` : 'application startup failed');

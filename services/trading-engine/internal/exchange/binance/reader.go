@@ -459,6 +459,9 @@ func (r *Reader) PlaceOrder(ctx context.Context, input exchange.PlaceOrderInput)
 	applyPositionSide(params, input)
 	if input.Type == domain.OrderLimit || input.Type == domain.OrderStopLimit {
 		params.Set("timeInForce", "GTC")
+		if input.PostOnly {
+			params.Set("timeInForce", "GTX")
+		}
 	}
 	if input.Price != "" {
 		params.Set("price", string(input.Price))
@@ -618,7 +621,7 @@ func (r *Reader) get(ctx context.Context, baseURL, path string, params url.Value
 func mapOrder(item order) domain.Order {
 	orderType := domain.OrderMarket
 	switch item.Type {
-	case "LIMIT":
+	case "LIMIT", "LIMIT_MAKER":
 		orderType = domain.OrderLimit
 	case "STOP":
 		orderType = domain.OrderStopLimit

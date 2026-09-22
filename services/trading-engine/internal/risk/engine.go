@@ -12,6 +12,7 @@ import (
 )
 
 type Profile struct {
+	EntryPaused                                                    bool
 	Enabled, GlobalKillSwitch, AccountKillSwitch                   bool
 	MaxOrderNotional, MaxInitialMargin, MaxAccountOpenNotional     domain.Decimal
 	MaxOpenPositions, MaxSymbolPositions, MinLeverage, MaxLeverage int
@@ -76,13 +77,16 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 	if profile.AccountKillSwitch {
 		return e.riskBlock(ctx, resolved, order, "ACCOUNT_KILL_SWITCH_ACTIVE", "Hesap acil durdurması aktif.", nil)
 	}
+	if profile.EntryPaused && order.Source == "GRID_BOT" {
+		return e.reject(ctx, resolved, order, "GRID_ENTRIES_PAUSED", "Hesap otomatik girişleri duraklatıldı.", nil)
+	}
 	if contains(profile.BlockedSymbols, order.Symbol) {
 		return e.reject(ctx, resolved, order, "SYMBOL_BLOCKED", "Parite risk profili tarafından engellendi.", nil)
 	}
 	if len(profile.AllowedSymbols) > 0 && !containsTradingSymbol(profile.AllowedSymbols, order.Symbol) {
 		return e.reject(ctx, resolved, order, "SYMBOL_NOT_ALLOWED", "Parite izin verilen risk listesinin dışında.", nil)
 	}
-	if order.Leverage < maxInt(profile.MinLeverage, 1) {
+	if resolved.Reference.AccountType != domain.AccountTypeSpot && order.Leverage < maxInt(profile.MinLeverage, 1) {
 		return e.reject(ctx, resolved, order, "RISK_MIN_LEVERAGE_NOT_MET", "Seçilen kaldıraç hesap asgari kaldıraç sınırının altında.", map[string]any{"requestedLeverage": order.Leverage, "minLeverage": maxInt(profile.MinLeverage, 1)})
 	}
 	if order.Leverage > profile.MaxLeverage {
@@ -159,6 +163,9 @@ func (e *Engine) Evaluate(ctx context.Context, resolved account.Resolved, order 
 	available := domain.Decimal("0")
 	usdcContract := strings.HasSuffix(order.Symbol, "USDC")
 	for _, balance := range balances {
+		if resolved.Reference.AccountType == domain.AccountTypeSpot && balance.WalletType == domain.WalletSpot && balance.Asset == "USDT" {
+			available, _ = add(available, balance.AvailableBalance)
+		}
 		if balance.WalletType == domain.WalletUSDMFutures && balance.Asset == "USDT" && (!usdcContract || balance.MarginAvailable) {
 			available, _ = add(available, balance.AvailableBalance)
 		}

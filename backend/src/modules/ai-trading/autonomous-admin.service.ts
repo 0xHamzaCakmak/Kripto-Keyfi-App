@@ -38,7 +38,17 @@ export async function getAutonomousOverview(userId: string) {
 export async function getArenaStatus(userId: string, exchangeAccountId?: string) {
   const since = new Date(Date.now() - 5 * 60_000);
   const accountFilter = exchangeAccountId ? { exchangeAccountId } : {};
-  const [states, modes, decisions, latest, oldestRunning, botSymbols, recentDecisions] = await Promise.all([
+  const universe = await prisma.tradingUniverseAsset.findMany({ where: { userId, enabled: true }, orderBy: { sortOrder: 'asc' }, select: { symbol: true } });
+  const configuredSymbols = [...new Set(universe.map(asset => asset.symbol))];
+  // Discover recorded symbols once so missing markets do not each scan the
+  // entire decision/signal history on every dashboard refresh.
+  const [recordedSymbols, assignedSymbols] = await Promise.all([
+    prisma.tradingBotDecision.groupBy({ by: ['symbol'], where: { userId, ...accountFilter, type: 'AUTONOMOUS', mode: 'DEMO', symbol: { in: configuredSymbols } } }),
+    prisma.tradingBot.groupBy({ by: ['symbol'], where: { userId, ...accountFilter, type: 'AUTONOMOUS', mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' }, symbol: { in: configuredSymbols } } }),
+  ]);
+  const decisionSymbols = recordedSymbols.map(row => row.symbol);
+  const signalSymbols = [...new Set([...decisionSymbols, ...assignedSymbols.map(row => row.symbol)])];
+  const [states, modes, decisions, latest, oldestRunning, decisionGroups, signalGroups] = await Promise.all([
     prisma.tradingBot.groupBy({ by: ['state'], where: { userId, ...accountFilter, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } }, _count: { _all: true } }),
     prisma.tradingBot.groupBy({ by: ['mode'], where: { userId, ...accountFilter, type: 'AUTONOMOUS', lifecycleStatus: { not: 'ARCHIVED' } }, _count: { _all: true } }),
     prisma.tradingBotDecision.count({ where: { userId, ...accountFilter, type: 'AUTONOMOUS', occurredAt: { gte: since } } }),
@@ -47,27 +57,42 @@ export async function getArenaStatus(userId: string, exchangeAccountId?: string)
       where: { userId, ...accountFilter, type: 'AUTONOMOUS', state: 'RUNNING', startedAt: { not: null } },
       orderBy: { startedAt: 'asc' }, select: { startedAt: true },
     }),
-    prisma.tradingBot.findMany({
-      where: { userId, ...accountFilter, type: 'AUTONOMOUS', mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' } },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], select: { symbol: true },
-    }),
-    prisma.tradingBotDecision.findMany({
-      where: { userId, ...accountFilter, type: 'AUTONOMOUS', mode: 'DEMO', kind: { in: ['BUY', 'SELL', 'GRID_BUY', 'GRID_SELL', 'HOLD'] } },
-      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], take: 60,
+
+    Promise.all(decisionSymbols.map(symbol => prisma.tradingBotDecision.findMany({
+      where: { userId, ...accountFilter, type: 'AUTONOMOUS', mode: 'DEMO', symbol, kind: { in: ['BUY', 'SELL', 'GRID_BUY', 'GRID_SELL', 'HOLD'] } },
+      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], take: 1,
       select: {
         id: true, tradingBotId: true, symbol: true, kind: true, summary: true, occurredAt: true,
         tradingBot: { select: { name: true } },
         signals: { orderBy: { id: 'desc' }, take: 3, select: { source: true, action: true, confidence: true, status: true } },
       },
-    }),
+    }))),
+    Promise.all(signalSymbols.map(symbol => prisma.tradingBotSignal.findMany({
+      where: { userId, ...accountFilter, OR: [{ decision: { is: { symbol } } }, { decision: { is: null }, tradingBot: { symbol } }], tradingBot: { type: 'AUTONOMOUS', mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' } } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1,
+      select: { id: true, tradingBotId: true, action: true, source: true, status: true, confidence: true, rationale: true, createdAt: true,
+        decision: { select: { symbol: true } }, tradingBot: { select: { name: true, symbol: true } } },
+    }))),
   ]);
+  const recentDecisions = decisionGroups.flat().sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+  const recentSignals = signalGroups.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   return autonomousDTO('ARENA_STATUS', {
     states: Object.fromEntries(states.map((item) => [item.state, item._count._all])),
     modes: Object.fromEntries(modes.map((item) => [item.mode, item._count._all])),
-    botSymbols: [...new Set(botSymbols.map((bot) => bot.symbol).filter(Boolean))],
+    botSymbols: configuredSymbols,
+    decisionCoverage: { configured: configuredSymbols.length, observed: recentDecisions.length },
     decisionsLast5m: decisions, throughputPerMinute: decisions / 5,
     latestDecisionAt: latest?.occurredAt ?? null, oldestRunningAt: oldestRunning?.startedAt ?? null,
-    refreshedAt: new Date(), executionMode: 'SIMULATION_ONLY',
+    refreshedAt: new Date(), executionMode: 'DEMO',
+    evolutionEnabled: env.AI_TRADING_EVOLUTION_ENABLED,
+    analysisFresh: Boolean(latest && Date.now() - latest.occurredAt.getTime() < 120_000),
+    recentSignals: recentSignals.map(signal => ({
+      id: signal.id.toString(), botId: signal.tradingBotId, botName: signal.tradingBot.name,
+      symbol: signal.decision?.symbol ?? signal.tradingBot.symbol,
+      action: signal.action === 'BUY' ? 'LONG' : signal.action === 'SELL' ? 'SHORT' : 'HOLD',
+      confidence: signal.confidence.toNumber(), source: signal.source, status: signal.status,
+      summary: signal.rationale, occurredAt: signal.createdAt,
+    })),
     recentDecisions: recentDecisions.map((decision) => {
       const action = decision.kind === 'BUY' || decision.kind === 'GRID_BUY' ? 'LONG' as const
         : decision.kind === 'SELL' || decision.kind === 'GRID_SELL' ? 'SHORT' as const : 'HOLD' as const;
@@ -77,7 +102,7 @@ export async function getArenaStatus(userId: string, exchangeAccountId?: string)
       return {
         id: decision.id.toString(), botId: decision.tradingBotId, botName: decision.tradingBot.name,
         symbol: decision.symbol, action,
-        confidence: signal?.confidence.toNumber() ?? (action === 'HOLD' ? 0.5 : 1),
+        confidence: signal?.confidence.toNumber() ?? 0,
         confidenceSource: signal?.source ?? 'DECISION_DEFAULT', signalStatus: signal?.status ?? 'OBSERVED',
         summary: decision.summary, occurredAt: decision.occurredAt,
       };

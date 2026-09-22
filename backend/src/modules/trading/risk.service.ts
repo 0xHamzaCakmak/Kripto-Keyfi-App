@@ -7,7 +7,7 @@ import type { UpdateKillSwitchInput, UpdateRiskProfileInput } from './risk.schem
 import { TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS } from '../ai-trading/universe.worker.js';
 
 const riskSelect = {
-  id: true, exchangeAccountId: true, enabled: true, accountKillSwitch: true, killSwitchReason: true,
+  id: true, exchangeAccountId: true, enabled: true, entryPaused: true, accountKillSwitch: true, killSwitchReason: true,
   maxOrderNotional: true, maxInitialMargin: true, maxAccountOpenNotional: true,
   maxOpenPositions: true, paperMaxOpenPositions: true, testnetBotAllocationUsdt: true, testnetMinInitialMarginUsdt: true,
   maxSymbolPositions: true, minLeverage: true, maxLeverage: true, testnetStopLossBps: true, testnetTakeProfitBps: true, minAvailableBalance: true,
@@ -24,13 +24,13 @@ export async function getRiskProfile(userId: string, exchangeAccountId: string) 
     prisma.tradingRiskProfile.findUnique({ where: { exchangeAccountId }, select: riskSelect }),
     prisma.tradingRiskControl.findUnique({ where: { id: 'global' }, select: { globalKillSwitch: true, reason: true, activatedAt: true } }),
     prisma.tradingBot.findMany({
-      where: { userId, exchangeAccountId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'DEMO'] }, lifecycleStatus: { not: 'ARCHIVED' } },
+      where: demoAutonomousBotScope(userId, exchangeAccountId),
       select: { configuration: true },
     }),
   ]);
   if (!profile || !global) throw new ApiError(503, 'Risk profili hazır değil.', 'RISK_PROFILE_UNAVAILABLE');
   return { ...serializeProfile(profile), effectiveMaxOpenPositions: effectiveAutonomousPositionLimits(profile.maxOpenPositions, profile.paperMaxOpenPositions),
-    entryPaused: bots.length > 0 && bots.every((bot) => configurationFlag(bot.configuration, 'entryPaused')),
+    entryPaused: profile.entryPaused || (bots.length > 0 && bots.every((bot) => configurationFlag(bot.configuration, 'entryPaused'))),
     globalKillSwitch: global.globalKillSwitch, globalKillSwitchReason: global.reason, globalKillSwitchActivatedAt: global.activatedAt };
 }
 
@@ -59,6 +59,7 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
     throw new ApiError(400, 'Asgari kaldıraç azami kaldıracı aşamaz.', 'INVALID_LEVERAGE_RANGE');
   }
   const data: Prisma.TradingRiskProfileUpdateInput = {};
+  if (input.entryPaused !== undefined) data.entryPaused = input.entryPaused;
   if (input.enabled !== undefined) data.enabled = input.enabled;
   if (input.maxOrderNotional !== undefined) data.maxOrderNotional = input.maxOrderNotional;
   if (input.maxInitialMargin !== undefined) data.maxInitialMargin = input.maxInitialMargin;
@@ -97,7 +98,7 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
     if (botAllocationInput !== undefined || minimumMarginInput !== undefined || input.minLeverage !== undefined || input.maxLeverage !== undefined
       || input.stopLossBps !== undefined || input.takeProfitBps !== undefined || input.entryPaused !== undefined) {
       const bots = await tx.tradingBot.findMany({
-        where: { userId, exchangeAccountId, type: 'AUTONOMOUS', mode: { in: ['PAPER', 'DEMO'] }, lifecycleStatus: { not: 'ARCHIVED' } },
+        where: demoAutonomousBotScope(userId, exchangeAccountId),
         select: { id: true, mode: true, configuration: true },
       });
       for (const bot of bots) {
@@ -105,12 +106,12 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
           ? bot.configuration as Prisma.JsonObject : {};
         const configuredLeverage = Number(source.leverage);
         const leverage = Math.max(minimumLeverage, Math.min(maximumLeverage, Number.isFinite(configuredLeverage) ? Math.round(configuredLeverage) : minimumLeverage));
-        const testnetProtection = bot.mode === 'DEMO' ? {
+        const testnetProtection = {
           stopLossBps: input.stopLossBps ?? current.testnetStopLossBps,
           takeProfitBps: input.takeProfitBps ?? current.testnetTakeProfitBps,
           estimatedRoundTripCostBps: TESTNET_ESTIMATED_ROUND_TRIP_COST_BPS,
           fixedTestnetProtectionTargets: true,
-        } : {};
+        };
         const executionControl = input.entryPaused === undefined ? {} : { entryPaused: input.entryPaused };
         await tx.tradingBot.update({ where: { id: bot.id }, data: {
           configuration: { ...source, allocationUsdt: botAllocation, minimumInitialMarginUsdt: minimumInitialMargin, leverage, leverageMin: minimumLeverage, leverageMax: maximumLeverage, testnetMarginAllocationMode: true, ...testnetProtection, ...executionControl },
@@ -129,6 +130,16 @@ export async function updateRiskProfile(userId: string, exchangeAccountId: strin
 
 function configurationFlag(value: Prisma.JsonValue, key: string) {
   return Boolean(value && !Array.isArray(value) && typeof value === 'object' && (value as Prisma.JsonObject)[key] === true);
+}
+
+export function demoAutonomousBotScope(userId: string, exchangeAccountId: string) {
+  return {
+    userId,
+    exchangeAccountId,
+    type: 'AUTONOMOUS' as const,
+    mode: 'DEMO' as const,
+    lifecycleStatus: { not: 'ARCHIVED' as const },
+  };
 }
 
 export async function updateKillSwitch(userId: string, input: UpdateKillSwitchInput, ipAddress?: string) {

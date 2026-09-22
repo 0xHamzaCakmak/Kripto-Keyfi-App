@@ -23,6 +23,7 @@ type Reader interface {
 }
 
 type PlaceOrderInput struct {
+	PostOnly      bool
 	Symbol        string
 	Side          domain.OrderSide
 	Type          domain.OrderType

@@ -2,7 +2,7 @@ import { api } from './apiClient';
 
 export type TradingAccount = {
   id: string; name: string; provider: 'BINANCE' | 'BYBIT'; environment: 'TESTNET' | 'DEMO';
-  accountType: 'USDT_M' | 'UNIFIED';
+  accountType: 'USDT_M' | 'UNIFIED' | 'SPOT';
   isActive: boolean; canTrade: boolean; connectionStatus: 'CONNECTED' | 'DEGRADED' | 'ERROR' | 'DISABLED';
   executionEngine: 'TYPESCRIPT' | 'GO';
 };

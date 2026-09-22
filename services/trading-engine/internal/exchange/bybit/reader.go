@@ -371,6 +371,9 @@ func (r *Reader) PlaceOrder(ctx context.Context, input exchange.PlaceOrderInput)
 		"category": "linear", "symbol": input.Symbol, "side": side, "orderType": orderType,
 		"qty": string(input.Quantity), "reduceOnly": input.ReduceOnly, "orderLinkId": input.ClientOrderID,
 	}
+	if input.PostOnly {
+		payload["timeInForce"] = "PostOnly"
+	}
 	if input.Price != "" {
 		payload["price"] = string(input.Price)
 	}

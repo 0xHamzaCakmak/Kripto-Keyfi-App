@@ -81,24 +81,26 @@ func (e *Executor) MaintainPosition(ctx context.Context, instance bot.Instance, 
 	controlledPositionFound := false
 	for index := range positions {
 		position := positions[index]
-		if position.Symbol != instance.Symbol || decimalSign(string(position.Quantity)) == 0 {
+		if (!instance.UniverseScan && position.Symbol != instance.Symbol) || decimalSign(string(position.Quantity)) == 0 {
 			continue
 		}
 		if manuallyControlled && position.Side == controlledSide {
 			controlledPositionFound = true
 		}
-		if hedgeMode && !hasBotProtectionForSide(orders, instance.Symbol, prefix, position.Side) {
+		if (hedgeMode || instance.UniverseScan) && !hasBotProtectionForSide(orders, position.Symbol, prefix, position.Side) {
 			continue
 		}
-		key := instance.ExchangeAccountID + ":" + instance.Symbol
+		marketInstance := instance
+		marketInstance.Symbol = position.Symbol
+		key := instance.ExchangeAccountID + ":" + position.Symbol
 		if hedgeMode {
 			key += ":" + string(position.Side)
 		}
 		lock := e.lockFor(key)
 		lock.Lock()
-		handled, maintainErr := e.closeReachedProtection(ctx, instance, decisionID, position, orders, reference, now)
+		handled, maintainErr := e.closeReachedProtection(ctx, marketInstance, decisionID, position, orders, reference, now)
 		if maintainErr == nil && !handled && !positionProtectionComplete(position, orders, prefix, instance.Configuration) {
-			maintainErr = e.ensurePositionProtection(ctx, instance, decisionID, position, orders, reference, now)
+			maintainErr = e.ensurePositionProtection(ctx, marketInstance, decisionID, position, orders, reference, now)
 		}
 		if handled {
 			e.setPositionClosed(key)
@@ -140,7 +142,7 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		return errors.New("invalid autonomous side")
 	}
 	manualDirection := order["manualDirection"] == true
-	if costBps, ok := numericConfiguration(instance.Configuration["estimatedRoundTripCostBps"]); ok {
+	if costBps, ok := numericConfiguration(instance.Configuration["estimatedRoundTripCostBps"]); ok && (manualDirection || !bot.UsesROETakeProfit(instance.Configuration)) {
 		adjusted, adjustErr := addCostBufferToTake(takeText, side, costBps)
 		if adjustErr != nil {
 			return adjustErr
@@ -186,6 +188,15 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 	if err != nil {
 		return fmt.Errorf("read TESTNET open orders before execution: %w", err)
 	}
+	if instance.UniverseScan && !manualDirection && allocationOK {
+		allocation, err = remainingUniverseAllocation(instance, allocation, positions, openOrders, desiredPositionSide)
+		if err != nil {
+			return err
+		}
+		if allocation <= 0 {
+			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "bot allocation is already deployed across its universe")
+		}
+	}
 	var current *domain.Position
 	for index := range positions {
 		if positions[index].Symbol == instance.Symbol && (!hedgeMode || positions[index].Side == desiredPositionSide || positions[index].Side == "") && decimalSign(string(positions[index].Quantity)) != 0 {
@@ -201,7 +212,7 @@ func (e *Executor) Execute(ctx context.Context, instance bot.Instance, decision 
 		if _, controlled := manualControlledSide(instance.Configuration); controlled && !manualDirection {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "manual bot position is active; automatic additions are suspended until it closes")
 		}
-		if instance.Configuration["hedgeModeEnabled"] == true && !hasBotProtectionForSide(openOrders, instance.Symbol, botClientPrefix(instance.ID), current.Side) {
+		if (instance.Configuration["hedgeModeEnabled"] == true || instance.UniverseScan) && !hasBotProtectionForSide(openOrders, instance.Symbol, botClientPrefix(instance.ID), current.Side) {
 			return e.store.MarkAutonomousExecution(ctx, decisionID, false, "the existing hedge leg is owned by another bot or manual trade; same-side merge rejected")
 		}
 		handled, protectionErr := e.closeReachedProtection(ctx, instance, decisionID, *current, openOrders, reference, now)
@@ -846,6 +857,7 @@ func protectionConfiguration(configuration map[string]any, side domain.PositionS
 		effective[key] = value
 	}
 	effective["stopLossBps"], effective["takeProfitBps"] = stop, take
+	effective["takeProfitBasis"] = "PRICE"
 	return effective
 }
 
@@ -864,10 +876,19 @@ func testnetProtectionPricesWithPlan(configuration, plan map[string]any, positio
 	if !entryOK || !stopOK || !takeOK || entry.Sign() <= 0 || stopBps <= 0 || takeBps <= 0 {
 		return "", "", errors.New("TESTNET protection configuration is invalid")
 	}
-	// The UI expresses take-profit as a net target. Add a conservative
-	// round-trip commission/slippage allowance before placing the exchange
-	// trigger, so a 1% target is not consumed by entry and exit costs.
-	if costBps, ok := numericConfiguration(configuration["estimatedRoundTripCostBps"]); ok && costBps >= 0 && costBps <= 100 {
+	if bot.UsesROETakeProfit(configuration) {
+		leverage, err := strconv.ParseFloat(string(position.Leverage), 64)
+		configuredTake, ok := numericConfiguration(configuration["takeProfitBps"])
+		if err != nil || leverage < 1 || !ok || configuredTake <= 0 {
+			return "", "", errors.New("ROE take-profit requires a valid actual position leverage and target")
+		}
+		// Ignore already converted plan bps; always use the current position's
+		// actual leverage, including after pyramiding or a leverage safety cap.
+		takeBps = configuredTake / leverage
+	}
+	// Legacy/manual price targets include a conservative cost allowance.
+	// Gross ROE targets match the position screen before fees and funding.
+	if costBps, ok := numericConfiguration(configuration["estimatedRoundTripCostBps"]); ok && costBps >= 0 && costBps <= 100 && !bot.UsesROETakeProfit(configuration) {
 		takeBps += costBps
 	}
 	stopRate, _ := new(big.Rat).SetString(strconv.FormatFloat(stopBps/10_000, 'f', 8, 64))

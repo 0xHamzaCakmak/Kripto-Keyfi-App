@@ -32,6 +32,7 @@ const (
 type ExchangeAccountType string
 
 const (
+	AccountTypeSpot    ExchangeAccountType = "SPOT"
 	AccountTypeUSDTM   ExchangeAccountType = "USDT_M"
 	AccountTypeUnified ExchangeAccountType = "UNIFIED"
 )

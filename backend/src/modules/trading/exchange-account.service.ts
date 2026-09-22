@@ -22,7 +22,7 @@ export const listExchangeAccounts = (userId: string) => prisma.exchangeAccount.f
 });
 
 export async function createExchangeAccount(userId: string, input: CreateExchangeAccountInput) {
-  const adapter = createExchangeAdapter(input.provider, credentialsFromInput(input));
+  const adapter = createExchangeAdapter(input.provider, credentialsFromInput(input), input.accountType);
   const validation = await exchangeCall(() => adapter.validateCredentials());
   try {
     return await prisma.$transaction(async (tx) => {
@@ -77,7 +77,7 @@ export async function updateExchangeCredentials(userId: string, id: string, inpu
     apiKey: input.apiKey,
     apiSecret: input.apiSecret,
     ...(input.passphrase ? { passphrase: input.passphrase } : {}),
-  }).validateCredentials());
+  }, account.accountType).validateCredentials());
   return prisma.$transaction(async (tx) => {
     const updated = await tx.exchangeAccount.update({
       where: { id },
@@ -180,12 +180,12 @@ export async function ownedAccount(userId: string, id: string) {
   return account;
 }
 
-export function adapterFor(account: { provider: StoredAccount['provider']; apiKeyEncrypted: string; apiSecretEncrypted: string; passphraseEncrypted: string | null }) {
+export function adapterFor(account: { accountType?: string; provider: StoredAccount['provider']; apiKeyEncrypted: string; apiSecretEncrypted: string; passphraseEncrypted: string | null }) {
   return createExchangeAdapter(account.provider, {
     apiKey: decryptCredential(account.apiKeyEncrypted),
     apiSecret: decryptCredential(account.apiSecretEncrypted),
     ...(account.passphraseEncrypted ? { passphrase: decryptCredential(account.passphraseEncrypted) } : {}),
-  });
+  }, account.accountType);
 }
 
 function credentialsFromInput(input: CreateExchangeAccountInput) {

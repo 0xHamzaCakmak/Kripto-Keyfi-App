@@ -164,9 +164,10 @@ export async function emergencyStopBot(userId: string, botId: string, ipAddress?
 
 async function ownedBot(userId: string, id: string) {
   const bot = await prisma.tradingBot.findFirst({ where: { id, userId }, select: {
-    id: true, userId: true, exchangeAccountId: true, state: true, mode: true, version: true, type: true,
+    id: true, userId: true, exchangeAccountId: true, state: true, mode: true, version: true, type: true, configuration: true,
   } });
   if (!bot) throw new ApiError(404, 'Bot bulunamadı.', 'TRADING_BOT_NOT_FOUND');
+  if (bot.configuration && typeof bot.configuration === 'object' && !Array.isArray(bot.configuration) && bot.configuration.gridVersion === 2) throw new ApiError(409, 'Bu botun işlemlerini Grid Bot ekranından yönetin.', 'GRID_V2_CONTROL_REQUIRED');
   if (bot.type === 'AUTONOMOUS') {
     throw new ApiError(404, 'Bot bulunamadı.', 'TRADING_BOT_NOT_FOUND');
   }

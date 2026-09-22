@@ -138,7 +138,18 @@ func (r *StrategyRunner) Tick(ctx context.Context, instance Instance) (Decision,
 	if err != nil {
 		return Decision{}, err
 	}
-	referencePrice, err := r.store.LoadLatestBotDecisionPrice(ctx, instance.ID)
+	var referencePrice string
+	if instance.UniverseScan {
+		reader, ok := r.store.(interface {
+			LoadLatestBotSymbolDecisionPrice(context.Context, string, string) (string, error)
+		})
+		if !ok {
+			return Decision{}, errors.New("per-market decision history is unavailable")
+		}
+		referencePrice, err = reader.LoadLatestBotSymbolDecisionPrice(ctx, instance.ID, instance.Symbol)
+	} else {
+		referencePrice, err = r.store.LoadLatestBotDecisionPrice(ctx, instance.ID)
+	}
 	if err != nil {
 		return Decision{}, err
 	}

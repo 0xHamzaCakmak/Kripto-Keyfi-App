@@ -5,6 +5,7 @@ import PrivacyConsent from './components/PrivacyConsent';
 import AnalyticsTracker from './components/AnalyticsTracker';
 import Insights, { SavedNewsPage } from './components/Insights';
 import { AdminRoute, ProtectedRoute } from './auth/RouteGuards';
+import { legacyTradingTarget } from './features/ai-trading-pro/legacyRoute';
 
 const Home = lazy(() => import('./components/Home'));
 const Ecosystem = lazy(() => import('./components/Ecosystem'));
@@ -39,26 +40,11 @@ const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 const AdminUsers = lazy(() => import('./components/AdminUsers'));
 const AdminUserDetail = lazy(() => import('./components/AdminUserDetail'));
 const AdminLayout = lazy(() => import('./components/AdminLayout'));
-const TradingBotDashboard = lazy(() => import('./components/TradingBotDashboard'));
-const TradingBots = lazy(() => import('./components/TradingBots'));
 const AdminNewsSources = lazy(() => import('./components/AdminNewsSources'));
 const AdminVideos = lazy(() => import('./components/AdminVideos'));
 const AdminYoutubeChannels = lazy(() => import('./components/AdminYoutubeChannels'));
 const AdminYoutubeScoring = lazy(() => import('./components/AdminYoutubeScoring'));
 const AdminCreatorApplications = lazy(() => import('./components/AdminCreatorApplications'));
-const ManualTrading = lazy(() => import('./components/ManualTrading'));
-const GridBotsPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.GridBotsPage })));
-const TradingProfitLossPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingProfitLossPage })));
-const TradingRiskManagementPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingRiskManagementPage })));
-const TradingSystemStatusPage = lazy(() => import('./components/TradingAdminPhases').then((module) => ({ default: module.TradingSystemStatusPage })));
-const AITradingLayout = lazy(() => import('./components/ai-trading/AITradingLayout'));
-const AITradingOverview = lazy(() => import('./components/ai-trading/AITradingOverview'));
-const AITradingArena = lazy(() => import('./components/ai-trading/AITradingArena'));
-const AITradingChampions = lazy(() => import('./components/ai-trading/AITradingChampions'));
-const AITradingMemory = lazy(() => import('./components/ai-trading/AITradingMemory'));
-const AITradingPerformance = lazy(() => import('./components/ai-trading/AITradingPerformance'));
-const AITradingRisk = lazy(() => import('./components/ai-trading/AITradingRisk'));
-const AITradingShadowLive = lazy(() => import('./components/ai-trading/AITradingShadowLive'));
 const AITradingProEntry = lazy(() => import('./components/AITradingProEntry'));
 const UserProfilePage = lazy(() => import('./components/UserProfilePage'));
 const KOLExplorer = lazy(() => import('./components/KOLIntelligence'));
@@ -72,7 +58,6 @@ const AdminKOLWorkspace = lazy(() => import('./components/KOLWorkspaces').then((
 const AdminPredictionReview = lazy(() => import('./components/AdminPredictionReview'));
 const AdminCampaignManagement = lazy(() => import('./components/AdminCampaignManagement'));
 const KOLModuleOverview = lazy(() => import('./components/KOLModuleOverview'));
-const TradingModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.TradingModuleLayout })));
 const KolModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.KolModuleLayout })));
 const VideoModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.VideoModuleLayout })));
 const AnalyticsModuleLayout = lazy(() => import('./components/AdminModuleLayout').then((module) => ({ default: module.AnalyticsModuleLayout })));
@@ -105,34 +90,11 @@ function AppFrame() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/admin/trading/ai-pro" element={<AdminRoute><AITradingProEntry /></AdminRoute>} />
+            <Route path="/admin/trading/*" element={<AdminRoute><LegacyTradingRedirect /></AdminRoute>} />
             <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
               <Route index element={<AdminDashboard />} />
               <Route path="users" element={<AdminUsers />} />
               <Route path="users/:userId" element={<AdminUserDetail />} />
-              <Route path="trading" element={<TradingModuleLayout />}>
-                <Route index element={<TradingBotDashboard />} />
-                <Route path="bots" element={<TradingBots />} />
-                <Route path="guide" element={<Navigate to="/admin/trading/ai-pro?tab=bot-guide" replace />} />
-                <Route path="manual" element={<ManualTrading />} />
-                <Route path="exchanges" element={<Navigate to="/admin/trading/ai-pro?tab=exchange-accounts" replace />} />
-                <Route path="orders" element={<Navigate to="/admin/trading/ai-pro?tab=orders" replace />} />
-                <Route path="positions" element={<Navigate to="/admin/trading/ai-pro?tab=positions" replace />} />
-                <Route path="grid" element={<GridBotsPage />} />
-                <Route path="profit-loss" element={<TradingProfitLossPage />} />
-                <Route path="risk" element={<TradingRiskManagementPage />} />
-                <Route path="system" element={<TradingSystemStatusPage />} />
-                <Route path="ai" element={<AITradingLayout />}>
-                  <Route index element={<AITradingOverview />} />
-                  <Route path="arena" element={<AITradingArena />} />
-                  <Route path="champions" element={<AITradingChampions />} />
-                  <Route path="memory" element={<AITradingMemory />} />
-                  <Route path="performance" element={<AITradingPerformance />} />
-                  <Route path="risk" element={<AITradingRisk />} />
-                  <Route path="shadow-live" element={<AITradingShadowLive />} />
-                </Route>
-                <Route path="accounts" element={<Navigate to="/admin/trading/exchanges" replace />} />
-                <Route path="bots/guide" element={<Navigate to="/admin/trading/ai-pro?tab=bot-guide" replace />} />
-              </Route>
               <Route path="news/sources" element={<AdminNewsSources />} />
               <Route path="videos" element={<VideoModuleLayout />}>
                 <Route index element={<AdminVideos />} />
@@ -232,6 +194,11 @@ function AppFrame() {
       </div>
     </>
   );
+}
+
+function LegacyTradingRedirect() {
+  const { pathname } = useLocation();
+  return <Navigate to={legacyTradingTarget(pathname)} replace />;
 }
 
 function LegacyNewsRedirect() {

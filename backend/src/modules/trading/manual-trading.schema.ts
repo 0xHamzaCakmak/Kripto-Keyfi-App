@@ -2,6 +2,9 @@ import { z } from 'zod';
 
 const decimal = z.string().trim().regex(/^\d+(?:\.\d{1,18})?$/).max(55);
 export const tradingAccountQuerySchema = z.object({ exchangeAccountId: z.string().cuid() }).strict();
+export const tradingSymbolPriceQuerySchema = tradingAccountQuerySchema.extend({
+  symbol: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,40}$/),
+}).strict();
 export const tradingEventsQuerySchema = tradingAccountQuerySchema.extend({ cursor: z.string().regex(/^\d+$/).optional() }).strict();
 
 export const previewOrderBodySchema = z.object({
@@ -9,7 +12,7 @@ export const previewOrderBodySchema = z.object({
   symbol: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{3,40}$/),
   side: z.enum(['BUY', 'SELL']),
   positionSide: z.enum(['LONG', 'SHORT']).optional(),
-  type: z.enum(['MARKET', 'LIMIT', 'STOP_MARKET', 'STOP_LIMIT']),
+  type: z.enum(['MARKET', 'LIMIT', 'STOP_MARKET', 'STOP_LIMIT', 'TAKE_PROFIT_MARKET']),
   quantity: decimal,
   price: decimal.optional(),
   stopPrice: decimal.optional(),
@@ -20,7 +23,7 @@ export const previewOrderBodySchema = z.object({
   if ((value.type === 'LIMIT' || value.type === 'STOP_LIMIT') && !value.price) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['price'], message: 'Limit emirlerinde fiyat zorunludur' });
   }
-  if ((value.type === 'STOP_MARKET' || value.type === 'STOP_LIMIT') && !value.stopPrice) {
+  if ((value.type === 'STOP_MARKET' || value.type === 'STOP_LIMIT' || value.type === 'TAKE_PROFIT_MARKET') && !value.stopPrice) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['stopPrice'], message: 'Koşullu emirlerde tetikleme fiyatı zorunludur' });
   }
   if (value.positionSide) {

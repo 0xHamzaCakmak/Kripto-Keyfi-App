@@ -1,5 +1,5 @@
-import AITradingProApp from '../../kriptokeyfi-trading-bot---sinyal-akışı/src/App';
-import '../../kriptokeyfi-trading-bot---sinyal-akışı/src/index.css';
+import AITradingProApp from '../features/ai-trading-pro/App';
+import '../features/ai-trading-pro/index.css';
 import { useSearchParams } from 'react-router-dom';
 
 export default function AITradingProEntry() {

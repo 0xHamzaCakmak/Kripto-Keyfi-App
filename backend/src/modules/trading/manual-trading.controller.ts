@@ -1,10 +1,11 @@
 import type { Request, Response } from 'express';
 import { success } from '../../utils/response.js';
 import type { CancelOrderInput, ClosePositionInput, PreviewOrderInput, PublishMentorSignalInput, SubmitOrderInput } from './manual-trading.schema.js';
-import { cancelOpenOrder, closePosition, createOrderPreview, listManualMentorPositions, listOpenOrders, listPositions, listSymbols, publishManualMentorSignal, submitOrder } from './manual-trading.service.js';
+import { cancelOpenOrder, closePosition, createOrderPreview, getSymbolMarkPrice, listManualMentorPositions, listOpenOrders, listPositions, listSymbols, publishManualMentorSignal, submitOrder } from './manual-trading.service.js';
 import { streamTradingEvents } from './trading-events.service.js';
 
 export async function symbols(req: Request, res: Response) { return success(res, await listSymbols(req.user!.id, req.query.exchangeAccountId as string)); }
+export async function symbolPrice(req: Request, res: Response) { return success(res, await getSymbolMarkPrice(req.user!.id, req.query.exchangeAccountId as string, req.query.symbol as string)); }
 export async function preview(req: Request, res: Response) { return success(res, await createOrderPreview(req.user!.id, req.body as PreviewOrderInput), 201); }
 export async function submit(req: Request, res: Response) { return success(res, await submitOrder(req.user!.id, req.body as SubmitOrderInput, req.ip), 201); }
 export async function orders(req: Request, res: Response) { return success(res, await listOpenOrders(req.user!.id, req.query.exchangeAccountId as string)); }

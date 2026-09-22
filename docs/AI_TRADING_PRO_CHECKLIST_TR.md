@@ -6,6 +6,8 @@ Bu liste **yeni AI Trading Pro** ekranını değerlendirir. Eski `/admin/trading
 
 ## Kapsam ve kurallar
 
+- Manuel İşlem ekranı gerçek tekli ve toplu emir akışlarına bağlandı. Toplu işlem botlardan bağımsızdır; tanımlı işlem evrenindeki varsayılan coinler seçilebilir, önizleme gerçek mark fiyatından miktar ve TP/SL seviyelerini üretir. Onayda 20 giriş emri aynı anda başlatılır; tüm giriş denemeleri bittikten sonra TP/SL emirleri eklenir. Binance USD-M tek `batchOrders` isteğinde en fazla 5 emir kabul ettiği için bu akış Go Trading Engine'in emir başına risk, denetim kaydı ve idempotency kontrollerini koruyan paralel istekler kullanır.
+
 - [x] Pro'nun ortak hesap seçimi yalnızca aktif TESTNET/DEMO hesaplarını kullanır; LIVE geçişi şu aşamada kapalıdır.
 - [x] Hesap seçimi Trading Bot başlığının yanında, tüm sekmelerden erişilebilir. Seçili hesabın adı ve ortamı gösterilir; ayrı alt satır ve “Borsa hesaplarını yönet” kısayolu kaldırıldı.
 - [x] Pozisyon kaynağı borsadır. Bot emri, bot kaydı veya uygulamada emir geçmişi bulunması listeleme şartı değildir.
@@ -23,12 +25,12 @@ Bu liste **yeni AI Trading Pro** ekranını değerlendirir. Eski `/admin/trading
 | 4 | Ana ekran / karar akışı | **Kısmen bağlı** | Bakiye, arena-status, karar akışı, pozisyonlar ve bazı özet kartları API kullanıyor. Üst otomatik işlem kontrolü gerçek hesap profiline bağlı; rastgele sinyal tetikleme kaldırıldı | Eski genel bakış mevcut |
 | 5 | Botlarım | **Gerçek liste ve bot kontrolü bağlı** | Seçili hesabın arşivlenmemiş DEMO botları, gerçek motor/hedef/lifecycle durumları ve bot bazlı başlat/duraklat/devam et bağlı. Hesap parametreleri Risk'e gider. Örnek PnL, başarı oranı ve çalışmayan oluşturma düğmesi kaldırıldı; yeni bot oluşturma/strateji düzenleme akışı ayrıca taşınacak | Eski bot yönetimi bu kalan işlevler için mevcut |
 | 6 | Emirler | **Bağlı** | Seçili hesabın açık borsa emirleri, 10 saniyelik/SSE yenileme, tekli/toplu iptal bağlı. Hesap değişiminde eski yanıtlar kullanılmaz; okuma hatasında iptal kapatılır. Gerçek demo oturumu kabul kontrolü bekliyor | Eski ekran/menü kaldırıldı; eski adres Pro Emirler sekmesine yönleniyor |
-| 7 | Manuel işlem | **Yerel simülasyon** | Gerçek semboller, tek emir önizleme/gönderme; toplu bot kampanyası önizleme/onay/sonuç akışı | Eski manuel işlem ekranı mevcut |
+| 7 | Manuel işlem | **Bağlı** | Gerçek semboller, tek emir önizleme/gönderme; botlardan bağımsız toplu manuel emir önizleme/onay/sonuç ve borsa TP/SL akışı | Eski manuel işlem ekranı karşılaştırma için mevcut |
 | 8 | Risk yönetimi | **Bağlı; demo kabul kontrolü bekliyor** | Pozisyonlar'daki işlem ayarları buraya taşındı. Ortak seçili hesabın işlem/SL/TP ayarları ve ayrıntılı risk profili sunucudan okunup kaydedilir; hesap/global kill switch ve son risk olayları bağlı. Örnek hesaplar, localStorage kaydı ve sahte senkronizasyon/telemetri kaldırıldı | Eski risk ekranlarının kapsam karşılaştırması ve kabul kontrolü bekliyor |
 | 9 | Trade Memory | **Örnek veri** | TESTNET işlem hafızası, filtreler, istatistikler ve işlem detayları | Eski Memory backend'e bağlı ve mevcut |
 | 10 | Performans | **Örnek veri** | Detaylı performans sekmesini gerçek TESTNET işlemlerine bağlama. Ana ekrandaki küçük performans kartı ayrı; fills/veri kapsamı doğrulanmalı | Eski performans ekranı mevcut |
 | 11 | Kâr/Zarar analizi | **Örnek veri** | Gerçekleşen/gerçekleşmemiş PnL, komisyon, funding, dönem ve hesap ayrımı | Eski kâr/zarar ekranı mevcut |
-| 12 | Şampiyonlar | **Örnek veri** | Champion listesi, kanıt/skor ve değerlendirme aksiyonları | Eski Champions backend'e bağlı ve mevcut |
+| 12 | Şampiyonlar | **Gerçek veriye bağlı** | Seçili hesabın arşivlenmemiş tüm DEMO botları; son kayıtlı performans skoru, işlem sayısı, ROI, kazanma, risk ölçümleri ve ölçüm tarihi. Üstte ilk üç, tabloda tüm botlar; 30 saniyede yenileme | Ölçümler tüm kayıtlı döneme aittir; 30 günlük getiri değildir. Yetersiz veriye puan üretilmez; eşit skorlar aynı sırayı paylaşır. Değerlendirme/terfi aksiyonları eklenmedi |
 | 13 | Grid Bot | **Örnek veri** | Demo hesapla listeleme, oluşturma, detay ve durum aksiyonları | Eski Grid ekranı mevcut |
 | 14 | Sistem durumu | **Örnek veri** | Backend/Go engine sağlığı, hata ve gecikme metrikleri, bot heartbeat ve olaylar | Eski sistem durumu mevcut |
 | 15 | Bot rehberi | **Birleştirildi ve güncellendi** | Klasik Scalping/Grid rehberi ile AI bot aileleri, modlar, ortak hesap kontrolü, Risk, karar sözlüğü ve sorun giderme tek Pro rehberinde. Arama ve içindekiler eklendi; tanımlı aile ile çalışan bot ayrımı açıklandı | Eski ekran/menü kaldırıldı; iki eski rehber adresi Pro Bot Rehberi'ne yönleniyor |
@@ -92,4 +94,4 @@ Pozisyon regresyon testleri sahte API yanıtları ve React HTML çıktısıyla �
 
 9 Eylül hesap seçimi/emirler adımı: 11 frontend regresyon testi, TypeScript (`lint`) ve üretim derlemesi başarılı. Emir okuma/iptal isteklerinin seçili hesap kimliğini taşıması ve geçiş durumundaki emirlerin tekrar iptale kapalı olması test edildi. Gerçek demo borsasında ve tarayıcıda kabul testi/deploy yapılmadı.
 
-Kod izleri: `frontend/kriptokeyfi-trading-bot---sinyal-akışı/src/App.tsx`, `src/components/Dashboard/*`, `src/services/backendDashboard.ts`, `src/services/useTradeProPositions.ts`; kalan eski AI ekranları `frontend/src/components/ai-trading/*`. Eski `TradingActivity.tsx` kaldırıldı. Borsa pozisyon kaynağı: `backend/src/modules/trading/manual-trading.service.ts` içindeki `listPositions`.
+Kod izleri: `frontend/src/features/ai-trading-pro/App.tsx`, `src/components/Dashboard/*`, `src/services/backendDashboard.ts`, `src/services/useTradeProPositions.ts`; kalan eski AI ekranları `frontend/src/components/ai-trading/*`. Eski `TradingActivity.tsx` kaldırıldı. Borsa pozisyon kaynağı: `backend/src/modules/trading/manual-trading.service.ts` içindeki `listPositions`.

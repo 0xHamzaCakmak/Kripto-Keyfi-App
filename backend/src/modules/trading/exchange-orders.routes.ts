@@ -1,0 +1,13 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { validateRequest } from '../../middleware/validate-request.js';
+import { asyncHandler } from '../../utils/async-handler.js';
+import { success } from '../../utils/response.js';
+import { exchangeOrders, cancelExchangeOrder, editExchangeOrder } from './exchange-orders.service.js';
+const account = z.object({ exchangeAccountId: z.string().cuid() }).strict();
+const body = account.extend({ symbol: z.string().regex(/^[A-Z0-9_-]{3,40}$/) });
+const params = z.object({ id: z.string().min(1).max(100) });
+export const exchangeOrdersRouter = Router();
+exchangeOrdersRouter.get('/', validateRequest({ query: account }), asyncHandler(async (req, res) => success(res, await exchangeOrders(req.user!.id, req.query.exchangeAccountId as string))));
+exchangeOrdersRouter.post('/:id/cancel', validateRequest({ params, body }), asyncHandler(async (req, res) => success(res, await cancelExchangeOrder(req.user!.id, req.body.exchangeAccountId, req.params.id as string, req.body.symbol))));
+exchangeOrdersRouter.post('/:id/edit', validateRequest({ params, body: body.extend({ value: z.string().max(55).regex(/^\d+(?:\.\d{1,18})?$/).refine(v => Number(v) > 0) }) }), asyncHandler(async (req, res) => success(res, await editExchangeOrder(req.user!.id, req.body.exchangeAccountId, req.params.id as string, req.body.symbol, req.body.value))));

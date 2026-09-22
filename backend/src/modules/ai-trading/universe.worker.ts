@@ -279,51 +279,15 @@ export async function runAutonomousUniverseCycle(now = new Date()) {
         stopLossBps: account.riskProfile.testnetStopLossBps,
         takeProfitBps: account.riskProfile.testnetTakeProfitBps,
       };
-      if (schedulerLeaseActive(bot.schedulerOwner, bot.leaseExpiresAt, now)) {
-        updates.push(prisma.tradingBot.updateMany({ where: { id: bot.id, mode: 'DEMO' }, data: {
-          intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS,
-          configuration: testnetExecutionConfiguration(bot.configuration, leverage, testnetSizing),
-          timeframe: '15m',
-          startingPaperBalance: allocation,
-          version: { increment: 1 },
-        } }));
-        continue;
-      }
-      const hasPosition = occupied.has(bot.symbol);
-      const pending = rotationPending(bot.configuration);
-      let target = bot.symbol;
-      if (pending && !hasPosition) {
-        for (let attempt = 0; attempt < demoSymbols.length; attempt += 1) {
-          const candidate = env.AI_TRADING_HEDGE_MODE_ENABLED
-            ? sharedUniverseCandidate(demoSymbols, slot + attempt, index, demo.length)
-            : universeCandidate(demoSymbols, slot, index + attempt, demo.length);
-          if (env.AI_TRADING_HEDGE_MODE_ENABLED || !reserved.has(candidate)) { target = candidate; break; }
-        }
-      }
-      if (!demoAllowed.has(target)) continue;
-      if (!env.AI_TRADING_HEDGE_MODE_ENABLED) reserved.add(target);
-      const changedSymbol = target !== bot.symbol;
-      if (!hasPosition && !pending) {
-      updates.push(prisma.tradingBot.updateMany({ where: availableBotWhere(bot.id, now), data: {
-          intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS,
-          configuration: testnetExecutionConfiguration(bot.configuration, leverage, { ...testnetSizing, universeRotationPending: true }),
-          timeframe: '15m',
-          ...(allocation > botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber()) ? { startingPaperBalance: allocation } : {}),
-          state: 'PAUSED', desiredState: 'PAUSED', schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
-          stateReason: 'TESTNET universe rotation staged; next cycle verifies the old symbol is still flat.', version: { increment: 1 },
-        } }));
-        stagedDemo += 1;
-        continue;
-      }
-      updates.push(prisma.tradingBot.updateMany({ where: availableBotWhere(bot.id, now), data: {
-        symbol: target, symbols: demoSymbols, timeframe: '15m', intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS, configuration: testnetExecutionConfiguration(bot.configuration, leverage, { ...testnetSizing, universeRotationPending: false }),
-        ...(allocation > botAllocationUsdt(bot.configuration, bot.startingPaperBalance.toNumber()) ? { startingPaperBalance: allocation } : {}),
-        ...(pending ? { desiredState: 'RUNNING', state: 'STARTING', schedulerOwner: null, leaseExpiresAt: null, heartbeatAt: null,
-          stateReason: hasPosition ? 'A position appeared during staged rotation; original symbol preserved.' : 'Staged flat TESTNET bot rotated safely through the Futures universe.' } : {}),
-        ...(changedSymbol ? { name: `AI TESTNET Universe #${String(index + 1).padStart(2, '0')} ${target}` } : {}),
+      // Go scans the full universe; retain the primary symbol and scan cursor.
+      updates.push(prisma.tradingBot.updateMany({ where: { id: bot.id, mode: 'DEMO', version: bot.version }, data: {
+        intervalSeconds: TESTNET_DECISION_INTERVAL_SECONDS,
+        configuration: testnetExecutionConfiguration(bot.configuration, leverage, testnetSizing),
+        symbols: configuredSymbols,
+        timeframe: '15m',
+        startingPaperBalance: allocation,
         version: { increment: 1 },
       } }));
-      if (changedSymbol) rotatedDemo += 1;
     }
 
     const projectedDemoAllocation = demo.length * testnetFleetAllocation;

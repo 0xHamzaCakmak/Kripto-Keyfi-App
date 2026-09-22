@@ -321,6 +321,9 @@ func applyAdaptiveRiskPlan(instance Instance, markPrice string, analysis MarketA
 	} else if instance.Mode == "PAPER" || (instance.Mode == "DEMO" && booleanConfig(instance.Configuration, "testnetExecutionProfile")) {
 		takeBps = math.Max(takeBps, minimumTakeProfitBps)
 	}
+	if instance.Mode == "DEMO" && UsesROETakeProfit(instance.Configuration) {
+		takeBps = configNumberOr(instance.Configuration, "takeProfitBps", 300) / float64(leverage)
+	}
 	stop, take, err := protectionPrices(markPrice, side, stopBps, takeBps)
 	if err != nil {
 		return err

@@ -19,19 +19,19 @@ await build({
     contents: `
       import React from 'react';
       import { renderToStaticMarkup } from 'react-dom/server';
-      import { PositionsFullView } from './kriptokeyfi-trading-bot---sinyal-akışı/src/components/Dashboard/PositionsFullView';
-      import { ActivePositionsTable } from './kriptokeyfi-trading-bot---sinyal-akışı/src/components/Dashboard/ActivePositionsTable';
+      import { PositionsFullView } from './src/features/ai-trading-pro/components/Dashboard/PositionsFullView';
+      import { ActivePositionsTable } from './src/features/ai-trading-pro/components/Dashboard/ActivePositionsTable';
       export { api } from './src/services/apiClient';
       export { closeOpenPosition, getOpenOrders, cancelOrder } from './src/services/tradingService';
-      export { canCancelProOrder } from './kriptokeyfi-trading-bot---sinyal-akışı/src/components/Dashboard/OrdersFullView';
-      export { selectedDemoBots } from './kriptokeyfi-trading-bot---sinyal-akışı/src/services/useProBotControl';
+      export { canCancelProOrder } from './src/features/ai-trading-pro/components/Dashboard/OrdersFullView';
+      export { selectedDemoBots } from './src/features/ai-trading-pro/services/useProBotControl';
       export { aiTradingApi } from './src/services/aiTradingService';
       export { updateTradingExecutionProfile } from './src/services/tradingService';
-      export { riskDetailFields, buildRiskDetailsPayload, saveRiskDetails, setRiskKillSwitch } from './kriptokeyfi-trading-bot---sinyal-akışı/src/services/backendRisk';
-      import { RiskFullView } from './kriptokeyfi-trading-bot---sinyal-akışı/src/components/Dashboard/RiskFullView';
+      export { riskDetailFields, buildRiskDetailsPayload, saveRiskDetails, setRiskKillSwitch } from './src/features/ai-trading-pro/services/backendRisk';
+      import { RiskFullView } from './src/features/ai-trading-pro/components/Dashboard/RiskFullView';
       export const renderRisk = (props) => renderToStaticMarkup(<RiskFullView {...props} />);
-      export { buildProArenaBots } from './kriptokeyfi-trading-bot---sinyal-akışı/src/services/backendArena';
-      export { getTradeProPositions, getTradeProOperations, closeTradeProPosition } from './kriptokeyfi-trading-bot---sinyal-akışı/src/services/backendDashboard';
+      export { buildProArenaBots } from './src/features/ai-trading-pro/services/backendArena';
+      export { getTradeProPositions, getTradeProOperations, closeTradeProPosition } from './src/features/ai-trading-pro/services/backendDashboard';
       export const renderPositions = (props) => renderToStaticMarkup(<PositionsFullView {...props} />);
       export const renderOverview = (props) => renderToStaticMarkup(<ActivePositionsTable {...props} />);
     `,

@@ -1,17 +1,8 @@
 import type { LucideIcon } from 'lucide-react';
 import {
-  Activity,
-  Bot,
-  BookOpen,
-  Building2,
-  ChartNoAxesCombined,
-  CircleDollarSign,
   Gauge,
   LayoutDashboard,
-  ListChecks,
   Megaphone,
-  ShieldAlert,
-  SlidersHorizontal,
   Target,
   UsersRound,
   Link2,
@@ -22,7 +13,6 @@ import {
   Route,
   FileText,
   MessageSquare,
-  Sparkles,
 } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { cn } from '../lib/utils';
@@ -78,18 +68,6 @@ export function AdminModuleLayout({ eyebrow, title, description, tabs }: AdminMo
   );
 }
 
-const tradingTabs: AdminModuleTab[] = [
-  { label: 'Genel Bakış', to: '/admin/trading', icon: LayoutDashboard, end: true },
-  { label: 'AI Trading', to: '/admin/trading/ai', icon: Sparkles },
-  { label: 'AI Trading Pro', to: '/admin/trading/ai-pro', icon: Sparkles },
-  { label: 'Botlarım', to: '/admin/trading/bots', icon: ListChecks, end: true },
-  { label: 'Manuel İşlem', to: '/admin/trading/manual', icon: SlidersHorizontal },
-  { label: 'Grid Bot', to: '/admin/trading/grid', icon: Gauge },
-  { label: 'Kâr / Zarar', to: '/admin/trading/profit-loss', icon: CircleDollarSign },
-  { label: 'Risk', to: '/admin/trading/risk', icon: ShieldAlert },
-  { label: 'Sistem', to: '/admin/trading/system', icon: Activity },
-];
-
 const kolTabs: AdminModuleTab[] = [
   { label: 'Genel Bakış', to: '/admin/kol', icon: LayoutDashboard, end: true },
   { label: 'Influencer Listesi', to: '/admin/kol/intelligence', icon: UsersRound },
@@ -116,10 +94,6 @@ const analyticsTabs: AdminModuleTab[] = [
 const chatTabs: AdminModuleTab[] = [
   { label: 'Oda Yönetimi', to: '/admin/chat', icon: MessageSquare, end: true },
 ];
-
-export function TradingModuleLayout() {
-  return <AdminModuleLayout eyebrow="Yönetim modülü" title="Trading Bot" description="Botlar, hesaplar, işlemler ve risk kontrolleri tek çalışma alanında." tabs={tradingTabs} />;
-}
 
 export function KolModuleLayout() {
   return <AdminModuleLayout eyebrow="Yönetim modülü" title="KOL Intelligence" description="Influencer verisi, tahmin doğruluğu ve kampanya operasyonlarını birlikte yönetin." tabs={kolTabs} />;

@@ -227,7 +227,8 @@ func TestExplicitTestnetProfileTurnsHoldIntoProtectedTrendGridCandidate(t *testi
 	if err != nil || result.HypotheticalOrder == nil || result.Metrics["testnetContinuousEntry"] != true {
 		t.Fatalf("explicit TESTNET profile did not produce an entry candidate: %#v err=%v", result, err)
 	}
-	if result.HypotheticalOrder["takeProfitBps"].(float64) < 300 || result.HypotheticalOrder["marginMode"] != "ISOLATED" {
+	expectedTake := roundFloat(configNumberOr(instance.Configuration, "takeProfitBps", 300)/float64(result.HypotheticalOrder["leverage"].(int)), 4)
+	if result.HypotheticalOrder["takeProfitBps"] != expectedTake || result.HypotheticalOrder["marginMode"] != "ISOLATED" {
 		t.Fatalf("TESTNET candidate lost protection contract: %#v", result.HypotheticalOrder)
 	}
 }
@@ -243,7 +244,8 @@ func TestExplicitTestnetProfileUsesAdminFixedProtectionTargets(t *testing.T) {
 	if err != nil || result.HypotheticalOrder == nil {
 		t.Fatalf("fixed TESTNET protection plan failed: %#v err=%v", result, err)
 	}
-	if result.HypotheticalOrder["stopLossBps"] != float64(200) || result.HypotheticalOrder["takeProfitBps"] != float64(250) {
+	expectedTake := roundFloat(250/float64(result.HypotheticalOrder["leverage"].(int)), 4)
+	if result.HypotheticalOrder["stopLossBps"] != float64(200) || result.HypotheticalOrder["takeProfitBps"] != expectedTake {
 		t.Fatalf("admin protection targets were not preserved: %#v", result.HypotheticalOrder)
 	}
 }

@@ -17,6 +17,8 @@ type Instance struct {
 	IntervalSeconds                                         int
 	Configuration                                           map[string]any
 	NeedsReconciliation                                     bool
+	LeaseSymbol                                             string
+	UniverseScan                                            bool
 }
 
 type Gate struct {

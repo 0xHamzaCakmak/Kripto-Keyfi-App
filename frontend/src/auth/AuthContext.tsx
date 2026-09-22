@@ -21,11 +21,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((cause: unknown) => {
         if (!active) return;
-        clearAuthState();
-        setUser(null);
         const statusCode = typeof cause === 'object' && cause && 'response' in cause
           ? (cause as { response?: { status?: number } }).response?.status
           : undefined;
+        if (statusCode === 401 || statusCode === 403) { clearAuthState(); setUser(null); }
         setStatus(statusCode === 401 ? 'unauthenticated' : 'error');
         setError(statusCode === 401 ? null : 'Oturum servisine erişilemedi.');
       });
@@ -38,6 +37,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
     };
     const refreshing = () => { if (active) setStatus('refreshing'); };
+    const unavailable = () => {
+      if (!active) return;
+      setStatus(getAuthState() ? 'authenticated' : 'error');
+      setError('Oturum servisine geçici olarak erişilemiyor. Bağlantı tekrar denenecek.');
+    };
     const expired = () => {
       if (!active) return;
       clearAuthState();
@@ -50,12 +54,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener('kriptokeyfi-session-refreshing', refreshing);
     window.addEventListener('kriptokeyfi-session-refreshed', sync);
     window.addEventListener('kriptokeyfi-session-expired', expired);
+    window.addEventListener('kriptokeyfi-session-unavailable', unavailable);
     return () => {
       active = false;
       window.removeEventListener('kripto-keyfi-auth-change', sync);
       window.removeEventListener('kriptokeyfi-session-refreshing', refreshing);
       window.removeEventListener('kriptokeyfi-session-refreshed', sync);
       window.removeEventListener('kriptokeyfi-session-expired', expired);
+      window.removeEventListener('kriptokeyfi-session-unavailable', unavailable);
     };
   }, []);
 

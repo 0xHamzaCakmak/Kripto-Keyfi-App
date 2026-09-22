@@ -30,6 +30,13 @@ api.interceptors.response.use(
     if (error.response?.status !== 401 || !config || config._retry || isAuthRequest) throw error;
     config._retry = true;
 
+    // A parallel request can return 401 after another request already refreshed.
+    // Retry with the newer token instead of rotating the refresh cookie again.
+    if (accessToken && config.headers.Authorization !== `Bearer ${accessToken}`) {
+      config.headers.Authorization = `Bearer ${accessToken}`;
+      return api(config);
+    }
+
     if (!refreshPromise) window.dispatchEvent(new Event('kriptokeyfi-session-refreshing'));
     refreshPromise ??= axios.post<{ data: { accessToken: string } }>(`${apiUrl}/auth/refresh`, {}, { withCredentials: true, timeout: 15_000 })
       .then((response) => {
@@ -39,8 +46,12 @@ api.interceptors.response.use(
         return token;
       })
       .catch((refreshError) => {
-        setAccessToken(null);
-        window.dispatchEvent(new Event('kriptokeyfi-session-expired'));
+        if (axios.isAxiosError(refreshError) && [401, 403].includes(refreshError.response?.status ?? 0)) {
+          setAccessToken(null);
+          window.dispatchEvent(new Event('kriptokeyfi-session-expired'));
+        } else {
+          window.dispatchEvent(new Event('kriptokeyfi-session-unavailable'));
+        }
         throw refreshError;
       })
       .finally(() => { refreshPromise = null; });

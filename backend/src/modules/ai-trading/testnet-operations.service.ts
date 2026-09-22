@@ -5,6 +5,7 @@ import { ApiError } from '../../utils/api-error.js';
 import { adapterFor, exchangeCall } from '../trading/exchange-account.service.js';
 import type { ExchangeOrder, ExchangePosition, ExchangeTrade } from '../trading/exchanges/exchange-adapter.js';
 import { getTradingEngineSnapshot } from '../trading/trading-engine.client.js';
+import { recordBotPnl } from '../trading/bot-pnl.service.js';
 
 export const TESTNET_STARTING_BALANCE_USD = 10_000;
 import { autonomousDTO } from './autonomous-admin.service.js';
@@ -87,7 +88,12 @@ async function cachedOperations(userId: string, exchangeAccountId?: string) {
   return refresh;
 }
 
-async function loadOperations(userId: string, exchangeAccountId?: string) {
+export async function syncTestnetBotPnlHistory(userId: string, exchangeAccountId: string) {
+  const operations = await loadOperations(userId, exchangeAccountId, true);
+  return operations.every(operation => operation.fillHistoryFresh);
+}
+
+async function loadOperations(userId: string, exchangeAccountId?: string, historyOnly = false) {
   const account = await prisma.exchangeAccount.findFirst({
     where: { userId, ...(exchangeAccountId ? { id: exchangeAccountId } : {}), provider: 'BINANCE', environment: 'TESTNET', accountType: 'USDT_M', isActive: true },
     orderBy: { createdAt: 'asc' },
@@ -113,7 +119,7 @@ async function loadOperations(userId: string, exchangeAccountId?: string) {
     select: { decisionId: true, exchangeOrderId: true, clientOrderId: true, symbol: true, positionSide: true, type: true, reduceOnly: true, status: true, createdAt: true },
     orderBy: { createdAt: 'desc' }, take: 2_000,
   });
-  const snapshot = await loadTradingEngineSnapshot(account);
+  const snapshot = historyOnly ? { positions: [] as ExchangePosition[], orders: [] as ExchangeOrder[] } : await loadTradingEngineSnapshot(account);
   let historyFresh = true;
   let trades: ExchangeTrade[] = [];
   try { trades = await loadActualTrades(account, [...new Set(localOrders.map((order) => order.symbol))]); }
@@ -293,6 +299,11 @@ async function persistActualTestnetFills(userId: string, exchangeAccountId: stri
       quoteQuantity: new Prisma.Decimal(fill.quoteQuantity), realizedPnl: new Prisma.Decimal(fill.realizedPnl), commission: new Prisma.Decimal(fill.commission),
       commissionAsset: fill.commissionAsset, netRealizedPnl: new Prisma.Decimal(fill.netRealizedPnl), maker: fill.maker, occurredAt: new Date(fill.occurredAt),
     },
+  })));
+  await recordBotPnl(userId, exchangeAccountId, fills.filter(fill => fill.reduceOnly).map(fill => ({
+    sourceId: `fill:${fill.symbol}:${fill.tradeId}`, botId: fill.botId, occurredAt: new Date(fill.occurredAt),
+    net: String(fill.netRealizedPnl), feesComplete: Number(fill.commission) === 0 || isUsdStablecoin(fill.commissionAsset),
+    symbol: fill.symbol, tradeNotional: fill.quoteQuantity, source: 'SYSTEM',
   })));
 }
 
