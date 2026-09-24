@@ -8,7 +8,7 @@ function AuthSkeleton() {
 export function ProtectedRoute({ children }: { children: React.ReactNode; feature?: string }) {
   const { user, status } = useAuth();
   const location = useLocation();
-  if (status === 'initializing' || status === 'refreshing') return <AuthSkeleton />;
+  if (status === 'initializing' || (status === 'refreshing' && !user)) return <AuthSkeleton />;
   if (!user) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   return <>{children}</>;
 }
@@ -16,7 +16,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode; featur
 export function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, status } = useAuth();
   const location = useLocation();
-  if (status === 'initializing' || status === 'refreshing') return <AuthSkeleton />;
+  if (status === 'initializing' || (status === 'refreshing' && !user)) return <AuthSkeleton />;
   if (!user) return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   if (user.backendRole !== 'ADMIN') return <Navigate to="/" replace />;
   return <>{children}</>;

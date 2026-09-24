@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { getProArena } from '../../services/backendArena';
 import { updateTradingExecutionProfile } from '../../../../services/tradingService';
 import { getApiErrorMessage } from '../../../../services/apiClient';
@@ -48,16 +48,27 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin, accoun
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const [bots, setBots] = useState<Awaited<ReturnType<typeof getProArena>>['bots']>([]);
+  const loadedAccount = useRef<string | null>(null);
   useEffect(() => {
     let active = true;
     let fetching = false;
-    setBots([]); setEntryPaused(null); setError(''); setLoading(Boolean(accountId));
+    const accountChanged = loadedAccount.current !== accountId;
+    loadedAccount.current = accountId;
+    if (accountChanged) { setBots([]); setEntryPaused(null); }
+    setError(''); setLoading(Boolean(accountId));
     if (!accountId) return;
     const load = async () => {
       if (fetching) return;
       fetching = true;
       try {
-        const result = await getProArena(accountId);
+        const result = await getProArena(accountId, (core) => {
+          if (!active) return;
+          setBots((current) => core.bots.map((bot) => {
+            const previous = current.find((item) => item.id === bot.id);
+            return previous ? { ...previous, status: bot.status, lifecycle: bot.lifecycle, name: bot.name } : bot;
+          }));
+          setEntryPaused(core.entryPaused); setError(core.error); setLoading(false);
+        });
         if (active) { setBots(result.bots); setEntryPaused(result.entryPaused); setError(result.error); }
       } catch (reason) { if (active) { setEntryPaused(null); setError(getApiErrorMessage(reason, 'Arena alınamadı.')); } }
       finally { fetching = false; if (active) setLoading(false); }

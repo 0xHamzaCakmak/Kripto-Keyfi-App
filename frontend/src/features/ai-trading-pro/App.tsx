@@ -106,6 +106,8 @@ export default function App({ requestedTab, onTabChange }: { requestedTab?: stri
   useEffect(() => {
     let cancelled = false;
     let arenaBusy = false;
+    let balancesBusy = false;
+    let detailsBusy = false;
     if (!dataAccount) {
       setBalances([]);
       setBalanceAccountId('');
@@ -138,6 +140,8 @@ export default function App({ requestedTab, onTabChange }: { requestedTab?: stri
       }
     };
     const refreshBalances = async () => {
+      if (balancesBusy) return;
+      balancesBusy = true;
       try {
         const nextBalances = await getTradeProBalances(dataAccount.id);
         if (!cancelled) {
@@ -152,15 +156,20 @@ export default function App({ requestedTab, onTabChange }: { requestedTab?: stri
           setDashboardError('Borsa bakiyesi backend üzerinden alınamadı.');
         }
       } finally {
+        balancesBusy = false;
         if (!cancelled) setDashboardLoading(false);
       }
     };
     const refreshDetails = async () => {
-      const nextDetails = await getTradeProDashboardDetails(dataAccount.id);
-      if (!cancelled) {
-        setDashboardDetails(nextDetails);
-        setDetailsAccountId(dataAccount.id);
-      }
+      if (detailsBusy) return;
+      detailsBusy = true;
+      try {
+        const nextDetails = await getTradeProDashboardDetails(dataAccount.id);
+        if (!cancelled) {
+          setDashboardDetails(nextDetails);
+          setDetailsAccountId(dataAccount.id);
+        }
+      } finally { detailsBusy = false; }
     };
 
     setDashboardLoading(true);
@@ -174,7 +183,7 @@ export default function App({ requestedTab, onTabChange }: { requestedTab?: stri
     void refreshArena();
     void refreshBalances();
     void refreshDetails();
-    const arenaTimer = window.setInterval(() => void refreshArena(), 1_000);
+    const arenaTimer = window.setInterval(() => void refreshArena(), 5_000);
     const balanceTimer = window.setInterval(() => void refreshBalances(), 30_000);
     const detailsTimer = window.setInterval(() => void refreshDetails(), 10_000);
     return () => {

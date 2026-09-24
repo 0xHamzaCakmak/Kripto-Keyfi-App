@@ -23,11 +23,19 @@ export function buildProArenaBots(accountId: string, bots: AutonomousBot[], scor
   });
 }
 
-export async function getProArena(accountId: string) {
-  const [bots, scores, operations, profile] = await Promise.allSettled([
-    aiTradingApi.bots(), aiTradingApi.leaderboard(100), aiTradingApi.testnetOperations(accountId), getTradingExecutionProfile(accountId),
-  ]);
+type ArenaSnapshot = { bots: ReturnType<typeof buildProArenaBots>; entryPaused: boolean | null; error: string };
+
+export async function getProArena(accountId: string, onCoreLoaded?: (snapshot: ArenaSnapshot) => void) {
+  // Exchange history must not hold the database-backed bot list and controls hostage.
+  const details = Promise.allSettled([aiTradingApi.leaderboard(100), aiTradingApi.testnetOperations(accountId)]);
+  const [bots, profile] = await Promise.allSettled([aiTradingApi.bots(), getTradingExecutionProfile(accountId)]);
   if (bots.status === 'rejected') throw bots.reason;
+  onCoreLoaded?.({
+    bots: buildProArenaBots(accountId, bots.value, [], []),
+    entryPaused: profile.status === 'fulfilled' ? profile.value.entryPaused : null,
+    error: profile.status === 'rejected' ? getApiErrorMessage(profile.reason, 'İşlem durumu alınamadı.') : '',
+  });
+  const [scores, operations] = await details;
   const errors = [scores, operations, profile].flatMap((result) => result.status === 'rejected' ? [getApiErrorMessage(result.reason, 'Arena verisinin bir bölümü alınamadı.')] : []);
   return {
     bots: buildProArenaBots(accountId, bots.value, scores.status === 'fulfilled' ? scores.value : [], operations.status === 'fulfilled' ? operations.value.data : []),
