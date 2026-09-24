@@ -133,3 +133,13 @@ Parite başına pozisyon:                  2
 Dakikalık emir limiti:                    0
 Günlük emir limiti:                       0
 Retention deploy P3018 / MySQL 1826 ile durursa: [kontrollu migration kurtarma adimlari](TRADING_RETENTION_TR.md#p3018--mysql-1826-retention-migration-kurtarma). `.deploy-maintenance-bots.json` dosyasini silmeyin.
+
+24.09.2026 geliştirme geçişi: `202609120001_grid_spot_accounts` ve
+`202609130003_bot_pnl_closed_only` migration'larının mevcut SQL içerikleri
+`deploy.sh` içinde SHA-256 ile onaylanmıştır. Proje sahibinin onayıyla yedek
+alınmadan geliştirme dönemi fill kâr/zarar özetleri yeniden oluşturulabilir.
+Ham borsa gerçekleşme kayıtları silinmez ve veritabanı resetlenmez. Bu izin
+yalnızca belirtilen içeriklere aittir; dosyalar değişirse kontrol tekrar durur.
+Güncel `deploy.sh` sunucuya geldikten sonra `./deploy.sh` yeniden çalıştırılır.
+Bu geçiş canlı başlangıç tarihi belirlemez ve tüm geçmişi sıfırlamaz; sonraki
+işlemlerin kaydı mevcut kayıt mekanizmasıyla devam eder.

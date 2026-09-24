@@ -312,6 +312,11 @@ const destructive = /\b(DROP\s+(?:TABLE|COLUMN|DATABASE|INDEX|FOREIGN\s+KEY|PRIM
   // Match the exact SQL content, not just the filename; other destructive SQL stays blocked.
   const reviewedMigrations = new Map([
     ['20260909100000_preserve_execution_evidence_retention', '0ee9380b9d1a267e5f3a8aa832908d1d144dfbe876d7d587836063c0019c5a3c'],
+    // Reviewed additive SPOT account type and entry pause control.
+    ['202609120001_grid_spot_accounts', 'bd3bc5a88d138749e4778d89e3282ad14191fb9ee72cd5ed2d29675b88e7fcf0'],
+    // Owner approved rebuilding disposable development fill PnL on 2026-09-24,
+    // without a backup. Raw exchange fills remain intact; no database reset.
+    ['202609130003_bot_pnl_closed_only', 'e7d88d76a9c5c7d542bad95f7cb7cddd00006fa7549f46037107399c12a693c0'],
   ]);
   const blocked = pending.filter((entry) => {
     const sql = fs.readFileSync(entry.file, 'utf8').replace(/\r\n/g, '\n');
