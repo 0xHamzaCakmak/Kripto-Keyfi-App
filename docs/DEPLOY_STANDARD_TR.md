@@ -65,24 +65,40 @@ chmod +x deploy.sh
 
 ## 4. Her deploy sonrası
 
+Deploy **13/13 tamamlandıysa** ek başlatma komutu gerekmez. Aşağıdaki komutlar
+durum kontrolüdür; bot başlatmaz. Backend ve Go Engine sunucuda çalışır;
+tarayıcıyı veya SSH oturumunu kapatmak botları durdurmaz. Varsayılan deploy
+PM2 otomatik yeniden başlatmayı doğrular, `pm2 save` çalıştırır ve sunucu açılışı
+için systemd entegrasyonunu etkinleştirir (`ENABLE_PM2_STARTUP=true`).
+
+Deploy yalnız bakım için kendisinin durdurduğu botları devam ettirir; önceden
+duraklatılmış botları açmaz. DEMO emirleri için botun çalışır durumda olması,
+hesabın otomatik işlem izninin açık olması ve risk kontrollerinin geçmesi gerekir.
+Sinyal görülmesi tek başına borsaya emir gönderildiği anlamına gelmez.
+
 Günlük veri temizliği: karar/sinyal ve outbox bildirimlerinde son **7 gün** tutulur. Haberler ve görseller kalıcı korunur; ana haber akışı ve sohbet yalnız son 7 günü gösterir. Eski yayımlanmış haberler detay, kategori, arama ve sitemap üzerinden erişilebilir kalır. Haber retention komutu --apply ile de silme yapmaz. `20260909120000_daily_retention_schedule` migration'ı trading görev zamanlarını kalıcı tutar. Politika: [Veri saklama ve günlük temizlik](TRADING_RETENTION_TR.md#otomatik-politika--son-7-gün).
 
 ```bash
 cd ~/Projects/kriptokeyfi
 pm2 status
-curl -fsS http://127.0.0.1:8081/health/ready
-npm --prefix backend run status:ai-fleet
+curl -fsS --max-time 10 http://127.0.0.1:8081/health/ready
 npm --prefix backend run status:testnet-runtime
-npm --prefix backend run configure:testnet-hedge-mode
+systemctl is-enabled pm2-root
+systemctl is-active pm2-root
 ```
 
 Beklenen sonuçlar:
 
-- `kriptokeyfi-api` ve `kriptokeyfi-trading-engine`: `online`
+- `kriptokeyfi-api`, `kriptokeyfi-trading-engine` ve `kriptokeyfi-seo`: `online`
 - Engine readiness: başarılı
 - Filo durumu: beklenen botlar çalışıyor veya açıklanabilir bir risk durumunda
-- Hedge Mode: `true`
+- PM2 systemd servisi: `enabled` ve `active` (root dışı kurulumda yapılandırılmış servis adını kullanın)
 - Stage 3 Prisma hatası yok
+
+`configure:testnet-hedge-mode` salt durum sorgusu değildir; borsa pozisyon modunu
+yapılandırır. Standart deploy zaten Hedge Mode kontrolünü yaptığı için her deploy
+sonrası tekrar çalıştırmak gerekmez. `status:ai-fleet` ek filo raporudur; DEMO
+çalışmasını doğrulamak için `status:testnet-runtime` çıktısını esas alın.
 
 Sorun varsa önce son logları al:
 
@@ -105,10 +121,10 @@ chmod +x deploy.sh
 -------------------------------------------------------
 deploy sonrası
 pm2 status
-curl -fsS http://127.0.0.1:8081/health/ready
-npm --prefix backend run status:ai-fleet
+curl -fsS --max-time 10 http://127.0.0.1:8081/health/ready
 npm --prefix backend run status:testnet-runtime
-npm --prefix backend run configure:testnet-hedge-mode
+systemctl is-enabled pm2-root
+systemctl is-active pm2-root
 
 ------------------------------------------------------------------------------
 

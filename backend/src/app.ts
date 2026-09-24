@@ -2,7 +2,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import rateLimit from 'express-rate-limit';
+import { createApiRateLimits } from './middleware/api-rate-limits.js';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { API_PREFIX } from './config/constants.js';
@@ -48,14 +48,7 @@ export function createApp() {
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());
   app.use('/internal/ai-mentor', aiMentorRouter);
-  app.use(API_PREFIX, rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 300,
-    standardHeaders: 'draft-8',
-    legacyHeaders: false,
-    skipFailedRequests: true,
-    skip: () => env.NODE_ENV === 'test',
-  }));
+  app.use(API_PREFIX, createApiRateLimits(env.NODE_ENV === 'test'));
 
   app.get(`${API_PREFIX}/health`, async (_req, res, next) => {
     try {
