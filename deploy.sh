@@ -84,6 +84,7 @@ update_code() {
   cd "$PROJECT_DIR"
   if [ "$SKIP_GIT_UPDATE" = "true" ]; then
     log "SKIP_GIT_UPDATE=true: mevcut sunucu kodu kullanilacak"
+    log "Deploy commit: $(git --no-pager log -1 --format='%h | %s' HEAD)"
     return
   fi
   if ! git diff --quiet || ! git diff --cached --quiet; then
@@ -94,7 +95,7 @@ update_code() {
   git fetch origin "$BRANCH"
   git checkout "$BRANCH"
   git merge --ff-only "origin/$BRANCH"
-  log "Deploy commit: $(git rev-parse --short HEAD)"
+  log "Deploy commit: $(git --no-pager log -1 --format='%h | %s' HEAD)"
 }
 
 install_dependencies() {
