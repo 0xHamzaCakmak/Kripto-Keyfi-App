@@ -237,7 +237,7 @@ export const SignalFlow: React.FC<SignalFlowProps> = ({ accountId, arena, positi
           </div>
 
           {/* Right Column: Column Headers & Target Coin Nodes */}
-          <div className="col-span-9 sm:col-span-9 flex flex-col gap-2 pl-2 sm:pl-4">
+          <div className="col-span-9 sm:col-span-9 min-h-[568px] flex flex-col gap-2 pl-2 sm:pl-4">
             {/* Headers */}
             <div className="grid grid-cols-12 gap-2 px-3 py-1 text-[11px] font-semibold text-[#848e9c] tracking-wider uppercase border-b border-[#2b3139]">
               <div className="col-span-4">PARİTE</div>

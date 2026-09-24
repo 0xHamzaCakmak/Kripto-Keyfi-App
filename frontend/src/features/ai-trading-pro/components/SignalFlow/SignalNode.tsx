@@ -108,7 +108,7 @@ export const SignalNode: React.FC<SignalNodeProps> = ({ coin, index, onAttachRef
     <div
       ref={(el) => onAttachRef && onAttachRef(el, index)}
       id={`signal-node-${coin.symbol.replace('/', '-')}`}
-      className={`relative grid grid-cols-12 items-center gap-2 py-2 px-3 rounded-lg border border-[#2b3139] border-l-4 ${getLeftBorderColor()} transition-all duration-300 ${
+      className={`relative grid h-[52px] shrink-0 grid-cols-12 items-center gap-2 py-2 px-3 rounded-lg border border-[#2b3139] border-l-4 ${getLeftBorderColor()} transition-colors duration-300 ${
         isPulsing
           ? 'bg-[#2b3139]/90 shadow-[0_0_20px_rgba(0,210,255,0.2)]'
           : 'bg-[#1e2329]/90 hover:bg-[#2b3139]/60'
@@ -140,7 +140,7 @@ export const SignalNode: React.FC<SignalNodeProps> = ({ coin, index, onAttachRef
             )}
           </div>
           {coin.activePosition && (
-            <span className="text-[10px] text-[#02c076] font-bold font-['JetBrains_Mono',monospace]">
+            <span className="text-[10px] text-[#02c076] font-bold font-['JetBrains_Mono',monospace] whitespace-nowrap">
               +{coin.activePosition.roe}% ROE
             </span>
           )}

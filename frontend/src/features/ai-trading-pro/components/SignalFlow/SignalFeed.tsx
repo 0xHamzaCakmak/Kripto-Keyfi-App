@@ -74,17 +74,14 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({ onSelectPair, arena, loa
           </div>
 
           {/* Decisions List */}
-          <div className="space-y-1.5 overflow-hidden">
+          <div className="h-[454px] space-y-1.5 overflow-hidden">
             {!loading && decisionRows.length === 0 && <EmptyFeed message={hasBackendAccount ? 'Henüz backend kararı yok' : 'Live API bağlı değil'} />}
-            {decisionRows.map(({ symbol, event: item }, idx) => item ? (
+            {decisionRows.map(({ symbol, event: item }) => item ? (
               <div
                 key={symbol}
                 title={arena?.recentDecisions.find(d => d.id === item.id)?.summary}
                 onClick={() => onSelectPair && onSelectPair(item.symbol)}
-                className="group flex items-center justify-between p-2 rounded-lg bg-[#0b0e11]/60 hover:bg-[#2b3139]/80 border border-[#2b3139]/70 transition-all cursor-pointer transform duration-200"
-                style={{
-                  animation: idx === 0 ? 'slideDown 0.25s ease-out' : 'none',
-                }}
+                className="group flex h-10 items-center justify-between whitespace-nowrap p-2 rounded-lg bg-[#0b0e11]/60 hover:bg-[#2b3139]/80 border border-[#2b3139]/70 transition-colors cursor-pointer duration-200"
               >
                 {/* Time & Coin */}
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -146,13 +143,13 @@ export const SignalFeed: React.FC<SignalFeedProps> = ({ onSelectPair, arena, loa
           </div>
 
           {/* Stream Ticks */}
-          <div className="space-y-1.5 overflow-hidden">
+          <div className="h-[454px] space-y-1.5 overflow-hidden">
             {!loading && signalRows.length === 0 && <EmptyFeed message={hasBackendAccount ? 'Yeni sinyal bekleniyor' : 'Live API bağlı değil'} />}
             {signalRows.map(({ symbol, event: evt }) => evt ? (
               <div
                 key={symbol}
                 title={(() => { const signal = arena?.recentSignals?.find(s => s.id === evt.id); return signal ? `${signal.source} · ${signal.status} · ${signal.summary}` : undefined; })()}
-                className="flex items-center justify-between p-1.5 rounded-lg bg-[#0b0e11]/40 hover:bg-[#2b3139]/50 border border-[#2b3139]/40 text-xs transition-colors"
+                className="flex h-10 items-center justify-between whitespace-nowrap p-1.5 rounded-lg bg-[#0b0e11]/40 hover:bg-[#2b3139]/50 border border-[#2b3139]/40 text-xs transition-colors"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] text-[#848e9c] font-['JetBrains_Mono',monospace]">
@@ -273,7 +270,7 @@ function EmptyFeed({ message }: { message: string }) {
 }
 
 function PendingFeedRow({ symbol, label, onSelectPair }: { symbol: string; label: string; onSelectPair?: (symbol: string) => void }) {
-  return <div onClick={() => onSelectPair?.(symbol)} className="flex min-h-10 items-center justify-between gap-2 rounded-lg border border-[#2b3139]/70 bg-[#0b0e11]/60 p-2 text-[10px] text-[#848e9c]">
+  return <div onClick={() => onSelectPair?.(symbol)} className="flex h-10 items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-[#2b3139]/70 bg-[#0b0e11]/60 p-2 text-[10px] text-[#848e9c]">
     <span className="flex items-center gap-1.5">{getCoinIcon(symbol, 18)}<b className="text-[#eaecef]">{symbol}</b></span>
     <span>{label}</span><span>—</span>
   </div>;
