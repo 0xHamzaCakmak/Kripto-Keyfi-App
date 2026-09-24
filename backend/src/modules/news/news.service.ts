@@ -37,6 +37,7 @@ export async function listNews(query: NewsListQuery) {
   if (query.q) and.push({ OR: [{ title: { contains: query.q } }, { excerpt: { contains: query.q } }, { titleTr: { contains: query.q } }, { summaryTr: { contains: query.q } }] });
   const where: Prisma.NewsArticleWhereInput = {
     status: NewsPublicationStatus.PUBLISHED,
+    ...(query.recentDays ? { publishedAt: { gte: new Date(Date.now() - query.recentDays * 86_400_000) } } : {}),
     ...(query.tag ? { tags: { some: { tag: { slug: query.tag } } } } : {}),
     ...(query.coin ? { coins: { some: { symbol: query.coin } } } : {}),
     ...(and.length ? { AND: and } : {}),

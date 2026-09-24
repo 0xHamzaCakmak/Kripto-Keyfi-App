@@ -145,3 +145,13 @@ describe('public news pagination', () => {
     expect(prismaMock.newsArticle.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 3 }));
   });
 });
+
+ it('limits the recent feed but leaves archive searches and sitemap queries unrestricted', async () => {
+   prismaMock.newsArticle.findMany.mockResolvedValue([]);
+   await listNews({ limit: 18, recentDays: 7 });
+   expect(prismaMock.newsArticle.findMany).toHaveBeenLastCalledWith(expect.objectContaining({ where: expect.objectContaining({ publishedAt: { gte: expect.any(Date) } }) }));
+   await listNews({ limit: 48 });
+   expect(prismaMock.newsArticle.findMany.mock.lastCall?.[0].where.publishedAt).toBeUndefined();
+   await listNews({ limit: 18, q: 'Bitcoin' });
+   expect(prismaMock.newsArticle.findMany.mock.lastCall?.[0].where.publishedAt).toBeUndefined();
+ });

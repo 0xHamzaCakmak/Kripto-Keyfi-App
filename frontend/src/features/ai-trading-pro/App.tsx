@@ -205,6 +205,7 @@ export default function App({ requestedTab, onTabChange }: { requestedTab?: stri
         isBotsRunning={botControl.paused === null || botControl.error || botControl.loading ? null : !botControl.paused}
         controlDisabled={botControl.loading || botControl.busy || Boolean(botControl.error) || !botControl.bots.length}
         controlCount={botControl.bots.length}
+        arenaRunning={Boolean(activeArena?.analysisFresh && botControl.paused === false && !botControl.error && !dashboardError && botControl.bots.some((bot) => bot.state === 'RUNNING'))}
         onToggleBotsRunning={() => void botControl.toggle()}
         onOpenSettings={() => setIsSettingsOpen(true)}
         accountControl={<div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
@@ -296,7 +297,7 @@ export default function App({ requestedTab, onTabChange }: { requestedTab?: stri
               </div>
             )}
 
-            {activeAiSubTab === 'arena' && <BotArenaView key={dataAccount?.id ?? "no-account"} accountId={dataAccount?.id ?? null} openPositionsCount={positionState.positions.length} />}
+            {activeAiSubTab === 'arena' && <BotArenaView control={botControl} key={dataAccount?.id ?? "no-account"} accountId={dataAccount?.id ?? null} openPositionsCount={positionState.positions.length} />}
             {activeAiSubTab === 'champions' && <ChampionsView key={dataAccount?.id ?? 'no-account'} accountId={dataAccount?.id ?? null} accountName={dataAccount?.name} />}
             {activeAiSubTab === 'memory' && <MemoryView />}
             {activeAiSubTab === 'performance' && <PerformanceDeepView />}

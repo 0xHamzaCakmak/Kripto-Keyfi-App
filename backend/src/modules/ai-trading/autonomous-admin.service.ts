@@ -9,6 +9,7 @@ import { assessEvolutionReadiness, evolutionConfigForPopulation } from './evolut
 import { getBinanceFuturesPublicSymbols } from '../trading/exchanges/binance-futures.adapter.js';
 import { getEnabledTradingSymbols } from './trading-universe.service.js';
 import { getTradingEngineSnapshot } from '../trading/trading-engine.client.js';
+import { arenaHistoryQuery } from './arena-query-budget.js';
 import { fleetLeverage, PAPER_TRAINING_INTERVAL_SECONDS, TESTNET_DECISION_INTERVAL_SECONDS, paperTrainingConfiguration, sharedUniverseCandidate, testnetExecutionConfiguration } from './universe.worker.js';
 
 export const AUTONOMOUS_ADMIN_API_VERSION = 'v1' as const;
@@ -35,7 +36,26 @@ export async function getAutonomousOverview(userId: string) {
   });
 }
 
+const arenaRequests = new Map<string, Promise<Awaited<ReturnType<typeof loadArenaStatus>>>>();
+const arenaCache = new Map<string, { expiresAt: number; result: Awaited<ReturnType<typeof loadArenaStatus>> }>();
 export async function getArenaStatus(userId: string, exchangeAccountId?: string) {
+  const key = JSON.stringify([userId, exchangeAccountId ?? null]);
+  const cached = arenaCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.result;
+  const pending = arenaRequests.get(key);
+  if (pending) return pending;
+  const request = loadArenaStatus(userId, exchangeAccountId).then(result => {
+    // Keep this short-lived presentation cache bounded; failed reads are not cached.
+    for (const [oldKey, entry] of arenaCache) if (entry.expiresAt <= Date.now()) arenaCache.delete(oldKey);
+    if (arenaCache.size >= 100) arenaCache.delete(arenaCache.keys().next().value!);
+    arenaCache.set(key, { expiresAt: Date.now() + 5_000, result });
+    return result;
+  }).finally(() => arenaRequests.delete(key));
+  arenaRequests.set(key, request);
+  return request;
+}
+
+async function loadArenaStatus(userId: string, exchangeAccountId?: string) {
   const since = new Date(Date.now() - 5 * 60_000);
   const accountFilter = exchangeAccountId ? { exchangeAccountId } : {};
   const universe = await prisma.tradingUniverseAsset.findMany({ where: { userId, enabled: true }, orderBy: { sortOrder: 'asc' }, select: { symbol: true } });
@@ -58,7 +78,7 @@ export async function getArenaStatus(userId: string, exchangeAccountId?: string)
       orderBy: { startedAt: 'asc' }, select: { startedAt: true },
     }),
 
-    Promise.all(decisionSymbols.map(symbol => prisma.tradingBotDecision.findMany({
+    Promise.all(decisionSymbols.map(symbol => arenaHistoryQuery(() => prisma.tradingBotDecision.findMany({
       where: { userId, ...accountFilter, type: 'AUTONOMOUS', mode: 'DEMO', symbol, kind: { in: ['BUY', 'SELL', 'GRID_BUY', 'GRID_SELL', 'HOLD'] } },
       orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }], take: 1,
       select: {
@@ -66,13 +86,13 @@ export async function getArenaStatus(userId: string, exchangeAccountId?: string)
         tradingBot: { select: { name: true } },
         signals: { orderBy: { id: 'desc' }, take: 3, select: { source: true, action: true, confidence: true, status: true } },
       },
-    }))),
-    Promise.all(signalSymbols.map(symbol => prisma.tradingBotSignal.findMany({
+    })))),
+    Promise.all(signalSymbols.map(symbol => arenaHistoryQuery(() => prisma.tradingBotSignal.findMany({
       where: { userId, ...accountFilter, OR: [{ decision: { is: { symbol } } }, { decision: { is: null }, tradingBot: { symbol } }], tradingBot: { type: 'AUTONOMOUS', mode: 'DEMO', lifecycleStatus: { not: 'ARCHIVED' } } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 1,
       select: { id: true, tradingBotId: true, action: true, source: true, status: true, confidence: true, rationale: true, createdAt: true,
         decision: { select: { symbol: true } }, tradingBot: { select: { name: true, symbol: true } } },
-    }))),
+    })))),
   ]);
   const recentDecisions = decisionGroups.flat().sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
   const recentSignals = signalGroups.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());

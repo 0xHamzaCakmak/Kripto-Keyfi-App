@@ -44,6 +44,7 @@ interface ManagementNavigationProps {
   openPositionsCount: number;
   accountControl?: React.ReactNode;
   botCount?: number;
+  arenaRunning?: boolean;
 }
 
 export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
@@ -59,6 +60,7 @@ export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
   openPositionsCount,
   accountControl,
   botCount,
+  arenaRunning = false,
 }) => {
   const mainTabs = [
     { id: 'ai-trading' as MainTabType, label: 'AI Trading', icon: Sparkles, badge: 'PRO' },
@@ -76,7 +78,7 @@ export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
 
   const aiSubTabs = [
     { id: 'overview' as AiTradingSubTabType, label: 'Genel Bakış (Sinyal Akışı)', icon: LayoutGrid },
-    { id: 'arena' as AiTradingSubTabType, label: 'Arena', icon: Bot, badge: botCount === undefined ? '—' : String(botCount) },
+    { id: 'arena' as AiTradingSubTabType, label: 'Arena', icon: Bot, badge: arenaRunning ? '+' : '−' },
     { id: 'champions' as AiTradingSubTabType, label: 'Champions', icon: Trophy },
     { id: 'memory' as AiTradingSubTabType, label: 'Memory', icon: Database },
     { id: 'performance' as AiTradingSubTabType, label: 'Performance', icon: BarChart3 },
@@ -236,10 +238,10 @@ export const ManagementNavigation: React.FC<ManagementNavigationProps> = ({
                         : 'text-[#848e9c] hover:text-[#eaecef] bg-[#0b0e11]/60 border border-transparent hover:border-[#2b3139]'
                     }`}
                   >
-                    <SubIcon className="w-3.5 h-3.5" />
+                    <SubIcon className={`w-3.5 h-3.5 ${sub.id === 'arena' && arenaRunning ? 'text-[#02c076] motion-safe:animate-pulse' : ''}`} />
                     <span>{sub.label}</span>
                     {sub.badge && (
-                      <span className="text-[9px] px-1 bg-[#f0b90b]/20 text-[#f0b90b] rounded font-black">
+                      <span title={arenaRunning ? 'Arena aktif: güncel kararlar üretiliyor' : 'Arena çalışması doğrulanmadı veya duraklatıldı'} aria-label={arenaRunning ? 'Arena aktif' : 'Arena pasif veya doğrulanamadı'} className={`text-[9px] px-1 rounded font-black ${arenaRunning ? 'bg-[#02c076]/20 text-[#02c076] motion-safe:animate-pulse shadow-[0_0_8px_rgba(2,192,118,0.5)]' : 'bg-[#f0b90b]/20 text-[#f0b90b]'}`}>
                         {sub.badge}
                       </span>
                     )}

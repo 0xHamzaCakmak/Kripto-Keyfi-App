@@ -14,7 +14,11 @@ it('reads the newest record independently for every configured recorded pair', a
   m.decisionGroup.mockResolvedValue(symbols);
   m.decisionList.mockImplementation(async ({ where }) => [{ id: 1n, tradingBotId: 'bot', symbol: where.symbol, kind: 'HOLD', summary: 'real', occurredAt: new Date(), tradingBot: { name: 'Bot' }, signals: [] }]);
   m.signalList.mockResolvedValue([]);
-  const { data } = await getArenaStatus('user', 'account');
+  const [first, second] = await Promise.all([getArenaStatus('user', 'account'), getArenaStatus('user', 'account')]);
+  const { data } = first;
+  expect(second).toBe(first);
+  expect(await getArenaStatus('user', 'account')).toBe(first);
+  expect(m.universe).toHaveBeenCalledTimes(1);
   expect(data.recentDecisions).toHaveLength(20);
   expect(new Set(data.recentDecisions.map(row => row.symbol)).size).toBe(20);
   expect(data.botSymbols).toHaveLength(20);
@@ -24,4 +28,14 @@ it('reads the newest record independently for every configured recorded pair', a
     expect(query.orderBy).toEqual([{ occurredAt: 'desc' }, { id: 'desc' }]);
   }
   expect(data.decisionCoverage).toEqual({ configured: 20, observed: 20 });
+});
+
+it('keeps account caches separate and does not cache failed reads', async () => {
+  m.universe.mockRejectedValueOnce(new Error('database busy'));
+  await expect(getArenaStatus('other-user', 'other-account')).rejects.toThrow('database busy');
+  m.universe.mockResolvedValue([]);
+  m.decisionGroup.mockResolvedValue([]);
+  const result = await getArenaStatus('other-user', 'other-account');
+  expect(result.data.botSymbols).toEqual([]);
+  expect(m.universe).toHaveBeenLastCalledWith(expect.objectContaining({ where: { userId: 'other-user', enabled: true } }));
 });

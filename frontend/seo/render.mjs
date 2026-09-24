@@ -188,6 +188,7 @@ export async function createSeoServer({ distDir, siteUrl = process.env.PUBLIC_SI
   const template = await readFile(path.join(resolvedDist, 'index.html'), 'utf8');
   const app = express();
   app.disable('x-powered-by');
+  app.use((_req, res, next) => { res.setHeader('X-KriptoKeyfi-Renderer', 'seo'); next(); });
   app.set('trust proxy', 1);
 
   app.use('/api', createApiProxy(apiBaseUrl));
@@ -202,7 +203,7 @@ export async function createSeoServer({ distDir, siteUrl = process.env.PUBLIC_SI
   app.get('/sitemaps/news-:page.xml', async (req, res, next) => { try { const page = Math.max(1, Number(req.params.page) || 1); const articles = (await fetchAllNews(apiBaseUrl)).filter((item) => !item.archivedAt && !item.aiSummary?.needsReview).slice((page - 1) * SITEMAP_PAGE_SIZE, page * SITEMAP_PAGE_SIZE); res.type('application/xml').send(sitemapUrlSet(articles.map((item) => ({ loc: `${normalizedSite}/haberler/${item.slug}`, lastmod: item.sourceUpdatedAt ?? item.publishedAt })))); } catch (error) { next(error); } });
   app.get('/sitemaps/taxonomy.xml', async (_req, res, next) => { try { const articles = (await fetchAllNews(apiBaseUrl)).filter((item) => !item.archivedAt && !item.aiSummary?.needsReview); const categoryCounts = new Map(); const tagCounts = new Map(); articles.forEach((item) => { const category = categorySlug(item.category); categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1); item.tags.forEach((tag) => tagCounts.set(tag.slug, (tagCounts.get(tag.slug) ?? 0) + 1)); }); const denseCategories = [...categoryCounts].filter(([,count]) => count >= 2).map(([slug]) => slug); const denseTags = [...tagCounts].filter(([,count]) => count >= 2).map(([slug]) => slug); const urls = [{ loc: `${normalizedSite}/haberler` }, ...denseCategories.map((slug) => ({ loc: `${normalizedSite}/haberler/kategori/${slug}` })), ...denseTags.flatMap((slug) => [{ loc: `${normalizedSite}/haberler/etiket/${slug}` }, { loc: `${normalizedSite}/haberler/konu/${slug}` }])]; res.type('application/xml').send(sitemapUrlSet(urls)); } catch (error) { next(error); } });
 
-  const listingHandler = (kind) => async (req, res, next) => { try { const slug = req.params.slug; const params = kind === 'category' ? { category: slug } : kind === 'tag' ? { tag: slug } : kind === 'topic' ? { topic: slug } : {}; const data = await fetchApi(apiBaseUrl, 'news', { limit: 24, ...params }); const rendered = renderListingPage(template, normalizedSite, { kind, slug, articles: data.articles }); res.status(rendered.status).type('html').send(rendered.html); } catch (error) { next(error); } };
+  const listingHandler = (kind) => async (req, res, next) => { try { const slug = req.params.slug; const params = kind === 'category' ? { category: slug } : kind === 'tag' ? { tag: slug } : kind === 'topic' ? { topic: slug } : { recentDays: 7 }; const data = await fetchApi(apiBaseUrl, 'news', { limit: 24, ...params }); const rendered = renderListingPage(template, normalizedSite, { kind, slug, articles: data.articles }); res.status(rendered.status).type('html').send(rendered.html); } catch (error) { next(error); } };
   app.get('/haberler', listingHandler('root'));
   app.get('/haberler/kategori/:slug', listingHandler('category'));
   app.get('/haberler/etiket/:slug', listingHandler('tag'));

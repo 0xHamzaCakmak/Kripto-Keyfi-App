@@ -463,7 +463,7 @@ function BreakingNewsWidget() {
       if (reading) return;
       reading = true;
       try {
-        const result = await getNews({ limit: 3 });
+        const result = await getNews({ limit: 3, recentDays: 7 });
         if (active) { setNews(result.articles); setError(''); }
       } catch {
         if (active) setError('Haberler güncellenemedi.');

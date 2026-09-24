@@ -2,6 +2,11 @@
 
 Bu akış `Production LIVE` açmaz, veritabanını sıfırlamaz ve Binance ana hesap işlemlerine dokunmaz. Komutlar VPS üzerinde proje kökünde çalıştırılır.
 
+**İlk SEO geçişi:** Deploy artık `kriptokeyfi-seo` PM2 servisini de başlatır.
+Çalıştırmadan önce domainin Nginx `location /` yönlendirmesini hazırlayın:
+[SEO sunumu ve VPS geçiş adımları](SEO_VPS_TR.md). Eski statik SPA sunumu
+devam ederse yeni SEO doğrulaması deploy'u durdurur.
+
 ## 1. Yalnız ilk Hedge Mode geçişinde
 
 Hedge Mode daha önce açıldıysa bu bölüm tekrar uygulanmaz. Açık pozisyon ve emirler, Hedge Mode zaten `true` olduğunda deployu engellemez.
@@ -60,7 +65,7 @@ chmod +x deploy.sh
 
 ## 4. Her deploy sonrası
 
-Günlük veri temizliği: karar/sinyal ve outbox bildirimlerinde son **7 gün**, haberlerde yayın tarihine göre son **7 gün** tutulur. Haberler için adet sınırı kullanılmaz. `20260909120000_daily_retention_schedule` migration'ı günlük görev zamanlarını kalıcı tutar; yeniden başlatma 24 saat dolmadan temizliği tekrarlatmaz. Politika, dry-run ve MySQL görev durumu kontrolü: [Veri saklama ve günlük temizlik](TRADING_RETENTION_TR.md#otomatik-politika--son-7-gün).
+Günlük veri temizliği: karar/sinyal ve outbox bildirimlerinde son **7 gün** tutulur. Haberler ve görseller kalıcı korunur; ana haber akışı ve sohbet yalnız son 7 günü gösterir. Eski yayımlanmış haberler detay, kategori, arama ve sitemap üzerinden erişilebilir kalır. Haber retention komutu --apply ile de silme yapmaz. `20260909120000_daily_retention_schedule` migration'ı trading görev zamanlarını kalıcı tutar. Politika: [Veri saklama ve günlük temizlik](TRADING_RETENTION_TR.md#otomatik-politika--son-7-gün).
 
 ```bash
 cd ~/Projects/kriptokeyfi

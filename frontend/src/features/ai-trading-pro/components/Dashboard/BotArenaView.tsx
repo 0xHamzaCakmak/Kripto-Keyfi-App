@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { getProArena } from '../../services/backendArena';
-import { updateTradingExecutionProfile } from '../../../../services/tradingService';
+import type { useProBotControl } from '../../services/useProBotControl';
 import { getApiErrorMessage } from '../../../../services/apiClient';
 import { getCoinIcon } from '../CoinIcons';
 import {
@@ -22,16 +22,17 @@ import {
 } from 'lucide-react';
 
 interface BotArenaViewProps {
+  control: ReturnType<typeof useProBotControl>;
   accountId: string | null;
   openPositionsCount: number;
   onSelectCoin?: (symbol: string) => void;
 }
 
-export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin, accountId, openPositionsCount }) => {
-  const [entryPaused, setEntryPaused] = useState<boolean | null>(null);
+export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin, accountId, openPositionsCount, control }) => {
+  const entryPaused = control.error ? null : control.paused;
+  const busy = control.busy;
   const botsRunning = entryPaused === false;
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   useEffect(() => {
@@ -54,7 +55,7 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin, accoun
     let fetching = false;
     const accountChanged = loadedAccount.current !== accountId;
     loadedAccount.current = accountId;
-    if (accountChanged) { setBots([]); setEntryPaused(null); }
+    if (accountChanged) { setBots([]); }
     setError(''); setLoading(Boolean(accountId));
     if (!accountId) return;
     const load = async () => {
@@ -67,10 +68,10 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin, accoun
             const previous = current.find((item) => item.id === bot.id);
             return previous ? { ...previous, status: bot.status, lifecycle: bot.lifecycle, name: bot.name } : bot;
           }));
-          setEntryPaused(core.entryPaused); setError(core.error); setLoading(false);
+          setError(core.error); setLoading(false);
         });
-        if (active) { setBots(result.bots); setEntryPaused(result.entryPaused); setError(result.error); }
-      } catch (reason) { if (active) { setEntryPaused(null); setError(getApiErrorMessage(reason, 'Arena alınamadı.')); } }
+        if (active) { setBots(result.bots); setError(result.error); }
+      } catch (reason) { if (active) { setError(getApiErrorMessage(reason, 'Arena alınamadı.')); } }
       finally { fetching = false; if (active) setLoading(false); }
     };
     void load();
@@ -113,24 +114,18 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin, accoun
   const activePositionsCount = openPositionsCount;
   const scoreProducedCount = bots.filter((b) => b.score !== null).length;
 
-  const handleToggleGlobalBots = async () => {
-    if (!accountId || entryPaused === null || busy || loading) return;
-    const message = entryPaused
-      ? 'Seçili DEMO / TESTNET hesabının otomatik işlem izni açılsın mı? Yalnızca DEMO botlar etkilenir; yeni karar ve risk onayı olmadan emir gönderilmez.'
-      : 'Seçili DEMO / TESTNET hesabının otomatik işlemleri durdurulsun mu? Açık pozisyonlar kapatılmaz; PAPER ve LIVE etkilenmez.';
-    if (!window.confirm(message)) return;
-    setBusy(true); setError('');
-    try { const profile = await updateTradingExecutionProfile(accountId, { entryPaused: !entryPaused }); setEntryPaused(profile.entryPaused); setRevision((value) => value + 1); }
-    catch (reason) { setError(getApiErrorMessage(reason, 'İşlem durumu değiştirilemedi.')); }
-    finally { setBusy(false); }
-  };
-  const handleRefresh = () => setRevision((value) => value + 1);
+  const handleRefresh = () => { control.refresh(); setRevision((value) => value + 1); };
+  const controlDisabled = busy || control.loading || !accountId || entryPaused === null || !control.bots.length;
+  const controlLabel = busy ? 'Kaydediliyor…' : control.loading ? 'Durum doğrulanıyor…' : entryPaused === null ? 'Durum doğrulanamadı' : !control.bots.length ? 'DEMO bot bulunamadı' : botsRunning ? 'İşlemleri Durdur' : 'Yeni İşlemleri Başlat';
 
   return (
     <div id="bot-arena-view" className="w-full space-y-5 animate-in fade-in duration-200">
+      {control.error && <p role="alert" className="text-sm text-[#f84960]">{control.error}</p>}
+      {control.notice && <p role="status" className="text-sm text-[#02c076]">{control.notice}</p>}
       {error && <div role="alert" className="rounded-xl bg-[#f84960]/10 p-3 text-sm text-[#f84960]">{error}</div>}
       {loading && <p className="text-sm text-[#848e9c]">Arena yükleniyor…</p>}
-      {!loading && !bots.length && <p className="text-sm text-[#848e9c]">{accountId ? "Bu demo hesabında bot bulunmuyor." : "Aktif demo hesabı seçin."}</p>}
+      {!loading && !error && !bots.length && <p className="text-sm text-[#848e9c]">{accountId ? "Bu demo hesabında bot bulunmuyor." : "Aktif demo hesabı seçin."}</p>}
+      {!loading && error && !bots.length && <p className="text-sm text-[#848e9c]">Bot listesi doğrulanamadı. Bu durum hesapta bot olmadığı anlamına gelmez.</p>}
       {/* Bot Arena Hero Banner */}
       <div className="bg-[#1e2329]/90 border border-[#2b3139] rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-start gap-3.5">
@@ -160,16 +155,17 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin, accoun
 
           <button
             id="btn-arena-start-toggle"
-            disabled={busy || loading || !accountId || entryPaused === null}
-            onClick={() => void handleToggleGlobalBots()}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md ${
+            disabled={controlDisabled}
+            aria-busy={busy}
+            onClick={() => void control.toggle()}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed ${
               botsRunning
                 ? 'bg-[#f84960]/20 hover:bg-[#f84960]/30 text-[#f84960] border border-[#f84960]/40'
                 : 'bg-[#02c076] hover:bg-[#02c076]/90 text-[#0b0e11] shadow-[0_0_15px_rgba(2,192,118,0.4)]'
             }`}
           >
             {botsRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-            <span>{botsRunning ? 'İşlemleri Durdur' : 'Yeni İşlemleri Başlat'}</span>
+            <span>{controlLabel}</span>
           </button>
 
           <button
@@ -199,7 +195,7 @@ export const BotArenaView: React.FC<BotArenaViewProps> = ({ onSelectCoin, accoun
         )}
         <span>
           {entryPaused === null ? 'İşlem durumu henüz doğrulanamadı.' : botsRunning
-            ? 'Botlar devrede: Yeni emir girişi, gerçek zamanlı sinyal akışı ve otomatik açık pozisyon yönetimi aktiftir.'
+            ? 'DEMO işlem izni açık. Çalışan botlar yeni karar ve risk onayıyla emir gönderebilir; bu izin tek başına botları başlatmaz.'
             : 'Botlar durduruldu: yeni emir girişi ve otomatik açık pozisyon yönetimi kapalıdır.'}
         </span>
       </div>

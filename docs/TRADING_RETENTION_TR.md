@@ -24,9 +24,9 @@ Trading ve haber temizliği ayrı görevlerdir. Her görev ilk kurulumda backend
 - trading_bot_signals: AUTONOMOUS botların 7 günden eski sinyalleri, karar bağlantısı olmasa da silinir. Yeni sinyaller korunur; silinen karara bağlantıları NULL olur.
 - trading_outbox_events: **Tüm event türlerinin** createdAt değeri 7 günden eski bildirimleri silinir. Bu tablo SSE bildirim geçmişidir; motorun emir kuyruğu değildir. publishedAt tüketici onayı değildir ve silme şartı olarak kullanılmaz.
 - Asıl emirler, testnet/paper fill, paper trade, pozisyon, shadow performans kanıtları, audit ve risk kayıtları korunur. Karara bağlı paper fill/shadow kayıtları silinmez, decisionId bağlantısı NULL olur.
-- Haberler: Mevcut politika **haber adedi değil yayın tarihine göre 7 gündür**. publishedAt değeri 7 günden eski haberler, ilişkili analitik kayıtları ve ilişkiler silinir; haber görselleri R2'den kaldırılır, kullanılmayan etiketler temizlenir. YouTube videoları bu kapsamda değildir.
+- Haberler: Yaşa bağlı otomatik silme kapatıldı. Haberler, görseller ve analitik kayıtları korunur. Ana akış ve sohbet son 7 günü gösterir; kategori, arama, detay ve sitemap eski yayımlanmış haberleri de kapsar. Süre dolduğu için archivedAt veya noindex atanmaz.
 
-Trading temizliği 1000 kayıtlık batch'ler ve aralarda 100 ms bekleme ile çalışır. Haberler 250 kayıtlık batch'ler halinde işlenir. Her çalışmanın silme sayıları loglanır. Günlük temizlik son 7 günü bırakır; iki temizlik arasında en eski kayıt yaklaşık 8 günlük olabilir. Daha önceki 24 saatlik politikayla silinmiş kayıtlar geri getirilemez.
+Trading temizliği 1000 kayıtlık batch'ler ve aralarda 100 ms bekleme ile çalışır. Trading için son 7 gün korunur. Haberler için yaşa bağlı silme görevi çalışmaz. Önceden silinmiş haberler bu değişiklikle geri getirilemez.
 
 Görev başarısız olursa status=FAILED kaydedilir; kısmen temizlenmiş kayıtlar sonraki günlük çalışmada tamamlanır. Süreç yarıda kapanırsa status=RUNNING kalabilir; nextRunAt dolunca görev tekrar alınabilir. Hata sebebi giderildikten sonra aşağıdaki --apply komutlarıyla manuel tekrar yapılabilir. Manuel komutlar günlük sınırı bilinçli olarak atlar; otomatik görevlerle aynı anda çalıştırılmamalıdır.
 
@@ -45,7 +45,7 @@ npm --prefix backend run retention:trading
 npm --prefix backend run retention:news
 ```
 
-İki retention komutu varsayılan olarak dry-run'dır. Veritabanı .env üzerinden seçilir; doğru ortama baktığını doğrula. İlk rapor büyük tablolarda tam sayım yaptığı için zaman alabilir. Gerekli eski geçmişi saklayacaksan deploydan önce VPS dışına yedekle.
+Trading retention varsayılan olarak dry-run çalışır. Haber retention komutu yalnız arşiv raporu verir; --apply seçeneği de haber silmez. Veritabanı .env üzerinden seçilir. İlk rapor büyük tablolarda tam sayım yaptığı için zaman alabilir.
 
 ```bash
 ./deploy.sh
@@ -62,7 +62,7 @@ npm --prefix backend run retention:news
 npm --prefix backend run report:db-storage
 ```
 
-Logda daily trading retention completed / daily news retention completed ve silinen kayıt sayıları beklenir. İşlem planını ve son durumunu MySQL oturumunda kontrol et:
+Logda daily trading retention completed ve silinen trading kayıt sayıları beklenir. Haber silme görevi artık planlanmaz. Eski haber bakım kayıtları tabloda kalabilir. İşlem planını ve son durumunu MySQL oturumunda kontrol et:
 
 ```sql
 SELECT name, status, lastStartedAt, lastCompletedAt, nextRunAt FROM maintenance_jobs;

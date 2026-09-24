@@ -4,7 +4,7 @@ import { hasEncodingArtifacts } from './localization/news-localization-quality.j
 
 const httpsUrl = z.string().url().refine((value) => new URL(value).protocol === 'https:', 'HTTPS URL required');
 const slug = z.string().trim().toLowerCase().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(100);
-export const listNewsQuerySchema = z.object({ cursor: z.string().cuid().optional(), limit: z.coerce.number().int().min(1).max(48).default(18), category: slug.optional(), tag: slug.optional(), topic: slug.optional(), coin: z.string().trim().toUpperCase().max(30).optional(), q: z.string().trim().min(2).max(100).optional() });
+export const listNewsQuerySchema = z.object({ recentDays: z.coerce.number().int().min(1).max(365).optional(), cursor: z.string().cuid().optional(), limit: z.coerce.number().int().min(1).max(48).default(18), category: slug.optional(), tag: slug.optional(), topic: slug.optional(), coin: z.string().trim().toUpperCase().max(30).optional(), q: z.string().trim().min(2).max(100).optional() });
 export const listAdminNewsQuerySchema = z.object({ status: z.nativeEnum(NewsPublicationStatus).optional(), aiStatus: z.nativeEnum(NewsAiStatus).optional(), limit: z.coerce.number().int().min(1).max(100).default(20) });
 export const slugParamsSchema = z.object({ slug: slug.max(191) });
 export const detailNewsQuerySchema = z.object({ trackView: z.enum(['true', 'false']).default('true') });

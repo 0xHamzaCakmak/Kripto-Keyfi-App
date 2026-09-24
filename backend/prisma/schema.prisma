@@ -1543,6 +1543,7 @@ model TradingBotDecision {
   @@index([exchangeAccountId, occurredAt])
   @@index([type, occurredAt])
   @@index([kind, occurredAt])
+  @@index([userId, exchangeAccountId, type, mode, symbol, occurredAt, id], map: "arena_decision_pair_latest_idx")
   @@map("trading_bot_decisions")
 }
 
@@ -1651,6 +1652,7 @@ model TradingBotSignal {
   @@index([decisionId])
   @@index([userId, createdAt])
   @@index([source, status, createdAt])
+  @@index([userId, exchangeAccountId, createdAt, id], map: "arena_signal_account_latest_idx")
   @@map("trading_bot_signals")
 }
 
@@ -2217,6 +2219,7 @@ model TradingAuditLog {
 
   @@index([userId, createdAt])
   @@index([exchangeAccountId, createdAt])
+  @@index([userId, action, createdAt], map: "audit_user_action_latest_idx")
   @@map("trading_audit_logs")
 }
 

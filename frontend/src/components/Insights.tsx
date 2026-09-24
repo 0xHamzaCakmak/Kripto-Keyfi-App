@@ -56,7 +56,7 @@ export default function Insights() {
     let active = true;
     setLoading(true);
     setNextCursor(null);
-    getNews({ q: query.trim().length > 1 ? query.trim() : undefined, category: categorySlug, tag: tagSlug, topic: topicSlug })
+    getNews({ recentDays: !categorySlug && !tagSlug && !topicSlug && query.trim().length < 2 ? 7 : undefined, q: query.trim().length > 1 ? query.trim() : undefined, category: categorySlug, tag: tagSlug, topic: topicSlug })
       .then((result) => { if (active) { setNews(result.articles); setNextCursor(result.nextCursor); setError(''); } })
       .catch(() => active && setError('Haber akışı şu anda alınamadı.'))
       .finally(() => active && setLoading(false));
@@ -74,6 +74,7 @@ export default function Insights() {
         tag: tagSlug,
         topic: topicSlug,
         cursor: nextCursor,
+        recentDays: !categorySlug && !tagSlug && !topicSlug && query.trim().length < 2 ? 7 : undefined,
       });
       if (filterKeyRef.current !== requestedFilterKey) return;
       setNews((current) => {

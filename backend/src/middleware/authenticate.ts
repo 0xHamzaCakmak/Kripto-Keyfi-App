@@ -1,13 +1,19 @@
 import type { RequestHandler } from 'express';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../database/prisma.js';
-import { verifyAccessToken } from '../security/tokens.js';
+import { verifyAccessToken, type AccessClaims } from '../security/tokens.js';
 import { ApiError } from '../utils/api-error.js';
 
 export const authenticate: RequestHandler = async (req, _res, next) => {
+  const authorization = req.header('authorization');
+  if (!authorization?.startsWith('Bearer ')) return next(new ApiError(401, 'Authentication required', 'UNAUTHORIZED'));
+  let claims: AccessClaims;
   try {
-    const authorization = req.header('authorization');
-    if (!authorization?.startsWith('Bearer ')) throw new ApiError(401, 'Authentication required', 'UNAUTHORIZED');
-    const claims = await verifyAccessToken(authorization.slice(7));
+    claims = await verifyAccessToken(authorization.slice(7));
+  } catch {
+    return next(new ApiError(401, 'Invalid or expired access token', 'UNAUTHORIZED'));
+  }
+  try {
     const user = await prisma.user.findUnique({
       where: { id: claims.sub }, select: { id: true, role: true, status: true },
     });
@@ -15,7 +21,11 @@ export const authenticate: RequestHandler = async (req, _res, next) => {
     req.user = { id: user.id, role: user.role, sessionId: claims.sid };
     next();
   } catch (error) {
-    next(error instanceof ApiError ? error : new ApiError(401, 'Invalid or expired access token', 'UNAUTHORIZED'));
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2024') {
+      req.log?.error({ err: { code: error.code, message: error.message } }, 'authentication database pool exhausted');
+      return next(new ApiError(503, 'Veritabanı bağlantıları meşgul. Lütfen kısa süre sonra tekrar deneyin.', 'DATABASE_BUSY'));
+    }
+    next(error);
   }
 };
 

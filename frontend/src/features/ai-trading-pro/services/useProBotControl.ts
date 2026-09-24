@@ -13,6 +13,8 @@ export function useProBotControl(accountId: string | null) {
   const [snapshot, setSnapshot] = useState<{ accountId: string; bots: AutonomousBot[]; paused: boolean } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState('');
+  useEffect(() => { setNotice(''); }, [accountId]);
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
@@ -41,10 +43,17 @@ export function useProBotControl(accountId: string | null) {
       ? `Seçili DEMO / TESTNET hesabında ${current.bots.length} DEMO botun otomatik işlem izni açılsın mı? Çalışır durumdaki botlar yeni karar ve risk onayı oluştuğunda yalnızca demo bakiyesiyle emir gönderebilir. PAPER ve LIVE etkilenmez; hemen emir gönderilmez.`
       : `Seçili DEMO / TESTNET hesabında ${current.bots.length} DEMO botun otomatik işlemleri durdurulsun mu? Yeni demo girişleri ve otomatik pozisyon yönetimi duraklatılır; açık pozisyonlar kapatılmaz. PAPER ve LIVE etkilenmez.`;
     if (!window.confirm(message)) return;
-    setBusy(true); setError('');
-    try { await updateTradingExecutionProfile(accountId, { entryPaused: !current.paused }); refresh(); }
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const profile = await updateTradingExecutionProfile(accountId, { entryPaused: !current.paused });
+      if (currentAccount.current === accountId) {
+        setSnapshot({ ...current, paused: profile.entryPaused });
+        setNotice(profile.entryPaused ? 'DEMO işlem izni kapatıldı.' : 'DEMO işlem izni açıldı. Emirler yeni karar ve risk onayından sonra gönderilebilir.');
+        refresh();
+      }
+    }
     catch (reason) { if (currentAccount.current === accountId) setError(getApiErrorMessage(reason, 'Otomatik işlem kontrolü kaydedilemedi.')); }
     finally { setBusy(false); }
   }
-  return { bots: current?.bots ?? [], paused: current?.paused ?? null, loading: loading || (Boolean(accountId) && !current && !error), busy, error, refresh, toggle };
+  return { bots: current?.bots ?? [], paused: current?.paused ?? null, loading: loading || (Boolean(accountId) && !current && !error), busy, error, notice, refresh, toggle };
 }

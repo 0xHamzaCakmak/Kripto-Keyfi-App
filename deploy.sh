@@ -14,6 +14,8 @@ WEB_ROOT="${WEB_ROOT:-}"
 
 BACKEND_PM2_NAME="${BACKEND_PM2_NAME:-kriptokeyfi-api}"
 ENGINE_PM2_NAME="${ENGINE_PM2_NAME:-kriptokeyfi-trading-engine}"
+SEO_PM2_NAME="${SEO_PM2_NAME:-kriptokeyfi-seo}"
+SEO_PORT="${SEO_PORT:-4173}"
 BACKEND_PORT="${BACKEND_PORT:-}"
 BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-}"
 ENGINE_HEALTH_URL="${ENGINE_HEALTH_URL:-http://127.0.0.1:8081/health/ready}"
@@ -148,6 +150,14 @@ NODE
   export PORT="$BACKEND_PORT"
   BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-http://127.0.0.1:${BACKEND_PORT}/api/health}"
   FRONTEND_HEALTH_URL="${FRONTEND_HEALTH_URL:-${FRONTEND_URL:-}}"
+  if [ -z "$FRONTEND_HEALTH_URL" ] || [ -z "${PUBLIC_SITE_URL:-${FRONTEND_URL:-}}" ]; then
+    printf 'SEO kontrolu icin FRONTEND_URL veya PUBLIC_SITE_URL ve FRONTEND_HEALTH_URL tanimlanmalidir.\n' >&2
+    exit 1
+  fi
+  if ! [[ "$SEO_PORT" =~ ^[0-9]+$ ]] || [ "$SEO_PORT" -lt 1 ] || [ "$SEO_PORT" -gt 65535 ] || [ "$SEO_PORT" = "$BACKEND_PORT" ]; then
+    printf 'SEO_PORT gecerli ve backend portundan farkli olmalidir.\n' >&2
+    exit 1
+  fi
 
   if [ "${AI_TRADING_MENTOR_ENABLED:-false}" = "true" ]; then
     export TRADING_ENGINE_AI_OBSERVER_ENABLED=true
@@ -222,6 +232,7 @@ validate_and_build() {
   fi
   npm --prefix "$BACKEND_DIR" run build
   npm --prefix "$FRONTEND_DIR" run lint
+  npm --prefix "$FRONTEND_DIR" run test:seo
   npm --prefix "$FRONTEND_DIR" run build
 
   cd "$ENGINE_DIR"
@@ -356,11 +367,23 @@ install_frontend() {
     test -f "$WEB_ROOT$FRONTEND_ASSET_PATH"
     log "Frontend kopyalandi: $WEB_ROOT"
   else
-    log "WEB_ROOT bos: Nginx'in frontend/dist dizinini servis ettigi varsayildi"
+    log "WEB_ROOT bos: statik dosyalar frontend/dist, HTML ise SEO servisi uzerinden sunulacak"
   fi
   if [ "$RELOAD_NGINX" = "true" ]; then
     nginx -t
     systemctl reload nginx
+  fi
+}
+
+restart_seo() {
+  log "SEO HTML servisi PM2 ile baslatiliyor: $SEO_PM2_NAME"
+  local site_url="${PUBLIC_SITE_URL:-$FRONTEND_URL}"
+  if pm2 describe "$SEO_PM2_NAME" >/dev/null 2>&1; then
+    PORT="$SEO_PORT" HOST=127.0.0.1 PUBLIC_SITE_URL="$site_url" SEO_API_BASE_URL="http://127.0.0.1:${BACKEND_PORT}/api" \
+      pm2 restart "$SEO_PM2_NAME" --update-env
+  else
+    PORT="$SEO_PORT" HOST=127.0.0.1 PUBLIC_SITE_URL="$site_url" SEO_API_BASE_URL="http://127.0.0.1:${BACKEND_PORT}/api" \
+      pm2 start "$FRONTEND_DIR/server.mjs" --name "$SEO_PM2_NAME" --cwd "$FRONTEND_DIR" --restart-delay 5000 --time
   fi
 }
 
@@ -475,6 +498,9 @@ wait_for_engine_contract() {
 health_checks() {
   step "11/13 Backend ve Engine health/reconciliation kontrol ediliyor"
   wait_for_backend
+  wait_for_url "SEO" "http://127.0.0.1:${SEO_PORT}/robots.txt" "$SEO_PM2_NAME"
+  node "$FRONTEND_DIR/seo/verify.mjs" "http://127.0.0.1:${SEO_PORT}" "${PUBLIC_SITE_URL:-$FRONTEND_URL}"
+  node "$FRONTEND_DIR/seo/verify.mjs" "$FRONTEND_HEALTH_URL" "${PUBLIC_SITE_URL:-$FRONTEND_URL}"
   verify_frontend_release
   if ! wait_for_url "Trading Engine" "$ENGINE_HEALTH_URL" "$ENGINE_PM2_NAME"; then
     if [ -x "$ENGINE_ROLLBACK" ]; then
@@ -527,7 +553,7 @@ finalize() {
         process.exit(1);
       }
     }
-  ' "$BACKEND_PM2_NAME" "$ENGINE_PM2_NAME"
+  ' "$BACKEND_PM2_NAME" "$ENGINE_PM2_NAME" "$SEO_PM2_NAME"
   npm --prefix "$BACKEND_DIR" run status:ai-fleet
   pm2 status
   log "Deploy tamamlandi. Mevcut 20 TESTNET botunun DB durumu korunarak devam eder; production LIVE kapali kalir."
@@ -551,6 +577,7 @@ main() {
   apply_migrations
   install_frontend
   restart_backend
+  restart_seo
   install_and_restart_engine
   health_checks
   resume_testnet_fleet
